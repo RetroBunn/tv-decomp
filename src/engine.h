@@ -537,8 +537,34 @@ void TV_STDCALL Track_Fill(uint8_t *buf, int32_t pos, int32_t n,
 /* @0x1003b230 */
 void TV_STDCALL Track_RampTo(uint8_t *buf, int32_t pos, int32_t n,
                              uint8_t from, uint8_t to);
+/* @0x10005510 */
+void TV_THISCALL Track_Nudge(Engine *self, uint8_t *buf, int32_t mode,
+                             int32_t pos, int32_t shape, int32_t n,
+                             int32_t delta);
 
 /* ---- stage 3: phonetics (stage3.c) -------------------------------------- */
+
+/* One stage-3 rule: a list of conditions on the phonemes around the cursor,
+ * the parameter edits to make when they all hold, and the routines to run
+ * after them.  The rules for a pair of phoneme classes are tried in order
+ * and the first that matches wins. */
+/* One parameter edit: what to do, to which value, with what. */
+typedef struct S3Edit {
+    uint8_t  op;        /* 0x00 low 7 bits the operation, bit 7 "one more" */
+    uint8_t  when;      /* 0x01 which passes this edit belongs to */
+    uint8_t  pad0[2];
+    int32_t  arg;       /* 0x04 */
+    uint8_t  field;     /* 0x08 which value it edits */
+    uint8_t  index;     /* 0x09 and which one of them */
+    uint8_t  pad1[2];
+} S3Edit;
+
+typedef struct S3Rule {
+    const uint8_t *cond;        /* 0x00 conditions, terminated by 0x18 */
+    const S3Edit *const *edits; /* 0x04 blocks of edits, NULL-terminated */
+    const uint8_t *ops;         /* 0x08 routines to run, terminated by 0 */
+} S3Rule;
+
 
 /* @0x100386d0 */
 int32_t TV_STDCALL Vowel_Index(uint8_t c);

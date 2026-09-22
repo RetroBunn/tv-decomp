@@ -140,3 +140,33 @@ void TV_STDCALL Track_RampTo(uint8_t *buf, int32_t pos, int32_t n,
         pos++;
     }
 }
+
+/* Move a run of the track by a delta rather than toward a target: the delta
+ * is applied in full at the start of the curve and fades out along it.  With
+ * mode below 3 the track is not allowed to go negative. */
+/* @0x10005510 */
+void TV_THISCALL Track_Nudge(Engine *self, uint8_t *buf, int32_t mode,
+                             int32_t pos, int32_t shape, int32_t n,
+                             int32_t delta)
+{
+    const uint8_t *s = g_track_shape[shape] + 1;
+    int32_t p = pos - 1;
+    int32_t w, v;
+    (void)self;
+
+    if ((int32_t)buf[p & 0xff] + delta < 0)
+        delta = -(int32_t)buf[p & 0xff];
+    w = (int32_t)*s << 7;
+    while (w != 0) {
+        if (n == 0)
+            return;
+        n--;
+        v = Synth_MulQ15(delta, w) + (int32_t)buf[p & 0xff];
+        if (v <= 0 && mode < 3)
+            v = 0;
+        buf[p & 0xff] = (uint8_t)v;
+        p--;
+        s++;
+        w = (int32_t)*s << 7;
+    }
+}

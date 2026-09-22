@@ -25,7 +25,7 @@ engine object; each stage owns a window into it and hands finished nodes to
 the next stage.  `StageCtx.type_mask` selects the node types a stage
 handles; other node types are control commands it executes in passing.
 
-## Done (164 functions)
+## Done (181 functions)
 
 * **Node/stage core** `node.c`: list insert/unlink, pool reset, node
   alloc/free, stage begin/end/next/prev, append.
@@ -47,10 +47,21 @@ handles; other node types are control commands it executes in passing.
 * **Stage 3** `stage3.c`: so far the driver -- the three-cursor walk that
   moves one phoneme per step, asks the tracks for room for its frames and
   decides when the utterance has ended -- plus the vowel index and the
-  neighbour-phoneme accessor, and `Stage3_Emit`, which commits the frames a
-  step wrote.  The stage keeps its working state in `s3_param[22]`, a
-  28-byte record per synthesis parameter that sits between the track
-  bookkeeping and the tracks themselves.
+  neighbour-phoneme accessor; `Stage3_Next`, which looks past the control
+  nodes for the next phoneme and makes a silence to stop on when there is
+  none; `Stage3_Pause` and `Stage3_Hold`, which write a held sound one
+  repeated frame at a time; `Stage3_Phone`, the per-phoneme setup;
+  `Stage3_Write`, which turns a parameter's travel into calls on the track
+  shapers; and `Stage3_Emit`, which commits the frames a step wrote.  The
+  stage keeps its working state in `s3_param[22]`, a 28-byte record per
+  synthesis parameter -- how it travels, along which curve, from where to
+  where -- that sits between the track bookkeeping and the tracks.
+  `Stage3_Rules` and `Stage3_Apply` are the rule machinery: for each pair of
+  phoneme classes a list of rules is tried in order, each a small byte-code
+  program of conditions followed by parameter edits and a list of routines
+  to run.  Six of those sixteen routines are done so far, along with
+  `Track_Nudge`, the shaper they use to fade a correction back into frames
+  that have already been written.
 * **Stage resets** `stages.c` + stage 4 driver.
 * **Feeding** `feed.c`: `Engine_Feed`, `Engine_Flush`.
 * **Preformatter** `preformat.c`: accent folding, `ESC[..X` command parser.
@@ -108,8 +119,9 @@ handles; other node types are control commands it executes in passing.
    `0x10038530`/`0x100385b0`.  Everything else its call tree still
    references is the MSVC C runtime, which the portable build takes from
    the host.
-2. The rest of stage 3: `Stage3_Phone` (0x1002da60) and the per-phoneme
-   parameter rules below it (52 functions, 55 KB).
+2. The rest of stage 3: ten of the sixteen rule routines and the tables
+   they read, plus `Stage3_Targets` (0x1002d0d0) and `Stage3_Coarticulate`
+   (0x1004f710) -- about 40 functions, 45 KB.
 3. Portable build: MSVC-compatible CRT pieces, data extraction from the DLL,
    `Engine_Read32/Write32` for the raw-offset accesses (see layout.c).
 

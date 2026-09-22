@@ -99,9 +99,9 @@ void TV_THISCALL Stage3_ResetParams(Engine *self)
     self->s3_1e50 = 0;
     self->s3_1e38 = 0;
     self->s3_1e4c = 0;
-    self->s3_1e64 = 0;
-    self->s3_1e60 = 0;
-    self->s3_1e5c = 0;
+    self->s3_1e5c[2] = 0;
+    self->s3_1e5c[1] = 0;
+    self->s3_1e5c[0] = 0;
     self->s3_1e58 = 0;
     self->s3_1e54 = 0;
     for (i = 0; i < 22; i++) {
