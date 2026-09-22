@@ -1,0 +1,3 @@
+This [2f is a test of skimming, where the engine reads only some of the words in a long sentence like this one.
+Alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima.
+[0f And now back to normal reading of every word again.

@@ -1,0 +1,4 @@
+Say `hello to the world.
+This is a ~test of stress marking.
+A `quick ~brown fox jumps over the lazy dog.
+Emphasis on ~this word and `that word too.

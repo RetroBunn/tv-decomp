@@ -32,6 +32,7 @@ struct Node 0x20
 0x14 uint8_t   b14
 0x15 uint8_t   b15
 0x16 uint8_t   value            # character / command letter
+0x17 uint8_t   syllable         # 1-based syllable number within the word
 0x18 uint8_t   b18
 0x19 uint8_t   b19
 0x1c uint32_t  notify           # 'i' (index mark) commands: TextData notify context
@@ -111,13 +112,30 @@ struct Engine 0x9184
 0x1c18 Node    *s0_pending_ptr
 0x1c1c uint8_t  s0_1c1c
 0x1c20 int32_t  s1_1c20
-0x1c30 int32_t  s1_1c30
-0x1c34 int32_t  s1_1c34
+0x1c24 const void *s1_rule       # the suffix rule that matched
+0x1c28 uint8_t  s1_1c28
+0x1c29 uint8_t  s1_1c29
+0x1c2a uint8_t  s1_1c2a           # word was preceded by '~'
+0x1c2b uint8_t  s1_1c2b           # word was preceded by '`'
+0x1c2c uint8_t  s1_1c2c
+0x1c2d uint8_t  s1_1c2d
+0x1c30 Node    *s1_word_start    # first node of the word being pronounced
+0x1c34 Node    *s1_word_end
 0x1c38 int32_t  s1_1c38
-0x1c3c int32_t  s1_1c3c
-0x1c40 int32_t  s1_1c40
-0x1c44 int32_t  s1_1c44
+0x1c3c Node    *s1_next_start
+0x1c40 Node    *s1_letters        # first letter node of the word
+0x1c44 Node    *s1_next_end
+0x1c48 Node    *s1_cursor        # Stage1_Advance walk position
+0x1c4c int32_t  s1_steps
 0x1c50 uint8_t  s1_1c50
+0x1c54 Node    *lts_pending       # vowel still waiting for its stress
+0x1c58 Node    *lts_back          # letter-to-sound: left-context cursor
+0x1c5c Node    *lts_cur           # the letter the rules are being applied to
+0x1c60 uint32_t lts_feat_lo       # feature bits of the letter being matched
+0x1c64 uint32_t lts_feat_hi
+0x1c68 int32_t  lts_reduce
+0x1c6c int32_t  lts_syllables
+0x1c70 uint8_t  lts_second_pass
 0x1d44 uint8_t  s2_1d44
 0x1d48 int32_t  s2_1d48
 0x1d4c int32_t  s2_1d4c

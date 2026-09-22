@@ -30,11 +30,11 @@ void TV_THISCALL Stage0_Reset(Engine *self)
 void TV_THISCALL Stage1_Reset(Engine *self)
 {
     self->stage_ctx[1].type_mask = 0x06; /* types 1,2 */
-    self->s1_1c3c = 0;
-    self->s1_1c40 = 0;
-    self->s1_1c44 = 0;
-    self->s1_1c30 = 0;
-    self->s1_1c34 = 0;
+    self->s1_next_start = NULL;
+    self->s1_letters = NULL;
+    self->s1_next_end = NULL;
+    self->s1_word_start = NULL;
+    self->s1_word_end = NULL;
     self->s1_1c20 = 0;
     self->s1_1c38 = 0;
     self->s1_1c50 = 0;

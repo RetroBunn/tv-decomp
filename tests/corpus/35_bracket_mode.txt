@@ -1,0 +1,5 @@
+[1;2F[6;7AHello [World ABC 123] again now.
+[Spell this out] and then read normally.
+Mixed [abc] and [XYZ, 42!] and [a-b-c] in one line.
+[6AHello [phoneme mode] with only bit six set.
+[7;6AThe end [of the test] here.

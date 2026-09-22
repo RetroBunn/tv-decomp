@@ -8,7 +8,8 @@
  * step function until it reports idle, and collect every PCM buffer it
  * hands to the audio queue.
  *
- * usage: tvh [-v voice0-9] [-8] [-t] [-z nuls] <dll> <text|@file> <out.wav>
+ * usage: tvh [-v voice0-9] [-8] [-t] [-z nuls] [-L word=phonemes]
+ *             <dll> <text|@file> <out.wav>
  */
 #include <windows.h>
 #include <stdio.h>
@@ -38,6 +39,7 @@
 #define VA_PITCH_TABLE   0x100b5350 /* uint16 per voice, stride 4 */
 #define VA_SPEED_TABLE   0x100b53a0 /* uint32 per voice */
 #define VA_LEXICON_CS    0x10148b38 /* CRITICAL_SECTION */
+#define VA_LEX_ADD       0x10003d00 /* cdecl(word, pronunciation) */
 #define VA_OBJECT_COUNT  0x100bf5f8 /* live SAPI object count */
 
 #define ENGINE_SIZE 0x9200
@@ -124,6 +126,8 @@ int main(int argc, char **argv)
 {
     int voice = 0, phone = 0, i, trace = 0, nuls = 2;
     const char *cov_blocks = NULL, *cov_out = NULL, *hook_spec = "all", *unit = NULL;
+    const char *lex_add[16];
+    int n_lex = 0;
     long opt_pitch = -1, opt_speed = -1, opt_volume = -1;
     int opt_preformat = 1, opt_textin = 1;
     const char *dll, *textarg, *out;
@@ -149,10 +153,13 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "-V") && i + 1 < argc) opt_volume = strtoul(argv[++i], NULL, 0);
         else if (!strcmp(argv[i], "-P0")) opt_preformat = 0;
         else if (!strcmp(argv[i], "-T0")) opt_textin = 0;
+        else if (!strcmp(argv[i], "-L") && i + 1 < argc && n_lex < 16)
+            lex_add[n_lex++] = argv[++i];
         else { fprintf(stderr, "unknown option %s\n", argv[i]); return 2; }
     }
     if (argc - i != 3 || voice < 0 || voice > 9) {
-        fprintf(stderr, "usage: tvh [-v voice0-9] [-8] [-t] [-z nuls] <dll> <text|@file> <out.wav>\n");
+        fprintf(stderr, "usage: tvh [-v voice0-9] [-8] [-t] [-z nuls]"
+                        " [-L word=phonemes] <dll> <text|@file> <out.wav>\n");
         return 2;
     }
     dll = argv[i]; textarg = argv[i + 1]; out = argv[i + 2];
@@ -192,6 +199,20 @@ int main(int argc, char **argv)
      * english.dic; with no such file that is a no-op, so we skip it. */
     InitializeCriticalSection((CRITICAL_SECTION *)pe_va(&g_img, VA_LEXICON_CS));
     *(uint32_t *)pe_va(&g_img, VA_OBJECT_COUNT) = 1;
+
+    /* User lexicon entries, as ITTSDialogs/the lexicon calls would add them
+     * (sub_10003d00 copies and upper-cases the word itself). */
+    for (i = 0; i < n_lex; i++) {
+        void(__cdecl * add)(const char *, const char *) =
+            (void(__cdecl *)(const char *, const char *))pe_va(&g_img, VA_LEX_ADD);
+        char buf[256], *eq;
+        strncpy(buf, lex_add[i], sizeof buf - 1);
+        buf[sizeof buf - 1] = 0;
+        eq = strchr(buf, '=');
+        if (!eq) { fprintf(stderr, "bad -L %s\n", lex_add[i]); return 2; }
+        *eq = 0;
+        add(buf, eq + 1);
+    }
 
     /* ---- fake SAPI central object, as ITTSEnum::Select leaves it -------- */
     S = (uint8_t *)calloc(1, SAPI_SIZE);

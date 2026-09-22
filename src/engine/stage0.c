@@ -33,20 +33,29 @@ extern const char *const *const g_stage0_words[256];
 extern const uint32_t g_s0_flag_lo[16];
 /* @0x100f8360 */
 extern const uint32_t g_s0_flag_hi[256];
-/* Per-character attributes of the phoneme alphabet (bit 8 = stressable,
- * bit 0x80 = vowel). */
+/* Per-character attributes, in three banks of 128 selected by bits 7 and 8 of
+ * the index: the character as it arrives from stage 0, the same character as
+ * a phoneme symbol, and two more banks the stage 1 prosody and lexicon code
+ * use.  The
+ * engine sign-extends the character, so a byte >= 0x80 indexes the 128 bytes
+ * *before* the table. */
 /* @0x100c8aa0 */
-extern const uint8_t g_phone_attr[256];
+extern const uint8_t g_phone_attr[0x280];
 
-/* g_phone_attr indexed by a sign-extended char, as the original does. */
-static uint8_t phone_attr_signed(uint8_t c)
+/* g_phone_attr with the signed index the original uses (-128..255). */
+uint8_t Phone_Attr(int32_t idx)
 {
 #if defined(TV_HOOK_BUILD)
-    return g_phone_attr[(int8_t)c];
+    return g_phone_attr[idx];
 #else
     extern const uint8_t g_phone_attr_before[128];
-    return c < 0x80 ? g_phone_attr[c] : g_phone_attr_before[c - 0x80];
+    return idx < 0 ? g_phone_attr_before[idx + 128] : g_phone_attr[idx];
 #endif
+}
+
+static uint8_t phone_attr_signed(uint8_t c)
+{
+    return Phone_Attr((int8_t)c);
 }
 
 /* Character classes 4..19 used by the condition opcodes. */

@@ -1,0 +1,8 @@
+[6;7A[ab c] [ab!c] [ab"c] [ab#c] [ab$c] [ab%c] [ab&c] [ab'c] 
+[ab(c] [ab)c] [ab*c] [ab+c] [ab,c] [ab-c] [ab.c] [ab/c] 
+[ab:c] [ab;c] [ab<c] [ab=c] [ab>c] [ab?c] [ab@c] [ab[c] 
+[ab\c] [ab]c] [ab^c] [ab_c] [ab`c] [ab{c] [ab|c] [ab}c] 
+[ab~c] 
+[xy ] [xy!] [xy"] [xy#] [xy$] [xy%] [xy&] [xy'] [xy(] [xy)] [xy*] [xy+] [xy,] [xy-] [xy.] [xy/] [xy:] [xy;] [xy<] [xy=] [xy>] [xy?] [xy@] [xy[] [xy\] [xy]] [xy^] [xy_] [xy`] [xy{] [xy|] [xy}] [xy~] 
+[1,234.56] [3/4] [a-b] [x=y] [p+q] [m*n] [50%] [#7] [&co] [@me]
+[6ASpell [the quick brown fox] and [JUMP 42 times].

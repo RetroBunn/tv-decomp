@@ -1,0 +1,3 @@
+[9FHello there world today. A second sentence follows here.
+[9NAnd now the flag is set again for this sentence.
+[5F[3NMore flag changes in the middle of the text.

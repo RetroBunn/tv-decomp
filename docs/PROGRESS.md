@@ -25,7 +25,7 @@ engine object; each stage owns a window into it and hands finished nodes to
 the next stage.  `StageCtx.type_mask` selects the node types a stage
 handles; other node types are control commands it executes in passing.
 
-## Done (83 functions)
+## Done (106 functions)
 
 * **Node/stage core** `node.c`: list insert/unlink, pool reset, node
   alloc/free, stage begin/end/next/prev, append.
@@ -44,12 +44,19 @@ handles; other node types are control commands it executes in passing.
   ESC commands, plus `sapi.c` for the few call-backs into the SAPI layer.
 * **Stage 0** `stage0.c`: the rule interpreter (19 condition opcodes, 23
   action opcodes, rule call stack, word-list matching, emit/finish).
+* **Stage 1** `stage1.c`: the driver, span gathering, the prosody pass
+  (`Stage1_Pronounce`), stress marking and syllable numbering, and the affix
+  rule machinery -- `Lts_TestContext` (the context-condition byte code),
+  `Lts_MatchAffix` and the `Stage1_Lookup` prefix/suffix stripping driver.
 
 ## Next
 
-1. `Stage0_Spell` (0x10032230) - letter-by-letter spelling, reached when
+1. The rest of stage 1: the lexicon (`0x10003480`, `0x100039c0`,
+   `0x10050d30`), the letter-to-sound rules (`0x1005f7b0`, `0x100605c0`),
+   `Stage1_Vowel` (`0x10060a60`, 7.6 KB), `Lts_ApplyAffix` (`0x100635a0`)
+   and the phrase prosody (`0x100638a0`, `0x10063ea0`).
+2. `Stage0_Spell` (0x10032230) - letter-by-letter spelling, reached when
    stage 0 runs in spell mode.
-2. Stage 1 (0x10062830) - word pronunciation / lexicon, and its subtree.
 3. Stage 2 (0x1002b2b0).
 4. Stage 3 (0x1002c980) - phonetics to the 22 parameter tracks.
 5. Synthesizer (`0x10025cb0`, `0x10002a40`) - the DSP core.
@@ -58,10 +65,12 @@ handles; other node types are control commands it executes in passing.
 
 ## Test corpus
 
-`tests/corpus/*.txt` (30 inputs), run in 257 configurations: ten voices at
+`tests/corpus/*.txt` (38 inputs), run in 286 configurations: ten voices at
 11025 and 8000 Hz, pitch/speed/volume variants, PreFormat and TextIn on and
 off, embedded ESC commands, quoted-mail mode, cp1252 text, malformed
-escapes, and the sample texts shipped with TruVoice when present.  A
+escapes, phoneme input with `/pitch;duration/` annotations, skim mode
+(`ESC[2f`), `ESC[..N`/`ESC[..F` flag changes, and the sample texts shipped
+with TruVoice when present.  A
 `NAME.opts` file next to an input pins its harness options.
 
 ## Known deviations

@@ -126,8 +126,144 @@ uint8_t TV_THISCALL Stage0_Finish(Engine *self, uint8_t done);
 /* Letter-by-letter spelling (not yet decompiled). */
 /* @0x10032230 */
 void TV_THISCALL Stage0_Spell(Engine *self);
+
+/* ---- stage 1: word pronunciation (stage1.c) ----------------------------- */
+
 /* @0x10062830 */
 uint8_t TV_THISCALL Stage1_Run(Engine *self);
+/* @0x10062da0 */
+void TV_THISCALL Stage1_TakeSpan(Engine *self);
+/* @0x10062de0 */
+uint8_t TV_THISCALL Stage1_ScanAhead(Engine *self);
+/* @0x10062e80 */
+uint8_t TV_THISCALL Stage1_Gather(Engine *self);
+/* @0x10003480 */
+void TV_CDECL Word_Classify(const char *word, Node *n);
+/* Letter-to-sound rules, used when the lexicon has no entry (not yet
+ * decompiled). */
+/* @0x1005f7b0 */
+void TV_THISCALL Stage1_Rules(Engine *self);
+/* Settle the vowel of the syllable just finished. */
+/* @0x100605c0 */
+void TV_THISCALL Lts_Syllable(Engine *self, int32_t final);
+/* Condition program: a strong letter before the syllable break. */
+/* @0x100b0528 */
+extern const uint8_t g_lts_cond_strong[];
+
+/* @0x10062900 */
+Node *TV_THISCALL Stage1_Pronounce(Engine *self);
+/* Stress and duration for one vowel (not yet decompiled). */
+/* @0x10060a60 */
+Node *TV_THISCALL Stage1_Vowel(Engine *self, Node *n);
+/* Phrase-level prosody, around the '%' marker (not yet decompiled). */
+/* @0x100638a0 */
+void TV_THISCALL Stage1_Phrase(Engine *self);
+/* @0x10063e40 */
+void TV_THISCALL Stage1_SpreadStress(Engine *self);
+/* @0x10063ea0 */
+void TV_THISCALL Stage1_PhraseEnd(Engine *self);
+/* @0x100637f0 */
+void TV_THISCALL Stage1_Mark(Engine *self, Node *n);
+/* @0x10063170 */
+void TV_THISCALL Stage1_Emit(Engine *self);
+/* @0x10064100 */
+void TV_THISCALL Stage1_Close(Engine *self);
+
+/* ---- letter-to-sound rules (stage1.c) ----------------------------------- */
+
+/* One rule of the letter-to-sound table.  The rules for a letter follow each
+ * other in memory and are tried in order. */
+typedef struct LtsEntry {
+    const char *left;     /* 0x00 left-context letters, matched backwards */
+    const uint8_t *out;   /* 0x04 control bytes, then the phonemes to emit */
+    const uint8_t *cond;  /* 0x08 right-context condition program */
+    const uint32_t *want; /* 0x0c the two feature masks the rule needs */
+    const uint32_t *set;  /* 0x10 the two feature masks it leaves behind */
+} LtsEntry;
+
+/* The rules for each letter, indexed by the letter ('@'..'['). */
+/* @0x100b4ee0 */
+extern const LtsEntry *const g_lts_rules[];
+
+/* One affix (prefix/suffix) rule.  The rules for a given letter form a
+ * NULL-terminated array of pointers, and `next` chains to the array to try
+ * after this one matched. */
+typedef struct LtsRule {
+    const char *text;     /* 0x00 the letters, in match order */
+    const uint8_t *cond;  /* 0x04 context condition program */
+    uint8_t b08;          /* 0x08 re-run the lexicon after stripping */
+    uint8_t b09;          /* 0x09 word class */
+    uint8_t b0a;          /* 0x0a stress level, or > 1: a s1_1c2d code */
+    uint8_t b0b;
+    const struct LtsRule *const *next; /* 0x0c */
+} LtsRule;
+
+/* Rule lists indexed by the last / first letter of the word. */
+/* @0x100e4134 */
+extern const LtsRule *const *const g_lts_suffix[256];
+/* @0x100e4dd4 */
+extern const LtsRule *const *const g_lts_prefix[256];
+/* Letter-class descriptors: high byte selects a g_phone_attr bank, low byte
+ * the bit to test. */
+/* @0x100c89e0 */
+extern const uint32_t g_lts_class[128];
+
+/* @0x10060140 */
+uint8_t TV_THISCALL Lts_TestFeatures(Engine *self, const LtsEntry *r);
+/* @0x100601c0 */
+uint8_t TV_THISCALL Lts_MatchLeft(Engine *self, const LtsEntry *r);
+/* @0x10060210 */
+uint8_t TV_THISCALL Lts_TestContext(Engine *self, const uint8_t *cond, Node *n,
+                                    int32_t dir);
+/* @0x10063480 */
+const LtsRule *TV_THISCALL Lts_MatchAffix(Engine *self, Node *a, Node *b,
+                                          const LtsRule *const *set, int32_t dir);
+/* @0x10063230 */
+uint8_t TV_THISCALL Stage1_Lookup(Engine *self);
+/* @0x100635a0 */
+int32_t TV_THISCALL Lts_ApplyAffix(Engine *self, int32_t dir);
+
+/* The suffix rules whose stems need the spelling repaired ("-ING", "-EST",
+ * "-ILY", "-ABLE", "-ABLY", "-OR", "-S").  Their text is the suffix reversed,
+ * because a suffix is matched backwards from the end of the word. */
+/* @0x100e3880 */ extern const LtsRule g_lts_rule_ing;
+/* @0x100e3d50 */ extern const LtsRule g_lts_rule_est;
+/* @0x100e3ed0 */ extern const LtsRule g_lts_rule_ily;
+/* @0x100e3670 */ extern const LtsRule g_lts_rule_able;
+/* @0x100e3eb0 */ extern const LtsRule g_lts_rule_ably;
+/* @0x100e3bc0 */ extern const LtsRule g_lts_rule_or;
+/* @0x100e3cd0 */ extern const LtsRule g_lts_rule_s;
+
+/* Condition programs the stem repair uses. */
+/* @0x100e2a80 */ extern const uint8_t g_lts_cond_stem_ok[];
+/* @0x100e2a48 */ extern const uint8_t g_lts_cond_want_e[];
+/* @0x100e2b18 */ extern const uint8_t g_lts_cond_no_e[];
+/* @0x100e2a90 */ extern const uint8_t g_lts_cond_want_t[];
+/* One user-lexicon entry: the spelling and its phoneme string.  The user
+ * lexicon is the small sorted table the SAPI lexicon calls add to; the main
+ * dictionary is a packed state machine inside the DLL (Lexicon_Try). */
+typedef struct LexEntry {
+    const char *word;
+    const char *pron;
+} LexEntry;
+
+/* @0x101312c0 */ extern const LexEntry g_lexicon[];
+/* @0x101312b8 */ extern const uint32_t g_lexicon_count;
+
+/* @0x10003980 */
+int32_t TV_CDECL UserLex_Compare(const void *a, const void *b);
+/* @0x100039c0 */
+uint8_t TV_THISCALL UserLex_Try(Engine *self);
+void Lexicon_Lock(void);
+void Lexicon_Unlock(void);
+/* @0x10050d30 */
+uint8_t TV_THISCALL Lexicon_Try(Engine *self);
+/* @0x10048010 */
+uint8_t TV_STDCALL Phone_IsVowel(uint8_t c);
+/* @0x1002b430 */
+Node *TV_THISCALL Node_PrevBoundary(Engine *self, Node *n);
+/* @0x1002b460 */
+Node *TV_THISCALL Node_NextWord(Engine *self, Node *n);
 /* @0x1002b2b0 */
 uint8_t TV_THISCALL Stage2_Run(Engine *self);
 /* @0x1002c980 */
