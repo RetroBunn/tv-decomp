@@ -29,12 +29,14 @@ struct Node 0x20
 0x04 Node     *prev
 0x08 uint32_t  flags            # bits 0-2 type, bits 3-7 per-stage flags
 0x0c uint32_t  arg              # control nodes: command argument
+0x10 uint32_t  d10
 0x14 uint8_t   b14
 0x15 uint8_t   b15
 0x16 uint8_t   value            # character / command letter
 0x17 uint8_t   syllable         # 1-based syllable number within the word
 0x18 uint8_t   b18
 0x19 uint8_t   b19
+0x1a uint8_t   b1a              # the output mode in force when stage 2 passed
 0x1c uint32_t  notify           # 'i' (index mark) commands: TextData notify context
 end
 
@@ -61,6 +63,17 @@ struct StageCtx 0x44
 0x40 int32_t   voice
 end
 
+# The per-parameter transition state stage 3 keeps while it writes a phoneme.
+struct S3Param 0x1c
+0x00 int32_t  p00
+0x04 int32_t  p04
+0x08 int32_t  p08
+0x0c int32_t  len              # frames this parameter advances this step
+0x10 int32_t  p10
+0x14 int32_t  p14
+0x18 int32_t  p18
+end
+
 struct Engine 0x9184
 0x0000 uint8_t  synth_busy
 0x0004 int32_t  trk_04
@@ -73,6 +86,7 @@ struct Engine 0x9184
 0x003c int32_t  trk_wr[22]       # per-parameter track write position
 0x0094 int32_t  trk_rd[22]       # per-parameter track read position
 0x00ec uint8_t *trk_buf[22]      # -> trk_data[i]
+0x0144 S3Param  s3_param[22]     # per-parameter transition state
 0x03ac uint8_t  trk_data[22][256] # 22 synthesis-parameter tracks
 0x19ac uint8_t  synth_hold       # ESC[H / ESC[C
 0x19ad uint8_t  synth_19ad
@@ -136,22 +150,69 @@ struct Engine 0x9184
 0x1c68 int32_t  lts_reduce
 0x1c6c int32_t  lts_syllables
 0x1c70 uint8_t  lts_second_pass
+0x1c74 int32_t  s2_nmarks         # how many marks are in use
+0x1c78 Node    *s2_marks[51]     # nodes stage 2 remembers as it scans
 0x1d44 uint8_t  s2_1d44
+0x1d45 uint8_t  s2_1d45
 0x1d48 int32_t  s2_1d48
 0x1d4c int32_t  s2_1d4c
+0x1d50 int32_t  s2_1d50
 0x1d54 uint8_t  s2_1d54
 0x1d55 uint8_t  s2_1d55
+0x1d58 int32_t  s2_1d58           # frames left before the next break
 0x1d5c int32_t  s2_1d5c
+0x1d60 int32_t  s2_1d60
+0x1d64 int32_t  s2_1d64
 0x1d68 int32_t  s2_1d68
 0x1d6c int32_t  s2_1d6c
 0x1d70 uint8_t  s2_1d70
+0x1d74 int32_t  s2_1d74
 0x1d78 int32_t  s2_1d78
 0x1d7c int32_t  s2_1d7c
 0x1d80 int32_t  s2_1d80
 0x1d84 int32_t  s2_1d84
 0x1d88 int32_t  s2_1d88
+0x1d8c int32_t  s2_1d8c
+0x1d90 uint8_t  s2_1d90
+0x1d94 int32_t  s2_1d94
+0x1d98 uint8_t  s2_1d98
+0x1d99 uint8_t  s2_1d99
+0x1d9a uint8_t  s2_1d9a
+0x1d9b uint8_t  s2_1d9b
+0x1d9c Node    *s2_stressed      # last strongly stressed vowel in the clause
+0x1da0 int32_t  s2_1da0
+0x1da4 uint8_t  s2_1da4
+0x1da5 uint8_t  s2_1da5           # cached attributes of the current phoneme
+0x1da6 uint8_t  s2_1da6
+0x1da7 uint8_t  s2_1da7
+0x1da8 uint8_t  s2_1da8
+0x1da9 uint8_t  s2_1da9
+0x1daa uint8_t  s2_1daa
+0x1dab uint8_t  s2_1dab
+0x1dac uint8_t  s2_1dac
+0x1dad uint8_t  s2_1dad
+0x1dae uint8_t  s2_1dae
+0x1daf uint8_t  s2_1daf
+0x1db0 uint8_t  s2_1db0
+0x1db1 uint8_t  s2_1db1           # the phoneme last emitted
+0x1db4 Node    *s2_next_word     # the neighbours it also caches
+0x1db8 Node    *s2_next1
+0x1dbc Node    *s2_next2
+0x1dc0 Node    *s2_prev_word
+0x1dc4 Node    *s2_prev1
+0x1dc8 Node    *s2_prev2
+0x1dcc uint8_t  s2_c_next1
+0x1dcd uint8_t  s2_c_next2
+0x1dce uint8_t  s2_c_next_word
+0x1dd0 uint8_t  s2_c_prev_word
+0x1dd2 uint8_t  s2_c_prev1
+0x1dd3 uint8_t  s2_c_prev2
 0x1dd4 uint8_t  s2_1dd4
+0x1dd8 int32_t  s2_1dd8           # nominal duration of this phoneme
+0x1ddc int32_t  s2_1ddc           # its minimum duration
+0x1de0 int32_t  s2_dur[8]        # accumulated duration percentages
 0x1e1c int32_t  s2_1e1c
+0x1e20 uint8_t  s2_1e20
 0x1e24 int32_t  s3_1e24
 0x1e28 int32_t  s3_1e28
 0x1e2c int32_t  s3_1e2c
@@ -181,6 +242,7 @@ struct Engine 0x9184
 0x1fe0 int32_t  s3_1fe0
 0x1fe4 int32_t  s3_1fe4
 0x1fe8 int32_t  s3_1fe8
+0x1fec uint8_t  s3_1fec
 0x1fed uint8_t  s3_1fed
 0x2034 uint8_t  s3_2034
 0x2035 uint8_t  s3_2035
@@ -245,6 +307,7 @@ struct Engine 0x9184
 0x212e uint16_t w_212e
 0x2130 uint16_t w_2130
 0x2132 uint16_t w_2132
+0x2134 void    *s2_bytes         # COM byte list the phoneme trace goes to
 0x2138 uint32_t item_notify
 0x213c StageCtx *stage           # stage currently running (StageBegin..StageEnd)
 0x2140 int32_t  free_nodes

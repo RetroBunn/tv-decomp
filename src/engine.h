@@ -317,8 +317,102 @@ uint8_t TV_STDCALL Phone_IsVowel(uint8_t c);
 Node *TV_THISCALL Node_PrevBoundary(Engine *self, Node *n);
 /* @0x1002b460 */
 Node *TV_THISCALL Node_NextWord(Engine *self, Node *n);
+/* ---- stage 2: timing (stage2.c) ----------------------------------------- */
+
 /* @0x1002b2b0 */
 uint8_t TV_THISCALL Stage2_Run(Engine *self);
+/* @0x1002a9b0 */
+int32_t TV_THISCALL Stage2_Next(Engine *self);
+/* @0x1002a910 */
+void TV_THISCALL Stage2_Emit(Engine *self);
+/* @0x1002ab70 */
+int32_t TV_THISCALL Stage2_Begin(Engine *self);
+/* @0x10026a60 */
+void TV_THISCALL Stage2_Context(Engine *self);
+/* @0x1002b4e0 */
+Node *TV_THISCALL Stage2_PrevPhone(Engine *self, Node *n);
+/* @0x1002a770 */
+void TV_THISCALL Stage2_Push(Engine *self, int32_t kind);
+/* @0x10027c40 */
+void TV_THISCALL Stage2_Close(Engine *self);
+/* @0x1002a720 */
+uint8_t TV_CDECL Phone_TestMask(Node *n, int32_t mask, int32_t neg);
+/* @0x1002b490 */
+Node *TV_THISCALL Stage2_NextPhone(Engine *self, Node *n);
+/* @0x10027270 */
+void TV_THISCALL Stage2_Pitch(Engine *self);
+/* @0x100274d0 */
+void TV_THISCALL Stage2_Contour(Engine *self);
+/* @0x10055fd0 */
+void TV_THISCALL Stage2_Flush(Engine *self);
+/* @0x10027480 */
+void TV_THISCALL Stage2_ResetRun(Engine *self);
+/* @0x10058060 */
+void TV_THISCALL Stage2_Silence(Engine *self);
+/* @0x1005aa90 */
+int32_t TV_THISCALL Stage2_DurFast(Engine *self);
+/* @0x100580b0 */
+int32_t TV_THISCALL Stage2_Pause(Engine *self);
+/* @0x10056200 */
+int32_t TV_THISCALL Stage2_DurStress(Engine *self, int32_t dur);
+/* @0x10056070 */
+uint8_t TV_THISCALL Stage2_Merge(Engine *self);
+/* @0x1005bfc0 */
+int32_t TV_THISCALL Stage2_MinDur(Engine *self, int32_t pct);
+/* @0x1002b680 */
+Node *TV_THISCALL Stage2_Find(Engine *self, int32_t dir, int32_t count,
+                              int32_t mask);
+/* @0x100271c0 */
+void TV_THISCALL Stage2_Aspirate(Engine *self, Node *n, int32_t which);
+/* @0x100270f0 */
+void TV_THISCALL Stage2_Split(Engine *self, int32_t slot0, int32_t value,
+                              int32_t slot2);
+/* @0x1002b550 */
+uint8_t TV_THISCALL Stage2_Scan(Engine *self, int32_t dir, int32_t count,
+                                int32_t mask1, int32_t mask2, int32_t mode);
+/* @0x100562c0 */
+int32_t TV_THISCALL Stage2_DurRules(Engine *self);
+/* @0x1005c020 */
+int32_t TV_THISCALL Stage2_DurAdjust(Engine *self);
+/* One test in a duration rule. */
+typedef struct DurTest {
+    uint8_t kind;       /* 0x00 what to compare */
+    uint8_t dir;        /* 0x01 1 = step forward first */
+    uint8_t count;      /* 0x02 how many steps */
+    uint8_t pad03;
+    int32_t arg;        /* 0x04 attribute mask or value */
+} DurTest;
+
+/* One duration rule: a phoneme string to match, some flag conditions, a
+ * list of tests, and the duration it gives. */
+typedef struct DurRule {
+    uint8_t len;        /* 0x00 phonemes in `text` */
+    uint8_t back;       /* 0x01 steps back before matching */
+    uint8_t pad02[2];
+    const char *text;   /* 0x04 */
+    uint8_t cond;       /* 0x08 flag-condition bits */
+    uint8_t ntests;     /* 0x09 */
+    uint8_t pad0a[2];
+    const DurTest *tests; /* 0x0c */
+    uint8_t result;     /* 0x10 */
+    uint8_t pad11[3];
+} DurRule;
+
+/* @0x10026c30 */
+void TV_THISCALL Stage2_Phrase(Engine *self, int32_t punct);
+/* @0x1005c560 */
+int32_t TV_THISCALL Stage2_DurTable(Engine *self, int32_t c0, int32_t a1,
+                                    int32_t a2);
+/* @0x1005aaf0 */
+int32_t TV_THISCALL Stage2_DurVowel(Engine *self);
+/* @0x10058150 */
+int32_t TV_THISCALL Stage2_DurNasal(Engine *self);
+/* @0x10058a40 */
+int32_t TV_THISCALL Stage2_DurStop(Engine *self);
+/* @0x10056590 */
+int32_t TV_THISCALL Stage2_DurFric(Engine *self);
+/* @0x10027c60 */
+void TV_THISCALL Stage2_Break(Engine *self, int32_t n);
 /* @0x1002c980 */
 int32_t TV_THISCALL Stage3_Run(Engine *self);
 
@@ -420,6 +514,36 @@ void Sapi_Lock(SapiCentral *s);
 void Sapi_Unlock(SapiCentral *s);
 void Sapi_Post(SapiCentral *s, uint32_t msg, uint32_t wp, uint32_t lp);
 int32_t Sapi_QueuePush(SapiCentral *s, const void *data, uint32_t size);
+
+/* ---- parameter-track shaping (track.c) ---------------------------------- */
+
+/* @0x10025210 */
+void TV_STDCALL Track_Line(uint8_t *buf, int32_t at, int32_t back,
+                           int32_t fwd);
+/* @0x10025170 */
+void TV_THISCALL Track_Decay(Engine *self, uint8_t *buf, int32_t pos,
+                             int32_t shape, int32_t n, uint8_t from,
+                             uint8_t to);
+/* @0x100252b0 */
+void TV_THISCALL Track_BlendBack(Engine *self, uint8_t *buf, int32_t pos,
+                                 int32_t shape, int32_t n, uint8_t target);
+/* @0x10025330 */
+void TV_THISCALL Track_BlendFwd(Engine *self, uint8_t *buf, int32_t pos,
+                                int32_t shape, int32_t n, uint8_t target);
+
+/* @0x100054e0 */
+void TV_STDCALL Track_Fill(uint8_t *buf, int32_t pos, int32_t n,
+                           uint8_t value);
+/* @0x1003b230 */
+void TV_STDCALL Track_RampTo(uint8_t *buf, int32_t pos, int32_t n,
+                             uint8_t from, uint8_t to);
+
+/* ---- stage 3: phonetics (stage3.c) -------------------------------------- */
+
+/* @0x100386d0 */
+int32_t TV_STDCALL Vowel_Index(uint8_t c);
+/* @0x10051b70 */
+uint8_t TV_THISCALL Stage3_Char(Engine *self, int32_t which);
 
 /* ---- input rings (ring.c) ------------------------------------------------ */
 

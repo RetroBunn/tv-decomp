@@ -74,7 +74,7 @@ def main():
             if miss:
                 print("%-28s %08x  %3d/%-3d blocks; missing: %s" % (
                     name, addr, len(blocks) - len(miss), len(blocks),
-                    " ".join("%08x" % b for b in miss[:12]) + (" ..." if len(miss) > 12 else "")))
+                    " ".join("%08x" % b for b in miss[:64]) + (" ..." if len(miss) > 64 else "")))
 
 
 if __name__ == "__main__":
