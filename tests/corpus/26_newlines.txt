@@ -1,0 +1,6 @@
+Carriage return line one.
+Line two after CRLF.
+Line three after LFCR.Line four after CR.
+
+
+After blank lines.

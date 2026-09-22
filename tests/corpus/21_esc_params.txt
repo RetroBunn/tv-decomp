@@ -1,0 +1,4 @@
+Normal speed here. [220rThis part is faster. [90rAnd this is slow. [150r
+[140pHigh pitch now. [30pLow pitch now. [p Default pitch.
+[3VVoice three speaking. [7VVoice seven. [0V Back to zero.
+[8aQuieter. [16aVery quiet. [0a Loud again. [20vRate index twenty. [5vSlow index.

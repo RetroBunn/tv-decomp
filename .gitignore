@@ -50,3 +50,21 @@ modules.order
 Module.symvers
 Mkfile.old
 dkms.conf
+
+*.ini
+
+# tv-decomp: the original Centigram distribution, generated analysis output,
+# build products and reference audio -- all derived from or part of
+# copyrighted material; never commit.
+/TruVoice/
+/work/
+/build/
+/ref/
+*.wav
+
+# Copies of the Centigram demo texts that sit in the repository root
+/ADDRBOOK.TXT
+/ADDRESS.TXT
+/HOMOGRPH.TXT
+/PHONE.TXT
+/SAMPLE.TXT

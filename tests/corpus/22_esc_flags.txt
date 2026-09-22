@@ -1,0 +1,5 @@
+[1;2;3ASome flags on. [2DOne off. [3;4;5NMore flags. [4;16FClear some.
+Mark one [1i and two [1;2;3;4i and three [7i done.
+[9;120lChanged a parameter. [13l Reset it. [21;999l Max it.
+[2;120;60tTimbre. [12tBad. [50g[150s[1c[3f Classed. [1I[0P Modes.
+[QUnknown command. [300rOverflow value.

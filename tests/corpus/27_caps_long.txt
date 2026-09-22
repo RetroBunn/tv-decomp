@@ -1,0 +1,4 @@
+THIS IS A LONG LINE WRITTEN ENTIRELY IN CAPITALS SO THAT THE ENGINE LOWERCASES IT.
+SHORT CAPS
+---------------------------------------------------------------------------------------------------
+Mixed Case Line With Some CAPS WORDS like NASA and FBI inside it for testing purposes.

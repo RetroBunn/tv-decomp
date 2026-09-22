@@ -1,0 +1,3 @@
+Hello world. This is a test of the text to speech engine.
+The quick brown fox jumps over the lazy dog!
+Is this really working? Yes, it is; and it sounds fine.

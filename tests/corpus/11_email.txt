@@ -1,0 +1,11 @@
+From: Jane Doe <jane@example.org>
+To: John Smith
+Subject: Re: Meeting tomorrow
+Date: Tue, 4 Mar 1997 09:15:00 PST
+
+Hi John,
+
+Can we move the meeting to 2:30? I'll bring the report.
+
+Thanks,
+Jane

@@ -1,0 +1,1 @@
+This sentence is interrupted [S by a reset command. And then more text follows.

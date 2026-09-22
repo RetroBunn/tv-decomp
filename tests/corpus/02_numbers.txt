@@ -1,0 +1,4 @@
+I have 3 apples, 12 oranges, and 1,234,567 grains of rice.
+The value is -42.75, or about 0.5 percent of 10%.
+He finished 1st, she was 2nd, and they came in 23rd and 101st.
+Numbers: 7, 19, 20, 99, 100, 1000, 1001, 65535, 1000000, 3.14159.

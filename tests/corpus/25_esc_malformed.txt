@@ -1,0 +1,1 @@
+Escape without bracket X here. Bracket without end [12;34 and text. Max length [1;2;3;4;5;6;7;8i there. Double [5V escape. [;;;;5r odd.
