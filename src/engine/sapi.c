@@ -5,6 +5,7 @@
  * none of this is reached there.
  */
 #include "engine.h"
+#include "crt.h"
 
 #if defined(TV_HOOK_BUILD)
 #include <windows.h>
@@ -48,3 +49,39 @@ int32_t Sapi_QueuePush(SapiCentral *s, const void *data, uint32_t size)
 }
 
 #endif
+
+/*
+ * Tell the SAPI layer which phoneme is about to be spoken.
+ *
+ * The record goes on the same queue as the audio, so the layer can raise the
+ * notification when that part of the sound reaches the speaker rather than
+ * when it was worked out.  A run of silence is reported once.
+ */
+/* @0x10031050 */
+void TV_THISCALL Sapi_PhoneNotify(Engine *self, int32_t ch)
+{
+    SapiCentral *s = self->sapi;
+    uint8_t c = (uint8_t)ch;
+    int32_t *rec;
+
+    if (s == NULL)
+        return;
+    if (c == ' ') {
+        if (self->w_2132 != 0)
+            return;
+        self->w_2132 = 1;
+    } else {
+        self->w_2132 = 0;
+    }
+
+    rec = (int32_t *)tv_new(12);
+    if (rec == NULL)
+        return;
+    rec[0] = 1;
+    rec[1] = 0;
+    rec[2] = (int32_t)(int8_t)c;
+    Sapi_Lock(s);
+    Sapi_QueuePush(s, &rec, 4);
+    Sapi_Unlock(s);
+    Sapi_Post(s, 0x4c8, 0, 0);
+}

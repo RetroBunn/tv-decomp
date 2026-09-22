@@ -253,3 +253,48 @@ uint8_t TV_THISCALL UserLex_Try(Engine *self)
     stressed->flags = (stressed->flags & ~8u) | 0x10u;
     return 1;
 }
+
+/* Set whenever the user lexicon changes, so the SAPI layer knows to save it. */
+/* @0x1012c4f4 */ extern int32_t g_lexicon_dirty;
+
+/*
+ * Add a word to the user lexicon.
+ *
+ * The spelling is upper-cased and both strings are copied onto the engine's
+ * own heap, since the caller keeps its own.  A word that is already there
+ * has its pronunciation replaced; a new one goes on the end and the table is
+ * sorted again, because lookups binary-search it.
+ */
+/* @0x10003d00 */
+void TV_CDECL UserLex_Add(const char *word, const char *pron)
+{
+    LexEntry *tab = (LexEntry *)g_lexicon;
+    uint32_t *count = (uint32_t *)&g_lexicon_count;
+    LexEntry *hit;
+    char *w, *p;
+
+    if (*count >= 0x1388u)
+        return;
+
+    w = (char *)tv_new(strlen(word) + 1);
+    strcpy(w, word);
+    tv_strupr(w);
+    p = (char *)tv_new(strlen(pron) + 1);
+    strcpy(p, pron);
+
+    Lexicon_Lock();
+    hit = (LexEntry *)tv_bsearch(&w, tab, *count, 8, UserLex_Compare);
+    if (hit != NULL) {
+        tv_delete((void *)hit->word);
+        tv_delete((void *)hit->pron);
+        hit->word = w;
+        hit->pron = p;
+    } else {
+        tab[*count].word = w;
+        tab[*count].pron = p;
+        (*count)++;
+        tv_qsort(tab, *count, 8, UserLex_Compare);
+    }
+    Lexicon_Unlock();
+    g_lexicon_dirty = 1;
+}

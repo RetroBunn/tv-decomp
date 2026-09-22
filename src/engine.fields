@@ -246,6 +246,9 @@ struct Engine 0x9184
 0x1ff5 uint8_t  s3_hold_start    # the next write starts a new hold
 0x1ff6 uint8_t  s3_hold[22]      # the parameter frame it repeats
 0x200c int32_t  s3_hold_pitch    # its pitch, 0 when it is silent
+0x2010 int32_t  s3_2010
+0x2014 int32_t  s3_runlen         # frames of this phoneme left to fill
+0x2018 int32_t  s3_nasal_tgt[7]  # where the nasal murmur's formants sit
 0x1fe0 int32_t  s3_1fe0
 0x1fe4 int32_t  s3_1fe4
 0x1fe8 int32_t  s3_1fe8

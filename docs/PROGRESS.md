@@ -25,7 +25,7 @@ engine object; each stage owns a window into it and hands finished nodes to
 the next stage.  `StageCtx.type_mask` selects the node types a stage
 handles; other node types are control commands it executes in passing.
 
-## Done (189 functions)
+## Done (223 functions)
 
 * **Node/stage core** `node.c`: list insert/unlink, pool reset, node
   alloc/free, stage begin/end/next/prev, append.
@@ -59,15 +59,29 @@ handles; other node types are control commands it executes in passing.
   `Stage3_Rules` and `Stage3_Apply` are the rule machinery: for each pair of
   phoneme classes a list of rules is tried in order, each a small byte-code
   program of conditions followed by parameter edits and a list of routines
-  to run.  Six of those sixteen routines are done so far, along with
+  to run.  All sixteen of those routines are done, along with
   `Track_Nudge`, the shaper they use to fade a correction back into frames
   that have already been written.  `Stage3_Targets` is the table loader: every
   phoneme's four formants, their bandwidths, the cascade and parallel
   amplitudes and the pitch come out of tables read with the phoneme's class,
   followed by the stop-burst and release rules the tables cannot hold.
-  Nine of the sixteen rule routines are done, along with the packed-table
-  helpers they share and `Stage3_NasalPole`, the seven formant sets a nasal
-  murmur can use.
+  The larger routines are `Stage3_Op4` (the nasals, which split their run
+  into a murmur and a release and write each half separately),
+  `Stage3_Op9` (the stop bursts), `Stage3_Op14` (where every parameter
+  starts the phoneme, and the exceptions to the halfway rule) and
+  `Stage3_Op16`, which is a dispatcher: fourteen per-phoneme routines, one
+  for each consonant that does something nothing else does.  The glide
+  helpers are there too -- `Stage3_LayGlide` writes a formant and its
+  bandwidth across a glide, `Stage3_SetGlide` installs the end points, and
+  `Stage3_GlideTab` looks a pair of phonemes up in the packed glide tables,
+  falling back on stand-ins when the pair is not in them.  `Stage3_Reduce`
+  is the vowel-reduction pass: an unstressed vowel between two consonants
+  does not hold its own formants but follows a path the tables keep for that
+  pair of neighbours, bit-packed four fields at a time, which it unpacks and
+  hands to `Stage3_LayPath`.
+* **User lexicon** `lexicon.c`: `UserLex_Add`, the entry point the SAPI
+  lexicon calls, which upper-cases the spelling, copies both strings onto
+  the engine's heap and keeps the table sorted for the binary search.
 * **Stage resets** `stages.c` + stage 4 driver.
 * **Feeding** `feed.c`: `Engine_Feed`, `Engine_Flush`.
 * **Preformatter** `preformat.c`: accent folding, `ESC[..X` command parser.
@@ -117,18 +131,20 @@ handles; other node types are control commands it executes in passing.
   and glottalises the stops, colours the vowels before "R", and inserts the
   pauses and glides, followed by a shared clean-up pass.
 
+## Where this stands
+
+Taking the call tree below the twelve entry points the CLI uses, excluding
+the MSVC C runtime and the SAPI/COM/UI layer, the engine is 226 functions
+and 151,143 bytes.  223 of them are decompiled: 98.2% by function, 99.7% by
+byte.  What is left is the four functions that are the SAPI glue itself --
+the COM-allocated byte buffer at `0x10031120`/`0x100311d0` (the phoneme
+trace, which needs a portable replacement) and the SAPI queue helpers at
+`0x10038530`/`0x100385b0`.  Everything else the tree still references is the
+MSVC C runtime, which the portable build takes from the host.
+
 ## Next
 
-1. Stage 2 is done apart from two stubs the CLI never reaches: the
-   COM-allocated byte buffer at `0x10031120`/`0x100311d0` (the phoneme
-   trace; needs a portable replacement) and the SAPI queue helpers at
-   `0x10038530`/`0x100385b0`.  Everything else its call tree still
-   references is the MSVC C runtime, which the portable build takes from
-   the host.
-2. The rest of stage 3: ten of the sixteen rule routines and the tables
-   they read, plus `Stage3_Targets` (0x1002d0d0) and `Stage3_Coarticulate`
-   (0x1004f710) -- about 40 functions, 45 KB.
-3. Portable build: MSVC-compatible CRT pieces, data extraction from the DLL,
+1. Portable build: MSVC-compatible CRT pieces, data extraction from the DLL,
    `Engine_Read32/Write32` for the raw-offset accesses (see layout.c).
 
 ## Test corpus
@@ -147,9 +163,23 @@ the sample texts shipped with TruVoice when present.  A
 
 * `TextIn_ReadEscape` bounds its buffer; the original overruns it for
   `ESC[` sequences longer than 17 characters (no reference output exists).
-* `Stage1_VowelAux` (0x10064200) is written from the disassembly but the
-  corpus never reaches it, so it is the one function not verified by
-  execution.
+* Four functions are written from the disassembly but the corpus never
+  reaches them, so they are the ones not verified by execution:
+  `Stage1_VowelAux` (0x10064200), `Stage2_DurFast` (0x1005aa90),
+  `Stage3_NasalPole` (0x10048ef0) and `TextIn_Error` (0x1001ae80).
+* A few places read a stack slot the original never writes on that path, so
+  what they read is whatever the last call left there.  In `Stage3_Op4` and
+  `Stage3_LayGlide` the value only reaches a comparison that cannot hold
+  either way; in `Stage3_GlideTab` and `Stage3_Reduce` it stands in for
+  table pointers that one arm of the group switch leaves unset, and the
+  corpus never takes that arm.  Each is written to mirror what the original
+  slot holds at that point and is commented where it appears.
+* `Stage3_GlideTab` works out how wide each of four packed fields is and
+  then never uses the answers; the four loops are left out, with a comment.
+* Two branches are unreachable behind their own guards and are left out with
+  a comment: the "D before a vowel" arm of `Stage3_Op9`, which is inside a
+  test for a space that the same value cannot satisfy, and the "M" tail of
+  `Stage3_Op4`, which compares a slot that only ever holds 3 or 13 with 9.
 * The duration tables are wide decision trees and the corpus does not reach
   every leaf: `Stage2_DurFric` runs about 60% of its 680 basic blocks,
   `Stage2_DurVowel` about 80% and `Stage2_DurStop` about 84%.  The rest are
