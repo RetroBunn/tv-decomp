@@ -1077,3 +1077,320 @@ repair_y:
     }
     return 0;
 }
+
+/* Run after the phrase has been pronounced: at the higher speaking rates the
+ * unstressed vowels of a phrase-final word are flattened to schwa, and a few
+ * particular vowels are reduced whatever the rate. */
+/* @0x10063ea0 */
+void TV_THISCALL Stage1_PhraseEnd(Engine *self)
+{
+    StageCtx *st = &self->stage_ctx[1];
+    Node *first = self->s1_next_start;
+    Node *n, *nx, *p, *q;
+    int32_t idx = 0, ch = 0, prev_ch;
+    uint32_t b15;
+    uint8_t is_phrase = 0;
+    uint8_t c;
+
+    if (first != NULL) {
+        int16_t cx = (int16_t)(int8_t)first->value;
+
+        if (Phone_Attr((int16_t)(cx | 0x80)) & 0x40)
+            is_phrase = 1;
+        idx = cx;
+    }
+    /* the original walks on even when there is no span */
+    if (!(Phone_Attr(idx) & 0x80))
+        Engine_StageNext(self, first);
+
+    n = self->s1_word_start;
+    b15 = n->b15;
+    if (is_phrase == 0) {
+        nx = Engine_StageNext(self, n);
+        if (b15 == 3 && st->rate_index > 6) {
+            /* flatten the whole word */
+            n = nx;
+            while (n != NULL) {
+                c = n->value;
+                if (c == '&' || c == '%' || NODE_TYPE(n) != 3)
+                    break;
+                if ((Phone_Attr((int16_t)((int16_t)(int8_t)c | 0x100)) & 2) &&
+                    c != 'g' && !(n->flags & 0x18))
+                    n->value = '@';
+                n = Engine_StageNext(self, n);
+            }
+        } else if (b15 == 0xe) {
+            prev_ch = (int8_t)nx->prev->prev->value;
+            ch = (int8_t)nx->value;
+            q = Engine_StageNext(self, nx);
+            if (ch == 'a' && self->s1_word_end->value == 'D' &&
+                st->rate_index >= 6) {
+                if (prev_ch != '.' && prev_ch != ',' && prev_ch != 0 &&
+                    prev_ch != '@') {
+                    nx->value = '@';
+                    if (nx->flags & 0x18)
+                        nx->flags &= ~0x18u;
+                    self->s1_word_end =
+                        Engine_NodeFree(self, self->s1_word_end, 0);
+                }
+            } else if (ch == 'F' && st->rate_index >= 6) {
+                if (prev_ch != '.' && prev_ch != ',' && prev_ch != 0) {
+                    q->value = '@';
+                    if (q->flags & 0x18)
+                        q->flags &= ~0x18u;
+                }
+            }
+        }
+    }
+
+    /* "v" and "ex-" reduce to schwa in the right company. */
+    n = self->s1_word_start;
+    while (n != NULL) {
+        int32_t schwa = 0;
+
+        if (b15 != 1 && b15 != 2 && b15 != 3 && b15 != 4 && b15 != 5 &&
+            b15 != 9 && b15 != 0xa && b15 != 0xc && b15 != 0xd && b15 != 0xe &&
+            n->value == 'v' && !(n->flags & 0x18)) {
+            p = n->prev;
+            if (!(Phone_Attr((int16_t)((int16_t)(int8_t)p->prev->value | 0x80)) & 0x40)) {
+                c = p->value;
+                if (c != ' ' && c != '&' && c != '%')
+                    schwa = 1;
+            }
+        }
+        if (!schwa && n->value == 'e' && !(n->flags & 0x18)) {
+            p = n->prev;
+            if (p->value == 'x' && n->next->value == 'M') {
+                q = p->prev;
+                c = q->value;
+                if (c == '&' || c == '%') {
+                    q = q->prev;
+                    if (q != NULL && q->value != ' ' && q->value != '.')
+                        schwa = 1;
+                }
+            }
+        }
+        if (schwa)
+            n->value = '@';
+        n = Engine_StageNext(self, n);
+    }
+}
+
+/* Phrase-level prosody, run before a '%' phrase marker is pronounced.  It
+ * measures the word that is about to be spoken, takes the accent off the
+ * function words that should not carry one, and fixes up a handful of
+ * particular pronunciations ("is not" -> "isn't" and the like). */
+/* @0x100638a0 */
+void TV_THISCALL Stage1_Phrase(Engine *self)
+{
+    StageCtx *st = &self->stage_ctx[1];
+    Node *n, *e, *p, *q;
+    int32_t ch = 0, stress = 0, count20 = 0, count24 = 0;
+    int32_t wclass = 0, next_ch, prev_ch, nodes = 0, v;
+    uint32_t b15, f;
+    uint8_t have_span = 0, flag12 = 0, no_accent = 0, last_syl = 0;
+    uint8_t c;
+
+    e = self->s1_next_start;
+    if (e == NULL)
+        goto measured;
+
+    if (Phone_Attr((int16_t)((int16_t)(int8_t)e->value | 0x80)) & 0x40) {
+        /* Count the syllables of the word already pronounced. */
+        have_span = 1;
+        n = self->s1_word_start;
+        if (Engine_StageNext(self, self->s1_word_end) == n)
+            goto set_ch;
+        do {
+            c = n->value;
+            if (Phone_Attr((int16_t)((int16_t)(int8_t)c | 0x100)) & 2) {
+                last_syl = c;
+                count20++;
+            }
+            n = Engine_StageNext(self, n);
+        } while (Engine_StageNext(self, self->s1_word_end) != n);
+        goto set_ch;
+    }
+
+    /* Walk the span just built, remembering its length, its last node and
+     * the last stress level seen. */
+    n = NULL;
+    if (Engine_StageNext(self, self->s1_next_end) == e) {
+        n = NULL;
+    } else {
+        do {
+            nodes++;
+            v = (int32_t)((e->flags & 0x18u) >> 3);
+            if (v != 0)
+                stress = v;
+            n = e;
+            e = Engine_StageNext(self, e);
+        } while (Engine_StageNext(self, self->s1_next_end) != e);
+    }
+
+    if (nodes == 3 && n->value == 'b' && n->prev->value == 'T')
+        flag12 = 1;
+
+    next_ch = (int8_t)n->next->value;
+    wclass = self->s1_next_start->b15;
+    if (wclass == 1 || wclass == 0xa || wclass == 3)
+        stress = 0;
+    if ((wclass == 2 || wclass == 5 || wclass == 9 || wclass == 0xc ||
+         wclass == 0xd || wclass == 0xe || wclass == 1 || wclass == 3 ||
+         wclass == 0xa) &&
+        stress == 0 && (Phone_Attr(next_ch | 0x80) & 0x40)) {
+        /* Does the word already carry an accent anywhere? */
+        no_accent = 1;
+        n = self->s1_word_start;
+        if (Engine_StageNext(self, self->s1_word_end) != n) {
+            do {
+                c = n->value;
+                if (c == '@' || c == '|')
+                    no_accent = 0;
+                n = Engine_StageNext(self, n);
+            } while (Engine_StageNext(self, self->s1_word_end) != n);
+        }
+    }
+
+set_ch:
+    e = self->s1_next_start;
+    ch = (int8_t)e->value;
+    stress = (int32_t)((e->flags & 0x18u) >> 3);
+
+measured:
+    if (!(Phone_Attr(ch) & 0x80)) {
+        n = Engine_StageNext(self, self->s1_next_start);
+        if (n != NULL) {
+            ch = (int8_t)n->value;
+            stress = (int32_t)((n->flags & 0x18u) >> 3);
+        }
+    }
+
+    n = self->s1_word_start;
+    b15 = n->b15;
+    if (have_span != 0) {
+        /* A one-syllable function word after an accented one loses its own
+         * accent entirely. */
+        if (count20 >= 2)
+            return;
+        if (!(b15 == 0xa && last_syl != 'v' && last_syl != 'f' &&
+              last_syl != 'w') &&
+            b15 != 3 && b15 != 1)
+            return;
+        if (Engine_StageNext(self, self->s1_word_end) == n)
+            return;
+        do {
+            f = n->flags;
+            v = (int32_t)((f & 0x18u) >> 3);
+            if (v == 2 || v == 1)
+                v = 0;
+            n->flags = (f & ~0x18u) | ((uint32_t)(v << 3) & 0x18u);
+            n = Engine_StageNext(self, n);
+        } while (Engine_StageNext(self, self->s1_word_end) != n);
+        return;
+    }
+
+    if ((b15 == 2 || b15 == 5 || b15 == 9 || b15 == 0xc || b15 == 0xd ||
+         b15 == 0xe || b15 == 1 || b15 == 3 || b15 == 0xa || b15 == 4) &&
+        no_accent == 0 &&
+        Engine_StageNext(self, self->s1_word_end) != n) {
+        /* Step the whole word down one stress level (two at high rates). */
+        do {
+            count24++;
+            if (b15 != 4) {
+                f = n->flags;
+                v = (int32_t)((f & 0x18u) >> 3);
+                if (v == 2)
+                    v = 1;
+                else if (v == 1)
+                    v = 0;
+                if (st->rate_index >= 9)
+                    v = 0;
+                n->flags = (f & ~0x18u) | ((uint32_t)(v << 3) & 0x18u);
+            }
+            n = Engine_StageNext(self, n);
+        } while (Engine_StageNext(self, self->s1_word_end) != n);
+    }
+
+    e = Engine_StageNext(self, self->s1_word_start);
+    if (b15 == 0xc && wclass == 0xa) {
+        q = self->s1_next_start;
+        p = q->prev;
+        if (p->value == 'Z' && p->prev->value == 'a' &&
+            q->next->value == 'T' && q->next->next->value == 'b')
+            p->value = 'S';
+    }
+
+    prev_ch = (int8_t)e->prev->prev->value;
+    if (b15 == 2 || b15 == 0xa) {
+        Node *nx;
+
+        v = (int8_t)e->value;
+        nx = Engine_StageNext(self, e);
+        if (v == 'x') {
+            if (Phone_Attr(ch | 0x100) & 2)
+                return;
+            if (st->rate_index <= 6)
+                return;
+            nx->value = '@';
+            if (nx->flags & 0x18)
+                nx->flags &= ~0x18u;
+            return;
+        }
+        if (v != 'T' || nx->value != 'b' || st->rate_index < 6)
+            return;
+        c = (uint8_t)(Phone_Attr(ch | 0x100) & 2);
+        if (c != 0) {
+            if (stress <= 0)
+                return;
+            if (!(Phone_Attr(ch | 0x180) & 0x20))
+                return;
+        }
+        if (prev_ch == '.' || prev_ch == ',' || prev_ch == 0)
+            return;
+        nx->value = 'u';
+        if (nx->flags & 0x18)
+            nx->flags &= ~0x18u;
+        return;
+    }
+
+    n = self->s1_word_start;
+    p = n->next;
+    c = p->value;
+    if (c == 'Y' && count24 == 5) {
+        Node *a = p->next;
+
+        if (a->value == 'b') {
+            a = a->next;
+            if (a->value == 'Z' && a->next->value == 'D' && flag12 == 1) {
+                a->value = 'S';
+                n = self->s1_word_start;
+                n->next->next->next->next->value = 'T';
+                return;
+            }
+        }
+    }
+    if (c != 'i' || count24 != 5)
+        return;
+    q = p->next;
+    if (q->value != 'N')
+        return;
+    q = q->next;
+    if (q->value != 'T')
+        return;
+    q = q->next;
+    if (q->value != 'b')
+        return;
+    if (st->rate_index < 6)
+        return;
+    c = (uint8_t)(Phone_Attr(ch | 0x100) & 2);
+    if (c != 0) {
+        if (stress <= 0)
+            return;
+        if (!(Phone_Attr(ch | 0x180) & 0x20))
+            return;
+    }
+    if (prev_ch == '.' || prev_ch == ',' || prev_ch == 0)
+        return;
+    q->value = '@';
+}

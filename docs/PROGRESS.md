@@ -25,7 +25,7 @@ engine object; each stage owns a window into it and hands finished nodes to
 the next stage.  `StageCtx.type_mask` selects the node types a stage
 handles; other node types are control commands it executes in passing.
 
-## Done (106 functions)
+## Done (112 functions)
 
 * **Node/stage core** `node.c`: list insert/unlink, pool reset, node
   alloc/free, stage begin/end/next/prev, append.
@@ -45,35 +45,49 @@ handles; other node types are control commands it executes in passing.
 * **Stage 0** `stage0.c`: the rule interpreter (19 condition opcodes, 23
   action opcodes, rule call stack, word-list matching, emit/finish).
 * **Stage 1** `stage1.c`: the driver, span gathering, the prosody pass
-  (`Stage1_Pronounce`), stress marking and syllable numbering, and the affix
+  (`Stage1_Pronounce`), stress marking and syllable numbering, the affix
   rule machinery -- `Lts_TestContext` (the context-condition byte code),
-  `Lts_MatchAffix` and the `Stage1_Lookup` prefix/suffix stripping driver.
+  `Lts_MatchAffix`, `Lts_ApplyAffix` (stem spelling repair) and the
+  `Stage1_Lookup` prefix/suffix stripping driver -- and the phrase prosody
+  (`Stage1_Phrase`, `Stage1_PhraseEnd`).
+* **Lexicon** `lexicon.c`: the closed-class word classifier and the user
+  lexicon (the sorted table the SAPI lexicon calls fill in).
+* **Dictionary** `dict.c`: the built-in pronunciation dictionary -- a
+  bit-packed blob walked with two small state machines -- plus the homograph
+  disambiguation that picks a reading from the surrounding words.
+* **Letter to sound** `lts.c`: `Stage1_Rules`, the rule engine that walks a
+  word backwards turning letters into phonemes and placing the stress, plus
+  `Lts_Syllable` (yod coalescence and vowel reduction).
+* **Allophones** `vowel.c`: `Stage1_Vowel` (7.6 KB, the largest function in
+  the engine) - the per-vowel rule pass that darkens "L", drops "H", flaps
+  and glottalises the stops, colours the vowels before "R", and inserts the
+  pauses and glides, followed by a shared clean-up pass.
 
 ## Next
 
-1. The rest of stage 1: the lexicon (`0x10003480`, `0x100039c0`,
-   `0x10050d30`), the letter-to-sound rules (`0x1005f7b0`, `0x100605c0`),
-   `Stage1_Vowel` (`0x10060a60`, 7.6 KB), `Lts_ApplyAffix` (`0x100635a0`)
-   and the phrase prosody (`0x100638a0`, `0x10063ea0`).
-2. `Stage0_Spell` (0x10032230) - letter-by-letter spelling, reached when
+1. `Stage0_Spell` (0x10032230) - letter-by-letter spelling, reached when
    stage 0 runs in spell mode.
-3. Stage 2 (0x1002b2b0).
-4. Stage 3 (0x1002c980) - phonetics to the 22 parameter tracks.
-5. Synthesizer (`0x10025cb0`, `0x10002a40`) - the DSP core.
-6. Portable build: MSVC-compatible CRT pieces, data extraction from the DLL,
+2. Stage 2 (0x1002b2b0).
+3. Stage 3 (0x1002c980) - phonetics to the 22 parameter tracks.
+4. Synthesizer (`0x10025cb0`, `0x10002a40`) - the DSP core.
+5. Portable build: MSVC-compatible CRT pieces, data extraction from the DLL,
    `Engine_Read32/Write32` for the raw-offset accesses (see layout.c).
 
 ## Test corpus
 
-`tests/corpus/*.txt` (38 inputs), run in 286 configurations: ten voices at
+`tests/corpus/*.txt` (39 inputs), run in 290 configurations: ten voices at
 11025 and 8000 Hz, pitch/speed/volume variants, PreFormat and TextIn on and
 off, embedded ESC commands, quoted-mail mode, cp1252 text, malformed
 escapes, phoneme input with `/pitch;duration/` annotations, skim mode
-(`ESC[2f`), `ESC[..N`/`ESC[..F` flag changes, and the sample texts shipped
-with TruVoice when present.  A
+(`ESC[2f`), `ESC[..N`/`ESC[..F` flag changes, bracket spell mode, English
+morphology and contractions, homographs in context, user-lexicon entries
+added with `-L`, and the sample texts shipped with TruVoice when present.  A
 `NAME.opts` file next to an input pins its harness options.
 
 ## Known deviations
 
 * `TextIn_ReadEscape` bounds its buffer; the original overruns it for
   `ESC[` sequences longer than 17 characters (no reference output exists).
+* `Stage1_VowelAux` (0x10064200) is written from the disassembly but the
+  corpus never reaches it, so it is the one function not verified by
+  execution.

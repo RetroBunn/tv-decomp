@@ -152,9 +152,11 @@ extern const uint8_t g_lts_cond_strong[];
 
 /* @0x10062900 */
 Node *TV_THISCALL Stage1_Pronounce(Engine *self);
-/* Stress and duration for one vowel (not yet decompiled). */
 /* @0x10060a60 */
 Node *TV_THISCALL Stage1_Vowel(Engine *self, Node *n);
+/* A helper of the per-vowel pass (unverified: never reached by the corpus). */
+/* @0x10064200 */
+uint8_t TV_THISCALL Stage1_VowelAux(Engine *self);
 /* Phrase-level prosody, around the '%' marker (not yet decompiled). */
 /* @0x100638a0 */
 void TV_THISCALL Stage1_Phrase(Engine *self);
@@ -258,6 +260,43 @@ void Lexicon_Lock(void);
 void Lexicon_Unlock(void);
 /* @0x10050d30 */
 uint8_t TV_THISCALL Lexicon_Try(Engine *self);
+
+/* ---- built-in dictionary (dict.c) --------------------------------------- */
+
+/* The state machine that packs a word's letters into a lookup key. */
+typedef struct DictKeyState {
+    uint32_t mask;      /* 0x00 */
+    uint32_t mask2;     /* 0x04 */
+    uint8_t  next;      /* 0x08 */
+    uint8_t  pad09[3];
+    uint8_t  shift;     /* 0x0c */
+    uint8_t  pad0d[3];
+    uint8_t  pstate;    /* 0x10 the phoneme state to start unpacking in */
+    uint8_t  pad11[3];
+    uint8_t  last_mask; /* 0x14 */
+    uint8_t  pad15[3];
+} DictKeyState;
+
+/* The state machine that unpacks an entry's phoneme stream. */
+typedef struct DictPhState {
+    uint32_t mask;      /* 0x00 */
+    uint32_t mask2;     /* 0x04 */
+    uint8_t  next;      /* 0x08 */
+    uint8_t  pad09[3];
+    uint8_t  shift;     /* 0x0c */
+    uint8_t  pad0d[3];
+} DictPhState;
+
+/* @0x100f9a10 */ extern const DictKeyState g_dict_key[];
+/* @0x100f9a58 */ extern const DictPhState g_dict_ph[];
+/* Entry size per key state and suffix count: [state * 17 + n]. */
+/* @0x100f9a98 */ extern const uint8_t g_dict_skip[];
+/* The blob's index: one bucket pointer per letter, then a limit. */
+/* @0x100f9acc */ extern const uint32_t *const g_dict_base;
+
+/* @0x10050d20 */
+uint8_t TV_CDECL Dict_Byte(const void *p);
+
 /* @0x10048010 */
 uint8_t TV_STDCALL Phone_IsVowel(uint8_t c);
 /* @0x1002b430 */
