@@ -157,7 +157,7 @@ uint8_t TV_THISCALL Synth_Step(Engine *self)
         if (self->trk_04 == self->trk_08)
             self->synth_busy = 1;
     }
-    Synth_10002a40(self);
+    Synth_Frame(self);
     return 1;
 }
 

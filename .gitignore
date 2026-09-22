@@ -68,3 +68,7 @@ dkms.conf
 /HOMOGRPH.TXT
 /PHONE.TXT
 /SAMPLE.TXT
+
+# Python bytecode
+__pycache__/
+*.pyc

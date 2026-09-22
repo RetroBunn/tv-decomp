@@ -193,6 +193,7 @@ struct Engine 0x9184
 0x2074 uint8_t  e_2074
 0x2075 uint8_t  mute             # volume below 0x50
 0x2076 int16_t  o_2076
+0x2078 int16_t  o_2078
 0x207a int16_t  o_207a
 0x207c int16_t  o_207c
 0x207e int16_t  o_207e

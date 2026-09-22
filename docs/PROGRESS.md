@@ -25,7 +25,7 @@ engine object; each stage owns a window into it and hands finished nodes to
 the next stage.  `StageCtx.type_mask` selects the node types a stage
 handles; other node types are control commands it executes in passing.
 
-## Done (112 functions)
+## Done (120 functions)
 
 * **Node/stage core** `node.c`: list insert/unlink, pool reset, node
   alloc/free, stage begin/end/next/prev, append.
@@ -33,7 +33,12 @@ handles; other node types are control commands it executes in passing.
 * **Lifecycle** `engine.c`: construct, init, reset, pitch/speed/volume/voice
   setters, step scheduler.
 * **Synthesizer state** `synth.c`: parameter tracks, filter coefficient
-  selection (8000/11025 Hz), parameter scaling, track position ops.
+  selection (8000/11025 Hz), parameter scaling, track position ops,
+  plus the fixed-point helpers and frame gate in `frame.c`.
+* **Synthesizer core** `generate.c`: `Synth_Generate`, the sample loop --
+  a table-interpolated glottal pulse, the cascade of formant resonators,
+  the parallel fricative branch, de-emphasis and the output scaling, all
+  in the original 16-bit fixed point.
 * **Stage resets** `stages.c` + stage 4 driver.
 * **Feeding** `feed.c`: `Engine_Feed`, `Engine_Flush`.
 * **Preformatter** `preformat.c`: accent folding, `ESC[..X` command parser.
@@ -43,7 +48,9 @@ handles; other node types are control commands it executes in passing.
 * **Control commands** `control.c`: the per-stage executor for the embedded
   ESC commands, plus `sapi.c` for the few call-backs into the SAPI layer.
 * **Stage 0** `stage0.c`: the rule interpreter (19 condition opcodes, 23
-  action opcodes, rule call stack, word-list matching, emit/finish).
+  action opcodes, rule call stack, word-list matching, emit/finish), and
+  `phonetic.c` for the bracket mode that reads phoneme names instead of
+  words ("[HH AH L OW]").
 * **Stage 1** `stage1.c`: the driver, span gathering, the prosody pass
   (`Stage1_Pronounce`), stress marking and syllable numbering, the affix
   rule machinery -- `Lts_TestContext` (the context-condition byte code),
@@ -65,17 +72,16 @@ handles; other node types are control commands it executes in passing.
 
 ## Next
 
-1. `Stage0_Spell` (0x10032230) - letter-by-letter spelling, reached when
-   stage 0 runs in spell mode.
-2. Stage 2 (0x1002b2b0).
-3. Stage 3 (0x1002c980) - phonetics to the 22 parameter tracks.
-4. Synthesizer (`0x10025cb0`, `0x10002a40`) - the DSP core.
-5. Portable build: MSVC-compatible CRT pieces, data extraction from the DLL,
+1. Stage 2 (0x1002b2b0) and its subtree (38 functions, 33 KB).
+2. Stage 3 (0x1002c980) and its subtree (57 functions, 57 KB).
+3. `Synth_Frame` (`0x10002a40`, 2.6 KB) - builds filt_coef for each frame
+   from the 22 parameter tracks.
+4. Portable build: MSVC-compatible CRT pieces, data extraction from the DLL,
    `Engine_Read32/Write32` for the raw-offset accesses (see layout.c).
 
 ## Test corpus
 
-`tests/corpus/*.txt` (39 inputs), run in 290 configurations: ten voices at
+`tests/corpus/*.txt` (40 inputs), run in 294 configurations: ten voices at
 11025 and 8000 Hz, pitch/speed/volume variants, PreFormat and TextIn on and
 off, embedded ESC commands, quoted-mail mode, cp1252 text, malformed
 escapes, phoneme input with `/pitch;duration/` annotations, skim mode

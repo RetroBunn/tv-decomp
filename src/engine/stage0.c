@@ -239,7 +239,7 @@ uint8_t TV_THISCALL Stage0_Run(Engine *self)
                 if (st->p_1c == 2) {
                     if (st->scan == st->last)
                         return Stage0_Finish(self, 0);
-                    Stage0_Spell(self);
+                    Stage0_Phonetic(self);
                 }
                 c = st->scan->value;
                 if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||

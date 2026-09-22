@@ -82,8 +82,18 @@ uint8_t TV_THISCALL Synth_Step(Engine *self);
 /* Generate the samples for one parameter frame (not yet decompiled). */
 /* @0x10025cb0 */
 void TV_THISCALL Synth_Generate(Engine *self, int16_t sample_rate, int16_t *coef);
+/* Build one frame of filt_coef from the parameter tracks (not yet
+ * decompiled). */
 /* @0x10002a40 */
-void TV_THISCALL Synth_10002a40(Engine *self);
+void TV_THISCALL Synth_Frame(Engine *self);
+/* @0x10025150 */
+int32_t TV_STDCALL Synth_MulQ15(int32_t a, int32_t b);
+/* @0x10025280 */
+int32_t TV_STDCALL Synth_MulShr11(int32_t a, int32_t b);
+/* @0x10025290 */
+int32_t TV_STDCALL Synth_MulShr12(int32_t a, int32_t b, int32_t *hi);
+/* @0x10004750 */
+uint8_t TV_THISCALL Synth_Gate(Engine *self, int32_t op);
 /* @0x100038d0 */
 uint8_t TV_THISCALL Tracks_Op(Engine *self, int32_t op, int32_t n);
 
@@ -123,9 +133,13 @@ uint8_t TV_THISCALL Stage0_MatchWord(Engine *self, uint8_t list, uint8_t fold_ca
 void TV_THISCALL Stage0_Emit(Engine *self, int32_t type, uint8_t value);
 /* @0x100320f0 */
 uint8_t TV_THISCALL Stage0_Finish(Engine *self, uint8_t done);
-/* Letter-by-letter spelling (not yet decompiled). */
+/* Phonetic input mode: "[...]" spelled as phoneme names (phonetic.c). */
 /* @0x10032230 */
-void TV_THISCALL Stage0_Spell(Engine *self);
+void TV_THISCALL Stage0_Phonetic(Engine *self);
+/* @0x10033290 */
+void TV_THISCALL Stage0_PhoneticDigit(Engine *self);
+/* @0x100332e0 */
+void TV_THISCALL Stage0_PhoneticPair(Engine *self);
 
 /* ---- stage 1: word pronunciation (stage1.c) ----------------------------- */
 
