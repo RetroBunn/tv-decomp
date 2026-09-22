@@ -1025,7 +1025,7 @@ void TV_THISCALL Stage3_Apply(Engine *self, const S3Edit *const *edits,
                 case 6:  p = &self->s3_param[e->index].len;       break;
                 case 7:  p = &self->trk_wr[e->index];             break;
                 case 8:  p = &self->trk_rd[e->index];             break;
-                case 9:  p = &self->s3_1f40[e->index];            break;
+                case 9:  p = &self->s3_next[e->index];            break;
                 case 10: p = &self->s3_param_def[e->index];       break;
                 case 11: p = &self->s3_param_rate[e->index];      break;
                 case 12: p = &self->s3_1e5c[e->index];            break;
@@ -1391,5 +1391,777 @@ void TV_THISCALL Stage3_Op5(Engine *self)
         if (st->scan->value == 'g' && st->cur->value == 's' &&
             st->cur->prev->value == 'C')
             self->s3_param[2].target = 0x43;
+    }
+}
+
+/*
+ * The per-phoneme parameter tables, all indexed by the phoneme's class.
+ * Eight of them give the formants and their bandwidths; the amplitudes come
+ * through a second level of indirection because only the classes above 0x1e
+ * -- the ones that make a noise of their own -- have them.
+ */
+/* @0x100eece8 */ extern const uint8_t g_pt_f1[64];
+/* @0x100eed28 */ extern const uint8_t g_pt_f2[64];
+/* @0x100eed68 */ extern const uint8_t g_pt_f3[64];
+/* @0x100eeda8 */ extern const uint8_t g_pt_f4[64];
+/* @0x100eede8 */ extern const uint8_t g_pt_b1[64];
+/* @0x100eee28 */ extern const uint8_t g_pt_b2[64];
+/* @0x100eee68 */ extern const uint8_t g_pt_b3[64];
+/* @0x100eeea8 */ extern const uint8_t g_pt_av[64];
+/* @0x100ef158 */ extern const uint8_t *const g_pt_a1;
+/* @0x100ef180 */ extern const uint8_t *const g_pt_a2;
+/* @0x100ef1a8 */ extern const uint8_t *const g_pt_a3;
+/* @0x100ef1d0 */ extern const uint8_t *const g_pt_a4;
+/* @0x100ef1f8 */ extern const uint8_t *const g_pt_a5;
+/* @0x100ef220 */ extern const uint8_t *const g_pt_a6;
+/* @0x100ef248 */ extern const uint8_t *const g_pt_a7;
+/* @0x100ef270 */ extern const uint8_t *const g_pt_a8;
+/* @0x100ef330 */ extern const uint8_t *const g_pt_a16;
+/* The second set, for the classes below 0x13. */
+/* @0x100eefd8 */ extern const uint8_t g_at_f1[];
+/* @0x100eeff0 */ extern const uint8_t g_at_f2[];
+/* @0x100ef008 */ extern const uint8_t g_at_f3[];
+/* @0x100ef020 */ extern const uint8_t g_at_f4[];
+/* @0x100ef038 */ extern const uint8_t g_at_b1[];
+/* @0x100ef050 */ extern const uint8_t g_at_b2[];
+/* @0x100ef068 */ extern const uint8_t g_at_b3[];
+/* @0x100ef120 */ extern const uint8_t g_pt_open[];
+/* The transition context each class leaves behind and expects. */
+/* @0x100eeee8 */ extern const int32_t g_ctx_next[];
+/* @0x100ef080 */ extern const int32_t g_ctx_prev[];
+/* How fast a parameter may move, by the pair of contexts. */
+/* @0x100ef290 */ extern const int32_t g_rate_by_ctx[];
+/* The curve each parameter starts out travelling along. */
+/* @0x100ef310 */ extern const uint8_t g_shape_init[22];
+/* The burst a stop makes, by its place and whether a vowel follows. */
+/* @0x100ef377 */ extern const uint8_t g_stop_burst[];
+/* @0x1002d9cc */ extern const uint8_t g_stop_rel_kind[17];
+/* Per-voice offsets. */
+/* @0x100b53c8 */ extern const int32_t g_voice_f4[];
+/* @0x100b5310 */ extern const uint8_t g_voice_p18[];
+/* @0x100b5320 */ extern const uint8_t g_voice_p19[];
+/* @0x100b5330 */ extern const uint8_t g_voice_p20[];
+/* @0x100b5340 */ extern const uint8_t g_voice_p21[];
+
+/*
+ * Load this phoneme's parameter targets.
+ *
+ * Everything the synthesizer needs for one phoneme comes out of the tables
+ * above, read with the phoneme's class: four formants and their bandwidths,
+ * the amplitudes of the cascade and the parallel branch, the pitch.  What
+ * follows is the part the tables cannot hold -- how a stop's burst and
+ * release depend on what it sits between -- and then the defaults every
+ * parameter starts from before the rules run.
+ */
+/* @0x1002d0d0 */
+void TV_THISCALL Stage3_Targets(Engine *self)
+{
+    StageCtx *st = &self->stage_ctx[3];
+    Node *ctl = st->ctl;
+    Node *cur = st->cur;
+    Node *scan;
+    int32_t c_ctl = px3(ctl->value);
+    uint8_t c_cur = cur->value;
+    int32_t cls_ctl = (int32_t)(int8_t)g_phone_class[c_ctl];
+    int32_t cls_cur = (int32_t)g_phone_class[px3(c_cur)];
+    int32_t voice = st->voice;
+    int32_t i, v, kind, cls_scan, idx;
+    uint8_t a, a_scan, c, d;
+
+    if ((uint32_t)cls_cur < 0x13 && c_cur != 'u' && ctl->value != 'j')
+        v = g_ctx_prev[cls_cur];
+    else
+        v = self->s3_1e30;
+    self->s3_1e2c = v;
+    self->s3_1e24 = self->s3_1e28;
+    self->s3_1e30 = g_ctx_next[cls_ctl];
+    self->s3_1e54 = 0x33;
+    self->s3_1e5c[2] = 0;
+    self->s3_1e5c[1] = 0;
+    self->s3_1e58 = 0x33;
+    self->s3_1e5c[0] = 0;
+
+    a = Phone_Attr(c_ctl | 0x100);
+    if (a & 2)
+        self->s3_1e28 = 0;
+    else if (a & 1)
+        self->s3_1e28 = 3;
+    else
+        self->s3_1e28 = (Phone_Attr(c_ctl) & 2) ? 1 : 2;
+
+    self->s3_param[9].target  = (int32_t)g_pt_f1[cls_ctl] << 2;
+    self->s3_param[10].target = ((int32_t)g_pt_f2[cls_ctl] << 3) + 0x1f4;
+    self->s3_param[11].target = (int32_t)g_pt_f3[cls_ctl] << 4;
+    self->s3_param[12].target = ((int32_t)g_pt_f4[cls_ctl] << 4) +
+                                g_voice_f4[voice];
+    self->s3_param[13].target = (int32_t)g_pt_b1[cls_ctl] * 2;
+    self->s3_param[14].target = (int32_t)g_pt_b2[cls_ctl] * 2;
+    self->s3_param[15].target = (int32_t)g_pt_b3[cls_ctl] * 2;
+    self->s3_param[0].target  = (int32_t)g_pt_av[cls_ctl];
+    self->s3_param[17].target = (int32_t)ctl->b15 * 2;
+    self->s3_param[18].target = (int32_t)g_voice_p18[voice];
+    self->s3_param[19].target = (int32_t)g_voice_p19[voice];
+    self->s3_param[20].target = (int32_t)g_voice_p20[voice];
+    self->s3_param[21].target = (int32_t)g_voice_p21[voice];
+
+    if (cls_ctl < 0x1e) {
+        /* a class with no noise of its own */
+        self->s3_param[1].target = 0;
+        self->s3_param[2].target = 0;
+        self->s3_param[3].target = 0x3c;
+        self->s3_param[4].target = 0x3c;
+        self->s3_param[5].target = 0x3c;
+        self->s3_param[6].target = 0x3c;
+        self->s3_param[7].target = 0x3c;
+        self->s3_param[8].target = 0;
+        if (cls_ctl < 0x13) {
+            self->s3_1e44 = (int32_t)g_pt_open[cls_ctl];
+            self->s3_alt[0] = (int32_t)g_at_f1[cls_ctl] << 2;
+            self->s3_alt[1] = ((int32_t)g_at_f2[cls_ctl] << 3) + 0x1f4;
+            self->s3_alt[2] = (int32_t)g_at_f3[cls_ctl] << 4;
+            self->s3_alt[3] = (int32_t)g_at_f4[cls_ctl] << 4;
+            self->s3_alt[4] = (int32_t)g_at_b1[cls_ctl] * 2;
+            self->s3_alt[5] = (int32_t)g_at_b2[cls_ctl] * 2;
+            self->s3_alt[6] = (int32_t)g_at_b3[cls_ctl] * 2;
+        }
+        if (c_ctl == 'u' && st->scan->value == 'j')
+            self->s3_1e30 = 0;
+        goto defaults;
+    }
+
+    self->s3_param[1].target = (int32_t)g_pt_a1[cls_ctl];
+    self->s3_param[2].target = (int32_t)g_pt_a2[cls_ctl];
+    self->s3_param[3].target = (int32_t)g_pt_a3[cls_ctl];
+    self->s3_param[4].target = (int32_t)g_pt_a4[cls_ctl];
+    self->s3_param[5].target = (int32_t)g_pt_a5[cls_ctl];
+    self->s3_param[6].target = (int32_t)g_pt_a6[cls_ctl];
+    self->s3_param[7].target = (int32_t)g_pt_a7[cls_ctl];
+    self->s3_param[8].target = (int32_t)g_pt_a8[cls_ctl];
+
+    if (cls_ctl < 0x22 || cls_ctl >= 0x2b)
+        goto defaults;
+
+    scan = st->scan;
+    if (cls_ctl >= 0x26 && cls_ctl < 0x29) {
+        /* an affricate: the burst depends on what follows */
+        kind = (int32_t)g_class_kind[g_phone_class[px3(scan->value)]];
+        if (kind == 8 || kind == 9)
+            goto defaults;
+        self->s3_1e5c[1] = 0x7f;
+        if (kind == 6 && ctl->value != 't')
+            self->s3_1e5c[1] = (ctl->value == 'J') ? 0x36 : 0x3c;
+        self->s3_1e5c[2] = (ctl->value == 'J') ? 0 : 0x33;
+        if (kind == 6 && ctl->value == 'C')
+            self->s3_1e5c[2] = 0;
+        self->s3_1e5c[1] = 0x7f;
+        if (kind == 6 && ctl->value != 't')
+            self->s3_1e5c[1] = (ctl->value == 'J') ? 0 : 0x46;
+        self->s3_1e5c[0] = 0x7f;
+        if (kind == 6 && ctl->value == 'J')
+            self->s3_1e5c[0] = 0;
+        self->s3_1e38 = 0x7f;
+        self->s3_1e3c = (cls_ctl == 0x26) ? 0x7f : 1;
+        goto defaults;
+    }
+
+    /* a stop: its burst comes from a small table of its own */
+    idx = cls_ctl - 0x22;
+    if (cls_ctl >= 0x29)
+        idx -= 3;
+    idx <<= 3;
+    if (!(Phone_Attr(px3(scan->value) | 0x100) & 2))
+        idx += 4;
+    for (i = 1; i <= 3; i++)
+        self->s3_1e5c[i - 1] = (int32_t)g_stop_burst[idx + i];
+    self->s3_param[8].target = (int32_t)g_stop_burst[idx + 4];
+
+    d = scan->value;
+    kind = (int32_t)g_class_kind[g_phone_class[px3(d)]];
+    if (kind == 8 || kind == 9) {
+        c = ctl->value;
+        if (c == 'P' || c == 'K' || c == 'B' || c == 'G' || c == 'T' ||
+            c == 'D') {
+            int32_t mute = 1;
+
+            if (c == 'K' &&
+                ((Phone_Attr(px3(d)) & 0x10) || d == 'Q' || d == 't'))
+                mute = 0;
+            if (mute) {
+                self->s3_1e5c[0] = 0x7f;
+                self->s3_1e5c[1] = 0x7f;
+                self->s3_1e5c[2] = 0x7f;
+                self->s3_param[8].target = 0;
+            }
+        }
+    }
+
+    if (Phone_Attr(px3(ctl->value)) & 4)
+        self->s3_1e38 = 0x7f;
+    else
+        self->s3_1e38 = (int32_t)(ctl->d10 & 0xffu);
+
+    self->s3_1e3c = 0;
+    a_scan = Phone_Attr(px3(d) | 0x100);
+    if ((a_scan & 1) && !(Phone_Attr(px3(d)) & 0x10) &&
+        (!(Phone_Attr(px3(cur->value) | 0x100) & 1) ||
+         (Phone_Attr(px3(cur->value)) & 0x10))) {
+        /* the release of a stop into another stop */
+        i = px3(ctl->value) - 0x44;
+        if ((uint32_t)i > 0x10) {
+            self->s3_1e3c = 0x7f;
+            goto defaults;
+        }
+        switch (g_stop_rel_kind[i]) {
+        case 0:
+            if (cur->value == 'j' && (d == 'B' || d == 'G'))
+                self->s3_1e3c = 1;
+            break;
+        case 1:
+            if (d == 'P') {
+                self->s3_1e3c = 1;
+                self->s3_1e5c[1] = 0x3c;
+                self->s3_1e5c[2] = 0x30;
+            } else {
+                self->s3_1e3c = 0x7f;
+            }
+            break;
+        case 2:
+            if (!(Phone_Attr(px3(d)) & 4)) {
+                self->s3_1e3c = 1;
+                self->s3_1e5c[1] = 0x3c;
+                self->s3_1e5c[2] = 0x30;
+            } else {
+                self->s3_1e3c = 0x7f;
+            }
+            break;
+        default:
+            self->s3_1e3c = 0x7f;
+            break;
+        }
+        goto defaults;
+    }
+
+    c = ctl->value;
+    if (c == 'K' && (Phone_Attr(px3(d)) & 0x40)) {
+        self->s3_1e3c = 1;
+    } else if (c == 'G') {
+        if (!(scan->flags & 0x20u) && (a_scan & 2))
+            self->s3_1e3c = 1;
+        else
+            self->s3_1e3c = 2;
+    } else if (c == 'T' && (Phone_Attr(px3(d)) & 0x40)) {
+        self->s3_1e3c = 0x7f;
+    } else if (c == 'D') {
+        if ((Phone_Attr(px3(d)) & 2) && !(a_scan & 2))
+            self->s3_1e3c = 0x7f;
+        else if (cur->value == ' ')
+            self->s3_1e3c = 2;
+        else
+            self->s3_1e3c = 1;
+    } else if (!(Phone_Attr(px3(c) | 0x100) & 0x10) && d != 'p') {
+        self->s3_1e3c = 2;
+    } else {
+        self->s3_1e3c = 1;
+    }
+
+defaults:
+    if (cls_ctl >= 0x35)
+        self->s3_param[16].target = (int32_t)g_pt_a16[cls_ctl] * 4 + 0xc0;
+    else
+        self->s3_param[16].target = 0xf8;
+
+    v = g_rate_by_ctx[self->s3_1e24 * 4 + self->s3_1e28];
+    for (i = 0; i < 22; i++) {
+        self->s3_param[i].shape_out = (int32_t)g_shape_init[i];
+        self->s3_param[i].mode = 7;
+        self->s3_param[i].len = (int32_t)st->ctl->arg;
+        self->s3_param_rate[i] = v;
+    }
+    self->s3_param[20].mode = 4;
+    self->s3_param[21].mode = 4;
+
+    /* and a look-ahead at where the next phoneme wants the formants */
+    cls_scan = (int32_t)(int8_t)g_phone_class[px3(st->scan->value)];
+    self->s3_next[9]  = (int32_t)g_pt_f1[cls_scan] << 2;
+    self->s3_next[10] = ((int32_t)g_pt_f2[cls_scan] << 3) + 0x1f4;
+    self->s3_next[11] = (int32_t)g_pt_f3[cls_scan] << 4;
+    if (cls_scan >= 0x22) {
+        self->s3_next[13] = (int32_t)g_pt_b1[cls_scan] * 2;
+        self->s3_next[14] = (int32_t)g_pt_b2[cls_scan] * 2;
+        self->s3_next[15] = (int32_t)g_pt_b3[cls_scan] * 2;
+    }
+}
+
+/*
+ * The voiced stops and the fricatives before them.
+ *
+ * A voiced stop keeps a little voicing going through its closure, which
+ * these rules size; the "s" of an affricate is shortened before a nasal;
+ * and the parallel branch is muted where the closure is complete.
+ */
+/* @0x10049260 */
+void TV_THISCALL Stage3_Op6(Engine *self)
+{
+    StageCtx *st = &self->stage_ctx[3];
+    Node *scan = st->scan;
+    Node *cur = st->cur;
+    int32_t c_ctl = px3(st->ctl->value);
+    int32_t c_scan = px3(scan->value);
+    uint8_t a, b;
+    Node *n;
+    int32_t v;
+
+    if (Phone_Attr(c_ctl | 0x180) & 4) {
+        int32_t shortened = 0;
+
+        if (c_ctl == 's') {
+            n = st->ctl->next;
+            b = n->value;
+            if ((b == '|' || b == '@') && n->next->value == 'N') {
+                self->s3_param[1].shape_out -= 2;
+                shortened = 1;
+            } else if (!(Phone_Attr(c_scan | 0x100) & 0x20) &&
+                       !(Phone_Attr(c_scan | 0x180) & 0x20)) {
+                self->s3_param[1].shape_out -= 2;
+                shortened = 1;
+            }
+        }
+        if (!shortened)
+            self->s3_param[1].shape_out = 6;
+
+        if ((Phone_Attr(c_ctl | 0x80) & 8) &&
+            !(Phone_Attr(px3(cur->value)) & 4))
+            self->s3_param[0].target = 0;
+    }
+
+    if (Phone_Attr(c_scan) & 2) {
+        self->s3_1e40 = 2;
+        if (scan->arg <= 2u)
+            self->s3_1e40 = (int32_t)scan->arg - 1;
+        if (Phone_Attr(c_ctl) & 0x20)
+            self->s3_1e40 = 0;
+        if ((c_ctl == 'X' && c_scan == 'R') || c_ctl == 'S')
+            self->s3_1e40 = 0;
+        if (c_ctl != 's')
+            self->s3_param[1].len += self->s3_1e40;
+    }
+
+    a = Phone_Attr(c_ctl);
+    if (!(a & 4) || !(a & 0x20))
+        goto tail;
+
+    /* a voiced stop */
+    if (!((c_ctl == 'D' &&
+           ((Phone_Attr(c_scan | 0x100) & 2) || c_scan == 'n')) ||
+          (c_ctl == 'J' && c_scan == 'z') ||
+          (scan->flags & 0x20u))) {
+        self->s3_param[5].target = 0;
+        self->s3_param[4].target = 0;
+    }
+
+    if (!((Phone_Attr(c_scan | 0x100) & 2) ||
+          (c_ctl == 'G' && c_scan == 'Y') || c_scan == 'Z' ||
+          (c_ctl == 'D' && c_scan == 'n')))
+        self->s3_param[0].target -= 0x14;
+
+    b = Phone_Attr(px3(cur->value));
+    if (((b & 4) || (c_ctl == 'D' && c_scan == '|')) && c_ctl != 'q') {
+        if (!(b & 2))
+            self->s3_param[0].target -= 0x1e;
+    } else {
+        self->s3_param[0].target = 0;
+    }
+
+    if (c_ctl != 'q' && (Phone_Attr(px3(cur->value)) & 4)) {
+        self->s3_param[0].target = 0x32;
+        self->s3_param[0].shape_out = (int32_t)st->ctl->arg;
+        goto tail;
+    }
+
+    if ((c_ctl == 'B' || c_ctl == 'G') && cur->value == 'S') {
+        self->s3_param[0].target = 0;
+        goto tail;
+    }
+    if (!(Phone_Attr(c_scan | 0x100) & 2))
+        goto tail;
+    if (c_ctl == 'B') {
+        self->s3_param[0].target = 0x32;
+        goto tail;
+    }
+    if (c_ctl != 'D')
+        goto tail;
+    if (c_scan == '|') {
+        self->s3_param[0].target = 0;
+        goto tail;
+    }
+    b = cur->value;
+    if (b != ' ' && b != 'S') {
+        if (scan->flags & 0x20u)
+            self->s3_param[0].target = 0x2b;
+        goto tail;
+    }
+    if ((Phone_Attr(px3(b)) & 1) && scan->value != 'p') {
+        self->s3_param[5].target = 0;
+        self->s3_param[4].target = 0;
+    }
+
+tail:
+    if (c_scan == 's' && scan->next->value == 'R' &&
+        (st->ctl->flags & 0x20u)) {
+        self->s3_1e5c[2] = 0;
+        self->s3_param[7].target = 0x41;
+        self->s3_param[4].target = 0x3c;
+        self->s3_1e5c[1] = 0x3c;
+    }
+    if (c_ctl == 'F' && cur->value == ' ')
+        self->s3_param[8].target = 0x3c;
+    if (c_ctl == 'V')
+        self->s3_param[8].target = 0x38;
+}
+
+/* @0x10050740 */
+void TV_THISCALL Stage3_Voiced(Engine *self);
+
+/*
+ * A liquid or a glide next to a consonant.
+ *
+ * These are the sounds whose formants move furthest, so most of this decides
+ * how long they have to get there, and when the amplitudes should go back to
+ * the phoneme's own defaults rather than carrying over.
+ */
+/* @0x10048310 */
+void TV_THISCALL Stage3_Op3(Engine *self)
+{
+    StageCtx *st = &self->stage_ctx[3];
+    Node *ctl = st->ctl;
+    Node *cur = st->cur;
+    Node *n;
+    int32_t c_ctl = px3(ctl->value);
+    int32_t c_cur = px3(cur->value);
+    uint8_t a_cur = Phone_Attr(c_cur);
+    uint8_t a_ctl = Phone_Attr(c_ctl | 0x100);
+    uint8_t a_cur3, b;
+    int32_t i, v, kind, restore = 0;
+
+    if (((c_ctl == 'R' || c_ctl == 'L' || c_ctl == 'W') &&
+         (a_cur & 0x40) && (a_cur & 4)) ||
+        !((a_cur & 4) || c_cur == ' ' || c_cur == 'H' ||
+          (cur->flags & 0x40u) ||
+          ((ctl->flags & 0x20u) && (a_ctl & 2) && c_cur == 'D')))
+        Stage3_Voiced(self);
+
+    if (!(a_ctl & 2))
+        self->s3_1e38 = 0x7f;
+
+    if ((a_cur & 0x60) && c_cur != 's')
+        self->s3_param[1].len -= self->s3_1e40;
+
+    if (!Phone_IsVowel((uint8_t)c_ctl)) {
+        a_cur3 = Phone_Attr(c_cur | 0x180);
+        if (a_cur3 & 1) {
+            v = 7;
+            if ((Phone_Attr(c_ctl | 0x180) & 0x20) && c_cur == 'Y')
+                v = 0xb;
+            for (i = 9; i < 17; i++)
+                self->s3_param[i].shape_out = v;
+            if (Phone_Attr(c_cur | 0x100) & 8)
+                self->s3_param[11].shape_out = 9;
+        }
+        if (!(a_ctl & 0x10) &&
+            ((Phone_Attr(c_cur | 0x200) & 4) || (a_cur3 & 0x40))) {
+            self->s3_param_rate[9] = 0x2cd8;
+            self->s3_param_rate[10] = 0x2cd8;
+            self->s3_param_rate[11] = 0x2cd8;
+        }
+        if ((Phone_Attr(c_ctl | 0x180) & 0x20) && (a_cur3 & 4))
+            self->s3_param[10].shape_out += 5;
+    }
+
+    if (c_cur == 'T' && ((a_ctl & 2) || c_ctl == 'n')) {
+        restore = 1;
+    } else if (c_cur == 'K') {
+        kind = (int32_t)g_class_kind[g_phone_class[c_ctl]];
+        if (kind == 3 || kind == 2 || c_ctl == 'a' || c_ctl == 'l' ||
+            c_ctl == 'W' || c_ctl == 'L' || c_ctl == 'Y' || c_ctl == 'p')
+            restore = 1;
+    }
+    if (!restore && c_cur == 'P') {
+        if (c_ctl == 'i') {
+            restore = 1;
+        } else if (c_ctl == 'R') {
+            n = st->scan;
+            if ((n->flags & 0x20u) &&
+                (Phone_Attr(px3(n->value) | 0x100) & 2))
+                restore = 1;
+        }
+    }
+    if (!restore && c_cur == 'X' && (c_ctl == 'R' || (a_ctl & 2)))
+        restore = 1;
+    if (restore) {
+        for (i = 3; i < 9; i++)
+            self->s3_param[i].target = self->s3_param_def[i];
+    }
+
+    if ((c_cur == 'P' || c_cur == 'T' || c_cur == 'K') && c_ctl == 'p')
+        self->s3_param[0].target = 0;
+
+    if ((a_ctl & 2) && !(ctl->flags & 0x20u)) {
+        b = ctl->next->value;
+        if (b != '&' && b != '%') {
+            n = st->scan;
+            if ((Phone_Attr(px3(n->value) | 0x100) & 2) &&
+                (n->flags & 0x20u))
+                self->s3_param[0].target -= 2;
+        }
+    }
+    if ((a_ctl & 2) && (ctl->flags & 0x20u)) {
+        b = ctl->prev->value;
+        if (b != '&' && b != '%') {
+            n = st->cur;
+            if ((Phone_Attr(px3(n->value) | 0x100) & 2) &&
+                !(n->flags & 0x20u))
+                self->s3_param[0].target += 2;
+        }
+    }
+
+    if ((c_ctl == 'R' || c_ctl == 'L') && ctl->prev->value == 'P')
+        self->s3_param[8].target = 0;
+}
+
+/* Packed bit tables, one per kind of table the caller asks for. */
+/* @0x10039cec */ extern const uint8_t g_bits_sel[24];
+/* @0x100cef70 */ extern const uint8_t g_bits0[];
+/* @0x1012c0be */ extern const uint8_t g_bits1[];
+/* @0x1010ad82 */ extern const uint8_t g_bits2[];
+/* @0x100ae526 */ extern const uint8_t g_bits3[];
+/* @0x10101b1b */ extern const uint8_t g_bits4[];
+/* @0x100c7d4f */ extern const uint8_t g_bits5[];
+/* @0x100f72cb */ extern const uint8_t g_bits6[];
+
+/* Count the bits set across the first n bytes of one of those tables. */
+/* @0x10039bb0 */
+int32_t TV_STDCALL Bits_Count(int32_t which, int32_t n)
+{
+    const uint8_t *tab;
+    int32_t total = 0, i, v, b;
+    /* The original leaves this from the previous row when "which" is out of
+     * range, which the tables never are. */
+    int32_t byte = 0;
+
+    if (n > 0x91)
+        n = 0x91;
+    for (i = 0; i < n; i++) {
+        v = 0x100;
+        if ((uint32_t)which <= 0x17) {
+            switch (g_bits_sel[which]) {
+            case 0: tab = g_bits0; break;
+            case 1: tab = g_bits1; break;
+            case 2: tab = g_bits2; break;
+            case 3: tab = g_bits3; break;
+            case 4: tab = g_bits4; break;
+            case 5: tab = g_bits5; break;
+            default: tab = g_bits6; break;
+            }
+            byte = (int32_t)tab[which * 145 + i];
+        }
+        b = byte;
+        while (b != 0) {
+            v /= 2;
+            if ((uint32_t)b >= (uint32_t)v) {
+                b -= v;
+                total++;
+            }
+        }
+    }
+    return total;
+}
+
+/*
+ * Find which entry of each of four tables allows this pair of phonemes.
+ *
+ * Each table is a list of entries, and each entry names a phoneme and the
+ * set of phonemes it may be followed by.  What comes back is the index of
+ * the first entry that allows the pair, or the table's length when none do.
+ */
+/* @0x10050670 */
+void TV_STDCALL Stage3_FindPair(int32_t *out, uint8_t c1, uint8_t c2,
+                                const int32_t *counts,
+                                const S3Pair *const *tab)
+{
+    const S3Pair *p;
+    const uint8_t *s;
+    int32_t slot, base = 0, i;
+    uint8_t found;
+
+    for (slot = 0; slot < 4; slot++) {
+        found = 0;
+        if (slot != 0)
+            base += counts[slot - 1];
+        for (i = 0; i < counts[slot] && !found; i++) {
+            p = tab[base + i];
+            for (; p->ch != 0 && !found; p++) {
+                if (p->ch != c1)
+                    continue;
+                for (s = p->set; *s != 0 && !found; s++) {
+                    if (*s == c2) {
+                        found = 1;
+                        out[slot] = i;
+                    }
+                }
+            }
+        }
+        if (!found)
+            out[slot] = counts[slot];
+    }
+}
+
+/* A bit per position within a byte of the packed tables. */
+/* @0x100bf7f0 */ extern const uint8_t g_bit_mask[8];
+
+/*
+ * Where in the packed table this bit sits.
+ *
+ * The tables store one bit per slot; this says how many set bits come before
+ * the one asked for, which is its index among the entries that exist, or -1
+ * when the slot is empty.
+ */
+/* @0x10038700 */
+int32_t TV_STDCALL Bits_Rank(int32_t bit, int32_t row, int32_t which)
+{
+    const uint8_t *tab;
+    int32_t idx = bit + 34 * row;
+    int32_t byte_i = idx / 8;
+    int32_t bit_i = idx - byte_i * 8;
+    int32_t v = 0, n = 0, i;
+
+    if ((uint32_t)which <= 0x17) {
+        switch (g_bits_sel[which]) {
+        case 0: tab = g_bits0; break;
+        case 1: tab = g_bits1; break;
+        case 2: tab = g_bits2; break;
+        case 3: tab = g_bits3; break;
+        case 4: tab = g_bits4; break;
+        case 5: tab = g_bits5; break;
+        default: tab = g_bits6; break;
+        }
+        v = (int32_t)tab[which * 145 + byte_i];
+    }
+    if (!(v & (int32_t)g_bit_mask[bit_i]))
+        return -1;
+    if (byte_i > 0)
+        n = Bits_Count(which, byte_i);
+    for (i = 0; i <= bit_i; i++)
+        if (v & (int32_t)g_bit_mask[i])
+            n++;
+    return n - 1;
+}
+
+/* The rows of each table, indexed by which table and which row. */
+/* @0x1003b20c */ extern const uint8_t g_row_sel[22];
+/* @0x1012c4a0 */ extern const uint8_t *const g_row0[];
+/* @0x1010b3a0 */ extern const uint8_t *const g_row1[];
+/* @0x100aec90 */ extern const uint8_t *const g_row2[];
+/* @0x10102514 */ extern const uint8_t *const g_row3[];
+/* @0x100c898c */ extern const uint8_t *const g_row4[];
+/* @0x100f8084 */ extern const uint8_t *const g_row5[];
+
+/*
+ * Look for a value in one row of a table.
+ *
+ * The row's first byte says which of two values to look for, and carries
+ * half of the answer in its upper bits; finding the value plus 0x80 rather
+ * than the value itself is what makes the search succeed.
+ */
+/* @0x1003b0d0 */
+int32_t TV_THISCALL Stage3_FindRow(Engine *self, int32_t slot, int32_t which,
+                                   int32_t lo, int32_t hi, int32_t len)
+{
+    const uint8_t *tab;
+    int32_t off, want, i, b, half;
+    int32_t result = -1;
+    uint8_t stop = 0, hit = 0;
+
+    i = which - 2;
+    if ((uint32_t)i <= 0x15) {
+        switch (g_row_sel[i]) {
+        case 0: tab = g_row0[which]; break;
+        case 1: tab = g_row1[which]; break;
+        case 2: tab = g_row2[which]; break;
+        case 3: tab = g_row3[which]; break;
+        case 4: tab = g_row4[which]; break;
+        default: tab = g_row5[which]; break;
+        }
+    } else {
+        /* the original falls back on its own "this" here, which cannot be a
+         * table; the callers never ask for a row it does not have */
+        tab = (const uint8_t *)self;
+    }
+
+    if (slot == 0)
+        return result;
+    off = ((slot & 0xff) - 1) * (len + 1);
+    b = (int32_t)tab[off];
+    half = b >> 1;
+    want = (b & 1) ? (int32_t)(int8_t)hi : (int32_t)(int8_t)lo;
+
+    for (i = 1; len + 1 > i; i++) {
+        if (stop || hit)
+            continue;
+        b = (int32_t)tab[off + i];
+        if (b == want) {
+            stop = 1;
+        } else if (b == want + 0x80) {
+            hit = 1;
+            result = Bits_Count(which, 0x91) + half;
+        }
+    }
+    return result;
+}
+
+/* Which of seven formant sets a phoneme's nasal pole uses. */
+/* @0x100490b0 */ extern const uint8_t g_pole_sel[68];
+
+/*
+ * The formants of a nasal murmur.
+ *
+ * A nasal is voiced through a closed mouth, so its formants come from the
+ * nose rather than from where the tongue is; there are seven sets of them,
+ * chosen by which nasal it is and what it is next to.
+ */
+/* @0x10048ef0 */
+void TV_THISCALL Stage3_NasalPole(Engine *self, int32_t *out)
+{
+    StageCtx *st = &self->stage_ctx[3];
+    int32_t i = px3(st->ctl->value) - 0x34;
+
+    switch (((uint32_t)i <= 0x43) ? g_pole_sel[i] : 6) {
+    case 0:
+        out[1] = 0x731; out[2] = 0x99e; out[3] = 0xd42;
+        out[4] = 0x44;  out[5] = 0x198; out[6] = 0xbc;  out[0] = 0x108;
+        break;
+    case 1:
+        out[1] = 0x646; out[2] = 0x9e6; out[3] = 0xd8c;
+        out[4] = 0x4b;  out[5] = 0x198; out[6] = 0x119; out[0] = 0x128;
+        break;
+    case 2:
+        out[1] = 0x66e; out[2] = 0x9a7; out[3] = 0xd6c;
+        out[4] = 0x80;  out[5] = 0x4a;  out[6] = 0x37;  out[0] = 0x144;
+        break;
+    case 3:
+        out[1] = 0x423; out[2] = 0xa95; out[3] = 0xcd9;
+        out[4] = 0x8d;  out[5] = 0xc4;  out[6] = 0x5e;  out[0] = 0x162;
+        break;
+    case 4:
+        out[1] = 0x5d1; out[2] = 0x96c; out[3] = 0xbe2;
+        out[4] = 0x95;  out[5] = 0x4f;  out[6] = 0x3c;  out[0] = 0x17f;
+        break;
+    case 5:
+        out[1] = 0x5b5; out[2] = 0x9fa; out[3] = 0xdc1;
+        out[4] = 0xb2;  out[5] = 0x9c;  out[6] = 0x50;  out[0] = 0x183;
+        break;
+    default:
+        out[1] = 0x5b3; out[2] = 0x9d5; out[3] = 0xd19;
+        out[4] = 0x7d;  out[5] = 0xb9;  out[6] = 0x87;  out[0] = 0x154;
+        break;
     }
 }

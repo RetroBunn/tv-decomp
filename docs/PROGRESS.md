@@ -25,7 +25,7 @@ engine object; each stage owns a window into it and hands finished nodes to
 the next stage.  `StageCtx.type_mask` selects the node types a stage
 handles; other node types are control commands it executes in passing.
 
-## Done (181 functions)
+## Done (189 functions)
 
 * **Node/stage core** `node.c`: list insert/unlink, pool reset, node
   alloc/free, stage begin/end/next/prev, append.
@@ -61,7 +61,13 @@ handles; other node types are control commands it executes in passing.
   program of conditions followed by parameter edits and a list of routines
   to run.  Six of those sixteen routines are done so far, along with
   `Track_Nudge`, the shaper they use to fade a correction back into frames
-  that have already been written.
+  that have already been written.  `Stage3_Targets` is the table loader: every
+  phoneme's four formants, their bandwidths, the cascade and parallel
+  amplitudes and the pitch come out of tables read with the phoneme's class,
+  followed by the stop-burst and release rules the tables cannot hold.
+  Nine of the sixteen rule routines are done, along with the packed-table
+  helpers they share and `Stage3_NasalPole`, the seven formant sets a nasal
+  murmur can use.
 * **Stage resets** `stages.c` + stage 4 driver.
 * **Feeding** `feed.c`: `Engine_Feed`, `Engine_Flush`.
 * **Preformatter** `preformat.c`: accent folding, `ESC[..X` command parser.

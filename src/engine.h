@@ -559,6 +559,13 @@ typedef struct S3Edit {
     uint8_t  pad1[2];
 } S3Edit;
 
+/* One entry of a phoneme-pair table: a phoneme and the set it may precede. */
+typedef struct S3Pair {
+    uint8_t ch;            /* 0x00, zero ends the list */
+    uint8_t pad[3];
+    const uint8_t *set;    /* 0x04 */
+} S3Pair;
+
 typedef struct S3Rule {
     const uint8_t *cond;        /* 0x00 conditions, terminated by 0x18 */
     const S3Edit *const *edits; /* 0x04 blocks of edits, NULL-terminated */

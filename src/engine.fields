@@ -231,7 +231,8 @@ struct Engine 0x9184
 0x1e68 uint8_t  s3_flag[11]       # what kind of phoneme this is, for the rules
 0x1e74 int32_t  s3_param_def[22] # default of each synthesis parameter, scaled
 0x1ecc int32_t  s3_param_rate[22] # how fast each parameter may move
-0x1f40 int32_t  s3_1f40[22]
+0x1f24 int32_t  s3_alt[7]        # a second set of formant targets
+0x1f40 int32_t  s3_next[22]      # the targets of the phoneme after
 0x1f98 uint8_t  s3_param_raw[22]
 0x1fae uint8_t  s3_1fae
 0x1fb0 int32_t  s3_1fb0
