@@ -19,6 +19,7 @@ binaries are not part of this repository; place your own copy in
 | `python tools/difftest.py [--full]` | byte-exact comparison of `tvh_hook.exe` against `tvh.exe` over the corpus |
 | `python tools/difftest.py --port [--full]` | the same comparison for `tv.exe`, the standalone build |
 | `python tools/difftest.py --ref` | checks all three builds against recordings of the real installed engine in `ref/` |
+| `python tools/voicedump.py [dll...]` | prints the per-voice parameter tables out of a language DLL (see docs/VOICES.md) |
 
 `work/`, `build/` and `ref/` are gitignored: they contain material derived
 from the copyrighted binaries.
