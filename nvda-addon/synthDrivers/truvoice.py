@@ -10,9 +10,20 @@ verified.
 
 Rate, pitch and volume are the percentages NVDA hands every driver; the
 engine wants words per minute and its own pitch scale, so they are mapped
-here.  Fifty percent is the voice's own default in each case, which keeps
-the ten voices sounding like themselves when the sliders are centred.
+here.  The two sliders do not work the same way.
+
+Rate is relative: fifty percent is the voice's own default, so every voice
+speaks at its intended speed with the slider centred.  Nine of the ten
+share a default of 150 wpm anyway.
+
+Pitch is absolute: the slider is one scale for all ten voices, so picking
+a voice moves it to wherever that voice sits -- Sidney at the very bottom,
+Wanda at 62%.  It is logarithmic, because pitch is heard
+in ratios rather than in steps, which is what spreads the ten out evenly
+instead of bunching the six male voices into the bottom quarter.
 """
+
+import math
 
 from collections import OrderedDict
 
@@ -43,8 +54,13 @@ from . import _truvoice
 #: well inside that, so the top third of the slider made speech slower
 #: and stranger instead of faster.
 MIN_WPM, MAX_WPM = 46, 253
-#: The engine's own pitch scale, in the units its voice table uses.
-MIN_PITCH, MAX_PITCH = 40, 250
+#: The engine's full pitch range, in the units its voice table uses.
+#: Stage 2 clamps every node to 50..500 and stores the value halved in a
+#: byte, so that is exactly what the engine can represent -- 500 is the
+#: largest pitch whose half still fits.  The ten voices sit inside it,
+#: Sidney lowest at 50 and Wanda highest at 208, which leaves most of the
+#: top half of the slider above any stock voice.
+MIN_PITCH, MAX_PITCH = 50, 500
 
 
 def _fromPercent(percent: int, low: int, high: int, default: int) -> int:
@@ -55,14 +71,18 @@ def _fromPercent(percent: int, low: int, high: int, default: int) -> int:
 	return int(round(default + (high - default) * ((percent - 50) / 50.0)))
 
 
-def _toPercent(value: int, low: int, high: int, default: int) -> int:
-	if value <= default:
-		if default == low:
-			return 50
-		return int(round(50.0 * (value - low) / (default - low)))
-	if high == default:
-		return 50
-	return int(round(50 + 50.0 * (value - default) / (high - default)))
+def _pitchFromPercent(percent: int) -> int:
+	"""Slider position to engine pitch, logarithmically."""
+	percent = max(0, min(100, percent))
+	lo, hi = math.log(MIN_PITCH), math.log(MAX_PITCH)
+	return int(round(math.exp(lo + (hi - lo) * (percent / 100.0))))
+
+
+def _pitchToPercent(pitch: int) -> int:
+	"""Engine pitch back to a slider position."""
+	pitch = max(MIN_PITCH, min(MAX_PITCH, pitch))
+	lo, hi = math.log(MIN_PITCH), math.log(MAX_PITCH)
+	return int(round(100.0 * (math.log(pitch) - lo) / (hi - lo)))
 
 
 class SynthDriver(SynthDriver):
@@ -96,12 +116,14 @@ class SynthDriver(SynthDriver):
 		_truvoice.initialize(self._onIndexReached)
 		self._voice = "0"
 		self._rate = 50
-		self._pitch = 50
 		self._volume = 100
 		# The engine's own units, kept so a PitchCommand or RateCommand can
 		# scale from where the user actually is rather than from a default.
 		self._engineRate = _truvoice.voiceRate(0)
 		self._enginePitch = _truvoice.voicePitch(0)
+		# Pitch is absolute, so the slider reads wherever the voice sits;
+		# setting the voice below overwrites both of these.
+		self._pitch = _pitchToPercent(self._enginePitch)
 		# Apply them so the engine and the driver agree from the start.
 		self.voice = self._voice
 		self.volume = self._volume
@@ -200,14 +222,20 @@ class SynthDriver(SynthDriver):
 			value = "0"
 		self._voice = value
 		_truvoice.setVoice(int(value))
-		# A voice brings its own default rate and pitch, so re-apply the
-		# percentages against the new defaults rather than the old ones.
+		# Rate is relative to the voice's own default, so re-apply the
+		# percentage against the new default rather than the old one.
 		self.rate = self._rate
-		self.pitch = self._pitch
+		# Pitch is absolute, so the voice brings its own and the slider
+		# follows it.  The engine value is taken from the table rather
+		# than back through the percentage, which would round it: a voice
+		# picked and left alone sounds exactly as it should.
+		self._enginePitch = _truvoice.voicePitch(int(value))
+		self._pitch = _pitchToPercent(self._enginePitch)
+		_truvoice.setPitch(self._enginePitch)
 
-	def _voiceDefaults(self) -> tuple[int, int]:
-		i = int(self._voice)
-		return _truvoice.voiceRate(i), _truvoice.voicePitch(i)
+	def _voiceRate(self) -> int:
+		"""The current voice's own words per minute, which 50% maps to."""
+		return _truvoice.voiceRate(int(self._voice))
 
 	# ---- rate, pitch, volume ---------------------------------------------
 
@@ -216,7 +244,7 @@ class SynthDriver(SynthDriver):
 
 	def _set_rate(self, percent: int):
 		self._rate = max(0, min(100, percent))
-		wpm, _ = self._voiceDefaults()
+		wpm = self._voiceRate()
 		self._engineRate = _fromPercent(self._rate, MIN_WPM, MAX_WPM, wpm)
 		_truvoice.setRate(self._engineRate)
 
@@ -225,8 +253,7 @@ class SynthDriver(SynthDriver):
 
 	def _set_pitch(self, percent: int):
 		self._pitch = max(0, min(100, percent))
-		_, pitch = self._voiceDefaults()
-		self._enginePitch = _fromPercent(self._pitch, MIN_PITCH, MAX_PITCH, pitch)
+		self._enginePitch = _pitchFromPercent(self._pitch)
 		_truvoice.setPitch(self._enginePitch)
 
 	def _get_volume(self) -> int:

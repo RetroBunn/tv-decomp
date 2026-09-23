@@ -152,6 +152,15 @@ has both the ordering and what a voice actually is.
   something changes them back.  Use the setters to restore; they take the
   full pitch where the escape takes half of it, so they can express odd
   values the escape cannot.
+* **Pitch is 50..500.**  Stage 2 clamps every node it emits to that and
+  stores the value halved in a byte, so 500 is the largest pitch whose
+  half still fits.  Outside it the base value still moves the accented
+  nodes -- the audio keeps changing down to about 28 and up to about 516
+  -- but nothing there is a pitch the engine can hold.  `tvtts_set_pitch`
+  does not enforce the range, because the corpus checks the original at
+  40; `tvtts_pitch_sequence` reaches only 400, since the `ESC[<n>p` escape
+  takes n 25..200 and doubles it.  `TVTTS_PITCH_MIN` and `TVTTS_PITCH_MAX`
+  are in the header.
 * **Do not put an escape after the last word.**  The engine reads the
   final word of an utterance by different rules, and an escape after it
   means it is no longer final: a lone "a" becomes the article rather than

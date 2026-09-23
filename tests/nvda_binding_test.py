@@ -371,6 +371,37 @@ def driver_tests(_truvoice, commands):
 		truvoice.SynthDriver.speak(driver, sequence)
 		return sent[0] if sent else None
 
+	# Pitch is absolute: picking a voice must move the slider to where that
+	# voice sits, rather than leaving it reading 50% for all ten.
+	pitches = [_truvoice.voicePitch(i) for i in range(10)]
+	percents = [truvoice._pitchToPercent(v) for v in pitches]
+	check(len(set(percents)) == len(set(pitches)),
+		"each voice's pitch maps to its own slider position")
+	check(max(percents) - min(percents) > 50,
+		"and they spread across it rather than bunching")
+	# The slider covers the engine, not just the voices: everything above
+	# Wanda is pitch the engine can reach and no stock voice uses.
+	check(max(percents) < 75,
+		"the slider keeps headroom above the highest voice")
+	check(truvoice._pitchFromPercent(100) > max(pitches) * 2,
+		"and that headroom is worth having")
+	check([p for _, p in sorted(zip(pitches, percents))] == sorted(percents),
+		"a higher pitch always reads as a higher position")
+	# The round trip only has to be close -- the slider is 101 steps over a
+	# 210-unit range -- but a voice left alone must keep its exact pitch.
+	# The slider is 101 steps over a ten-fold range, so one step is about
+	# 2.3% -- a few units at the top.  A voice picked and left alone still
+	# gets its exact pitch; this only bounds what moving the slider costs.
+	check(all(abs(truvoice._pitchFromPercent(truvoice._pitchToPercent(v)) - v)
+			<= max(2, v // 20) for v in pitches),
+		"percent and pitch round-trip within a step")
+	# 50..500 is what stage 2 clamps to, and 500 is the largest pitch
+	# whose half still fits the byte it is stored in.
+	check(truvoice._pitchFromPercent(0) == 50,
+		"the bottom of the slider is the engine's lowest pitch")
+	check(truvoice._pitchFromPercent(100) == 500,
+		"and the top is its highest")
+
 	# The rate slider used to reach 400 wpm, well past the 26th and last row
 	# of the engine's rate table, so its top third made speech slower and
 	# stranger rather than faster.
@@ -382,6 +413,17 @@ def driver_tests(_truvoice, commands):
 		"the slider rises across the whole of that range")
 	check(len({(wpm - 46) >> 3 for wpm in rates}) == 26,
 		"and reaches all 26 rows, so no part of it is dead")
+
+	# The reported bug: changing voice left the slider reading 50%.
+	driver._voice = "0"
+	moved = []
+	for i in (0, 1, 8):
+		pitch = _truvoice.voicePitch(i)
+		moved.append(truvoice._pitchToPercent(pitch))
+	check(len(set(moved)) == 3,
+		"Peter, Sidney and Wanda each report a different slider position")
+	check(moved[1] < moved[0] < moved[2],
+		"lowest voice lowest, highest voice highest")
 
 	check(commands.CharacterModeCommand not in truvoice.SynthDriver.supportedCommands,
 	      "the driver no longer claims character mode")

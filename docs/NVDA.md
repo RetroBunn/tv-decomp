@@ -46,11 +46,62 @@ instead of running ahead of it; see the `sample_pos` note in
 docs/LIBRARY.md for why the library corrects the position by twelve frames.
 
 **Rate, pitch and volume** are the 0-100 percentages NVDA gives every
-driver.  Fifty percent is the *voice's own* default rather than a fixed
-number, so the ten voices still sound like themselves with the sliders
-centred; the engine's own defaults come from `tvtts_voice_rate` and
-`tvtts_voice_pitch`.  Changing voice re-applies both against the new
-voice's defaults.
+driver.  The two sliders do not work the same way, because the two settings
+are not alike across the ten voices.
+
+**Rate is relative.**  Fifty percent is the voice's own default, so every
+voice speaks at its intended speed with the slider centred.  There is
+little to lose by this: nine of the ten default to 150 wpm and only Grandpa
+Amos differs, at 120.
+
+**Pitch is absolute.**  One scale for all ten, so picking a voice moves the
+slider to wherever that voice sits.  It is logarithmic -- pitch is heard in
+ratios, not in steps -- which matters more over a range this wide.  Mapped
+linearly all ten voices would sit below 35%; logarithmically they use the
+lower two thirds:
+
+| voice | pitch | slider | | voice | pitch | slider |
+|---|---|---|---|---|---|---|
+| Sidney | 50 | 0% | | Eager Eddie | 125 | 40% |
+| Deep Douglas | 73 | 16% | | Biff | 129 | 41% |
+| Peter | 85 | 23% | | Julia | 152 | 48% |
+| Grandpa Amos | 89 | 25% | | Alex | 203 | 61% |
+| Melvin | 117 | 37% | | Wanda | 208 | 62% |
+
+The slider spans **50 to 500**, which is the engine's whole range and not a
+chosen subset of it: Stage 2 clamps every node it emits to 50..500 and then
+stores the value halved in a byte, so 500 is the largest pitch whose half
+still fits.  Sidney sits exactly on the floor.
+
+That the ten voices only reach 62% is the point rather than a flaw -- the
+engine goes a good deal higher than any voice Centigram shipped, and the
+top third of the slider is pitch nothing else will give you.
+
+Outside 50..500 the base pitch is not simply ignored, because it is
+arithmetic on the way in rather than the clamped value: below 50 it still
+lifts the accented nodes, and the audio keeps changing down to about 28 and
+up to about 516 before saturating.  None of that is a pitch the engine can
+hold, so the slider stops at the range it can.
+
+One asymmetry to know about.  `PitchCommand` goes inline as `ESC[<n>p`, and
+that escape takes n 25..200 and doubles it (`preformat.c:297`), so inline
+pitch reaches 400 and no further however high the slider is set.  A capital
+spoken by a voice already near the top is therefore raised less than one
+spoken by Peter.  `tvtts_set_pitch`, which is what the slider uses, has no
+such limit.
+
+Changing voice takes the pitch straight from `tvtts_voice_pitch` rather
+than back through the percentage, so a voice picked and left alone has
+exactly its intended pitch; the percentage is only what the slider reads.
+Moving the slider then quantises to its 101 steps, which over a 210-unit
+range is at worst a unit or two.
+
+This replaces an earlier scheme where fifty percent was the voice's own
+default for pitch as well.  That kept every voice at its natural pitch with
+the slider centred, but the slider then read 50% whatever voice was chosen
+and never moved when one was changed -- and the travel either side was
+badly lopsided, since Sidney's bottom half covered ten units of pitch while
+his top half covered two hundred.
 
 The rate slider spans 46 to 253 words per minute, which is the whole of
 what the engine has.  Its rate is a 26-row table picked by

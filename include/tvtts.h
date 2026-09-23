@@ -185,6 +185,27 @@ TVTTS_API int TVTTS_CALL tvtts_rate_sequence(char *buf, size_t cap, int wpm);
 #define TVTTS_RATE_MIN 46
 #define TVTTS_RATE_MAX 253
 
+/*
+ * Pitch, in the engine's own units.  Stage 2 clamps every node it emits
+ * to 50..500 and then stores the value halved in a byte, so 50..500 is
+ * exactly what the engine can represent -- 500 is the largest pitch whose
+ * half still fits.
+ *
+ * Outside it the base pitch is not ignored, because it is arithmetic on
+ * the way in rather than the clamped value: a base below 50 still lifts
+ * the accented nodes, and the audio keeps changing down to about 28 and
+ * up to about 516 before it saturates.  None of that is a pitch the
+ * engine can hold, though, so a caller wanting the range should use
+ * these.  tvtts_set_pitch does not enforce them: the corpus checks the
+ * original's behaviour at 40, which is outside.
+ *
+ * The inline escape is narrower still.  ESC[<n>p takes n 25..200 and
+ * doubles it (preformat.c), so tvtts_pitch_sequence reaches 400 and no
+ * further, whatever tvtts_set_pitch has been given.
+ */
+#define TVTTS_PITCH_MIN 50
+#define TVTTS_PITCH_MAX 500
+
 /* Settings.  These persist across utterances, as SAPI's did. */
 TVTTS_API void TVTTS_CALL tvtts_set_voice(tvtts_synth *s, int voice);
 TVTTS_API void TVTTS_CALL tvtts_set_rate(tvtts_synth *s, int wpm);
