@@ -318,6 +318,73 @@ static void test_phonemes(void)
     sink_free(&spoken); sink_free(&viaphon);
 }
 
+/* The first OpenTV extension: rate above the original's 26-row table.
+ * What matters is that it speeds speech up where the original produced
+ * nonsense, and that it changes nothing at or below 253 wpm. */
+static void test_rate_extension(void)
+{
+    tvtts_synth *s;
+    sink slow, fast, classic, a, b;
+    int r;
+
+    check(tvtts_get_extensions() == TVTTS_EXT_ALL,
+          "extensions are on by default");
+
+    /* Below the original's ceiling nothing may change. */
+    for (r = 46; r <= 253; r += 23) {
+        tvtts_set_extensions(TVTTS_EXT_ALL);
+        s = tvtts_create(11025);
+        tvtts_set_rate(s, r);
+        say(s, TEXT, &a);
+        tvtts_destroy(s);
+
+        tvtts_set_extensions(0);
+        s = tvtts_create(11025);
+        tvtts_set_rate(s, r);
+        say(s, TEXT, &b);
+        tvtts_destroy(s);
+
+        if (!same(&a, &b))
+            break;
+        sink_free(&a); sink_free(&b);
+    }
+    check(r > 253, "46..253 wpm is untouched by the extension");
+    if (r <= 253)
+        printf("     first difference at %d wpm\n", r);
+    sink_free(&a); sink_free(&b);
+
+    tvtts_set_extensions(TVTTS_EXT_ALL);
+    s = tvtts_create(11025);
+    tvtts_set_rate(s, 253);
+    say(s, TEXT, &slow);
+    tvtts_set_rate(s, 400);
+    say(s, TEXT, &fast);
+    tvtts_destroy(s);
+    check(fast.n < slow.n, "400 wpm is shorter than 253, not longer");
+    check(slow.n * 100 / fast.n >= 170,
+          "and appreciably so -- at least 1.7x");
+
+    /* Which is precisely what the original got wrong. */
+    tvtts_set_extensions(0);
+    s = tvtts_create(11025);
+    tvtts_set_rate(s, 400);
+    say(s, TEXT, &classic);
+    tvtts_destroy(s);
+    check(classic.n > fast.n,
+          "the original reads off the table and is slower at 400");
+
+    /* Past the last added row it holds rather than running away again. */
+    tvtts_set_extensions(TVTTS_EXT_ALL);
+    s = tvtts_create(11025);
+    tvtts_set_rate(s, 5000);
+    say(s, TEXT, &a);
+    tvtts_destroy(s);
+    check(a.n == fast.n, "an absurd rate clamps to the fastest row");
+
+    sink_free(&slow); sink_free(&fast); sink_free(&classic); sink_free(&a);
+    tvtts_set_extensions(TVTTS_EXT_ALL);
+}
+
 int main(void)
 {
     test_reuse();
@@ -327,6 +394,7 @@ int main(void)
     test_voices();
     test_edges();
     test_phonemes();
+    test_rate_extension();
     printf("%s\n", failures ? "FAILED" : "all passed");
     return failures != 0;
 }

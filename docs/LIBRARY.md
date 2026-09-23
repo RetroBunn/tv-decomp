@@ -166,20 +166,70 @@ has both the ordering and what a voice actually is.
   means it is no longer final: a lone "a" becomes the article rather than
   the letter's name.  Emit marks before the text they follow, and report
   any that would trail once the audio has been delivered.
-* **Rate is 46..253 words per minute and nothing else.**  The engine picks
+* **Rate is 46..400 words per minute** with the extensions on, 46..253
+  without.  The engine picks
   a 26-row table with `(wpm - 46) >> 3`, unsigned.  Below 46 that wraps
   to an index of about `0x1fffffff` and reads wildly -- the original
-  crashes and so does this, so `tvtts_set_rate` floors it.  Above 253 it
-  runs off the end of the table: a sentence at 254 wpm comes out ten
-  times longer than at 253, not faster.  That end is deliberately *not*
-  clamped, because it is the original's own behaviour and the corpus
-  checks it at 260 and 400; `tvtts_rate_sequence` clamps both ends, since
-  it builds text to speak rather than reproducing anything.  46..76 all
-  select the slowest row.
+  crashes and so does this, so `tvtts_set_rate` floors it.  Above row 25
+  the original ran off the end of the table -- a sentence at 254 wpm came
+  out ten times longer than at 253 -- and `TVTTS_EXT_RATE` replaces that
+  with rows of its own, up to `TVTTS_RATE_MAX_EXT`.  With the extension
+  off the original's behaviour is still there, because the corpus checks
+  it at 260 and 400.  46..76 all select the slowest row.
 * `tvtts_set_compat` is for reproducing the original exactly, not for normal
   use: it turns off the two front-end passes the original exposed through the
   registry, and sets how many NUL bytes follow the text.  That last one
   changes the audio, because the feed routine branches on the total length.
+
+## Extensions
+
+OpenTV is a decompilation, not a patch, so it can fix things the 1997
+engine got wrong.  Anything that changes what the engine does sits behind a
+flag, all of them on by default:
+
+```c
+tvtts_set_extensions(0);              /* the 1997 engine, exactly */
+tvtts_set_extensions(TVTTS_EXT_ALL);  /* the default */
+```
+
+This is not caution for its own sake.  The 335-configuration byte-exact
+corpus is the only evidence the decompilation is correct -- it is what
+caught six real decompilation bugs -- and it works by comparing against the
+original binary, which has no extensions.  So `tools/difftest.py` passes
+`-C` and the corpus keeps proving the engine underneath is right, while
+callers get the better behaviour by default.  Improvements are tested
+separately, in `tests/api_test.c`.
+
+The flags are process-wide rather than per-synth, like `tvtts_add_lexicon`:
+the engine's own Stage 2 keeps its working state in globals, so one synth
+was never independent of another here.
+
+### TVTTS_EXT_RATE
+
+The engine's rate table has 26 rows, 46..253 wpm in steps of eight, indexed
+by `(wpm - 46) >> 3`.  Above row 25 it indexed off the end and read whatever
+followed, which made speech *slower* and stranger rather than faster: the
+same sentence took 38,544 bytes at 253 wpm and 391,864 at 254.
+
+The extension clamps the index into the table and, for the rows past the
+original's, shortens durations instead.  That is the lever that works: the
+final duration is `(max - min) * acc/100 + min` from `g_phone_dur`, so the
+per-phoneme *minimum* is a floor the rate table can never get under -- which
+is why the original's fastest row only ever managed 1.86x.  Scaling the
+result gets to about 3.4x before those minimums bind again.
+
+| wpm | extension on | original |
+|---|---|---|
+| 150 | 1.00x | 1.00x |
+| 253 | 1.86x | 1.86x |
+| 260 | 2.28x | 0.18x (ten times longer) |
+| 330 | 2.86x | 0.52x |
+| 400 | 3.39x | 1.80x |
+
+Every row the original had is left alone, so 46..253 wpm is bit-for-bit what
+it always was -- verified against `CGRM_EN.DLL` itself, not just against the
+classic build.  The voices still sound the way people know them; only the
+range that used to be broken behaves differently.
 
 ## How this is tested
 

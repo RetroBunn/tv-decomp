@@ -3,6 +3,7 @@ EXPORTS
     tvtts_break_sequence
     tvtts_create
     tvtts_destroy
+    tvtts_get_extensions
     tvtts_get_pitch
     tvtts_get_rate
     tvtts_get_voice
@@ -11,6 +12,7 @@ EXPORTS
     tvtts_punctuation_sequence
     tvtts_rate_sequence
     tvtts_set_compat
+    tvtts_set_extensions
     tvtts_set_pitch
     tvtts_set_rate
     tvtts_set_voice

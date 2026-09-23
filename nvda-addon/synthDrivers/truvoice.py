@@ -5,7 +5,7 @@
 
 The engine is a decompilation of the 1997 SAPI 4 original, built as an
 ordinary DLL, so none of SAPI is in the way: no COM, no registry, no bridge
-process.  See the tv-decomp project for what that means and how it is
+process.  See the OpenTV project for what that means and how it is
 verified.
 
 Rate, pitch and volume are the percentages NVDA hands every driver; the
@@ -45,15 +45,14 @@ from synthDriverHandler import (
 
 from . import _truvoice
 
-#: Words per minute at 0% and 100%, and the whole of what the engine can
-#: actually do.  Its rate is a 26-row table picked by (wpm - 46) // 8, so
-#: 46 and 253 are the first and last rows.  Asking for less than 46 wraps
-#: the unsigned subtraction and crashes; asking for more than 253 reads
-#: off the end of the table, and a sentence at 254 comes out ten times
-#: longer than at 253 rather than faster.  The old ceiling of 400 was
-#: well inside that, so the top third of the slider made speech slower
-#: and stranger instead of faster.
-MIN_WPM, MAX_WPM = 46, 253
+#: Words per minute at 0% and 100%.  The engine's own rate table has 26
+#: rows, 46..253 wpm picked by (wpm - 46) // 8, and above them it read
+#: off the end -- a sentence at 254 came out ten times longer than at
+#: 253.  OpenTV adds rows past that which shorten durations instead, so
+#: 254..400 now genuinely speeds up, to about three and a half times the
+#: speed of 150 wpm.  Everything at 253 and below is bit-for-bit the
+#: 1997 engine, so the voices still sound the way people know them.
+MIN_WPM, MAX_WPM = 46, 400
 #: The engine's full pitch range, in the units its voice table uses.
 #: Stage 2 clamps every node to 50..500 and stores the value halved in a
 #: byte, so that is exactly what the engine can represent -- 500 is the

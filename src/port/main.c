@@ -142,6 +142,7 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "-p") && i + 1 < argc) opt_pitch = strtol(argv[++i], NULL, 0);
         else if (!strcmp(argv[i], "-s") && i + 1 < argc) opt_speed = strtol(argv[++i], NULL, 0);
         else if (!strcmp(argv[i], "-V") && i + 1 < argc) opt_volume = (long)strtoul(argv[++i], NULL, 0);
+        else if (!strcmp(argv[i], "-C")) tvtts_set_extensions(0);
         else if (!strcmp(argv[i], "-P0")) opt_preformat = 0;
         else if (!strcmp(argv[i], "-T0")) opt_textin = 0;
         else if (!strcmp(argv[i], "-L") && i + 1 < argc && n_lex < 16)
@@ -150,7 +151,7 @@ int main(int argc, char **argv)
     }
     if (argc - i != 2 || voice < 0 || voice >= tvtts_voice_count()) {
         fprintf(stderr, "usage: tv [-v 0-9] [-8] [-m] [-p pitch] [-s wpm]"
-                        " [-V volume] [-P0] [-T0] [-z nuls]"
+                        " [-V volume] [-C] [-P0] [-T0] [-z nuls]"
                         " [-L word=phonemes] <text|@file> <out.wav>\n");
         return 2;
     }

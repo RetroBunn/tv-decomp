@@ -110,9 +110,10 @@ handles; other node types are control commands it executes in passing.
   and `atol` read the "C" locale table the original CRT built into its own
   data, so bytes over 0x7f classify the same way; and `stubs.c` for the one
   call the engine makes back into the layer above it.  The constant tables
-  come out of the image at build time (`tools/gen_data.py`), so the program
-  that comes out loads no DLL, talks to no SAPI and reads no registry: its
-  only import is the C runtime.
+  come from `data/en/engine.tvdata`, which is in the repository, so both
+  the build and the program need no Centigram binary: the program loads no
+  DLL, talks to no SAPI and reads no registry, and its only import is the
+  C runtime.
 * **Stage resets** `stages.c` + stage 4 driver.
 * **Feeding** `feed.c`: `Engine_Feed`, `Engine_Flush`.
 * **Preformatter** `preformat.c`: accent folding, `ESC[..X` command parser.
@@ -243,6 +244,25 @@ read at `textin.c:916` through `Token.d18`, which is only ever NULL.
 The four SAPI glue functions, if the phoneme trace is ever wanted.  Nothing
 else is outstanding: see docs/LIBRARY.md for the library the engine is
 packaged behind.
+
+## OpenTV extensions
+
+The project is a decompilation rather than a patched binary, so it can fix
+what the original got wrong.  Everything that changes engine behaviour sits
+behind `tvtts_set_extensions`, on by default, and `tools/difftest.py` runs
+the corpus with them off.  That is deliberate: the byte-exact corpus is the
+only evidence the decompilation is correct, so it has to keep comparing
+against a binary that has no extensions.
+
+* **`TVTTS_EXT_RATE`** -- `Engine_SetSpeed` turns wpm into a row of a 26-row
+  table with `(wpm - 46) >> 3`, and the original indexed off the end above
+  row 25 and wrapped unsigned below 46.  The extension clamps the index and
+  scales durations down for the rows it adds (`rate_row` and `rate_pct` in
+  `stage2.c`), reaching 400 wpm.  Duration scaling is the lever rather than
+  more table rows because `Stage2_DurRules` ends at
+  `(max - min) * acc/100 + min`, so `g_phone_dur`'s minimum column is a
+  floor the table cannot get under.  Rows 0..25 are untouched and 46..253
+  wpm stays bit-for-bit identical to `CGRM_EN.DLL`.
 
 ## Test corpus
 

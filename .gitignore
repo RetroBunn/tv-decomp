@@ -55,9 +55,11 @@ dkms.conf
 # ...but the add-on manifest is source.
 !nvda-addon/manifest.ini
 
-# tv-decomp: the original Centigram distribution, generated analysis output,
-# build products and reference audio -- all derived from or part of
-# copyrighted material; never commit.
+# OpenTV: the original Centigram distribution, generated analysis output,
+# build products and reference audio.  The distribution and the
+# disassembly stay out; the engine's constant tables under data/ are
+# deliberately committed instead, so a build needs no Centigram binary.
+# See NOTICE for whose work those are.
 /TruVoice/
 /work/
 /build/

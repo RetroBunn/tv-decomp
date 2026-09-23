@@ -32,6 +32,12 @@ TVH = os.path.join(ROOT, "build", "harness", "tvh.exe")
 TVH_HOOK = os.path.join(ROOT, "build", "harness", "tvh_hook.exe")
 TV_PORT = os.path.join(ROOT, "build", "harness", "tv.exe")
 TV_PORT64 = os.path.join(ROOT, "build", "harness", "tv64.exe")
+
+#: The port is compared against the original, so every OpenTV extension
+#: has to be off: the point of this test is that the decompiled engine
+#: still does what the 1997 one did, bug for bug.  Improvements are
+#: covered by tests/api_test.c instead.
+CLASSIC = ["-C"]
 WORK = os.path.join(ROOT, "work", "difftest")
 REFDIR = os.path.join(ROOT, "ref")
 
@@ -206,7 +212,7 @@ def ref_main(hooks):
     engines = [("oracle", TVH, [], True),
                ("hooked", TVH_HOOK, ["-H", hooks], True)]
     if os.path.exists(TV_PORT):
-        engines.append(("standalone", TV_PORT, [], False))
+        engines.append(("standalone", TV_PORT, CLASSIC, False))
     outdir = os.path.join(WORK, "refaudio")
     fails = checks = 0
     for name, wav, lines, opts in refs:
@@ -260,6 +266,16 @@ def main():
                          "installed engine")
     a = ap.parse_args()
 
+    # This test exists to compare against the original, so it is the one
+    # thing in the project that genuinely needs a copy of it.  Building and
+    # running OpenTV does not: see NOTICE and tools/extract_data.py.
+    if not os.path.exists(DLL):
+        print('no %s, so there is nothing to compare against.' %
+              os.path.relpath(DLL, ROOT))
+        print('The engine itself builds and runs without it; this check is')
+        print('for anyone who has a copy and wants to verify the work.')
+        return 0
+
     if a.ref:
         sys.exit(1 if ref_main(a.hooks) else 0)
 
@@ -289,7 +305,7 @@ def main():
         if a.port or a.port64:
             exe = TV_PORT64 if a.port64 else TV_PORT
             cands = dict((t, (o, e)) for t, o, e in ex.map(
-                lambda r: run_one(exe, [], r[0], r[1], r[2], r[3], canddir,
+                lambda r: run_one(exe, CLASSIC, r[0], r[1], r[2], r[3], canddir,
                                   r[4], r[5], dll=False), runs))
         else:
             cands = dict((t, (o, e)) for t, o, e in ex.map(

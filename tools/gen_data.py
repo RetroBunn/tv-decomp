@@ -1,7 +1,11 @@
-"""Extract the engine's constant data from the original DLL for the
-standalone build.
+"""Lay the engine's constant data out for the standalone build.
 
 Usage: python tools/gen_data.py <image> <srcdir> <out.s> <obj>...
+
+<image> is either data/en/engine.tvdata, which is what an ordinary
+build uses and needs no Centigram binary, or a TruVoice DLL for anyone
+who has one.  tools/extract_data.py makes the former out of the latter,
+and the two give byte-identical output.
 
 The hook build resolves every annotated global to its address inside the
 loaded DLL.  The standalone build has no DLL, so the data has to come from
@@ -36,6 +40,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from pe32 import Image  # noqa: E402
+import tvdata  # noqa: E402
 from gen_hookmap import ANNOT, base_name  # noqa: E402
 
 ELEM = {
@@ -105,7 +110,11 @@ def nm_syms(objs):
 def main():
     image, srcdir, out_s = sys.argv[1], sys.argv[2], sys.argv[3]
     objs = sys.argv[4:]
-    img = Image(image)
+    # Either the committed tables or, for whoever has one, the original
+    # DLL.  The two are interchangeable here by construction: see
+    # tools/extract_data.py.
+    img = (tvdata.TvData(image) if image.endswith('.tvdata')
+           else Image(image))
     annots = scan(srcdir)
     defined, undefined = nm_syms(objs)
 

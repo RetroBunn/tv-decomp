@@ -186,6 +186,33 @@ TVTTS_API int TVTTS_CALL tvtts_rate_sequence(char *buf, size_t cap, int wpm);
 #define TVTTS_RATE_MAX 253
 
 /*
+ * With TVTTS_EXT_RATE on -- which is the default -- the ceiling moves to
+ * TVTTS_RATE_MAX_EXT.  The original's 26 rows are untouched, so 46..253
+ * sounds exactly as it always did; above that OpenTV shortens durations
+ * instead, which the original never did because it had no rows there at
+ * all.  It tops out around three and a half times the speed of 150 wpm,
+ * where the per-phoneme minimum durations in g_phone_dur stop it going any
+ * further.
+ */
+#define TVTTS_RATE_MAX_EXT 400
+
+/*
+ * OpenTV extensions: behaviour this project adds that the 1997 engine did
+ * not have.  All are on by default.  Clearing them gives the original
+ * exactly, which is what the test corpus runs so that its byte-for-byte
+ * comparison keeps proving the decompilation correct.
+ *
+ * Process-wide rather than per-synth, like tvtts_add_lexicon: the engine's
+ * own Stage 2 keeps its working state in globals, so one synth was never
+ * independent of another here.
+ */
+#define TVTTS_EXT_RATE  0x1u   /* rate above 253 wpm actually speeds up */
+#define TVTTS_EXT_ALL   0x1u
+
+TVTTS_API void TVTTS_CALL tvtts_set_extensions(uint32_t mask);
+TVTTS_API uint32_t TVTTS_CALL tvtts_get_extensions(void);
+
+/*
  * Pitch, in the engine's own units.  Stage 2 clamps every node it emits
  * to 50..500 and then stores the value halved in a byte, so 50..500 is
  * exactly what the engine can represent -- 500 is the largest pitch whose

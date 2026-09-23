@@ -607,4 +607,28 @@ int32_t TV_THISCALL Engine_MidGet(Engine *self);
 /* @0x100281a0 */
 uint8_t TV_THISCALL Engine_MidPut(Engine *self, uint8_t c);
 
+/* ---- OpenTV extensions --------------------------------------------------
+ *
+ * Behaviour this project adds that the 1997 engine did not have.  Zero is
+ * the original exactly, and that is what the hook build and the corpus run,
+ * so the byte-exact comparison keeps proving the decompilation is right.
+ *
+ * This is a global rather than per-synth state because the engine's own
+ * Stage 2 already keeps its working state in globals (g_s2_count and the
+ * rest are the original's), so a synth was never independent of another one
+ * in this respect.  The library documents it the way it documents the user
+ * lexicon: process-wide.
+ */
+
+/* The rate table the original shipped has 26 rows, 46..253 wpm in eights.
+ * Above row 25 the engine indexes off the end of it.  With the extension on
+ * the index is clamped to TV_RATE_ROW_MAX and the rows past the original's
+ * scale the durations down instead, which is what actually makes it
+ * faster -- see docs/PROGRESS.md. */
+#define TV_RATE_ROWS     26          /* rows the original table has */
+#define TV_RATE_ROW_MAX  44          /* (400 - 46) >> 3 */
+
+/* Non-zero enables the rate rows above the original's table. */
+extern int tv_ext_rate;
+
 #endif

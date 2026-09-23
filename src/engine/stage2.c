@@ -10,6 +10,40 @@
  */
 #include "engine.h"
 
+int tv_ext_rate = 0;
+
+/* Which row to actually read.  The original runs off the end of the table
+ * above row 25 and this reproduces that faithfully when the extension is
+ * off; with it on the index has already been clamped by Engine_SetSpeed, so
+ * the added rows reuse the fastest row the original had. */
+static int32_t rate_row(int32_t i)
+{
+    return (tv_ext_rate && i >= TV_RATE_ROWS) ? TV_RATE_ROWS - 1 : i;
+}
+
+/* How much to shorten durations by, as a percentage.  Always 100 for every
+ * row the original had, so nothing it could say changes; the rows OpenTV
+ * adds run down to 40, which is where per-phoneme minimum durations stop it
+ * making any further difference. */
+static int32_t rate_pct(int32_t i)
+{
+    if (!tv_ext_rate || i < TV_RATE_ROWS)
+        return 100;
+    if (i > TV_RATE_ROW_MAX)
+        i = TV_RATE_ROW_MAX;
+    return 100 - (i - (TV_RATE_ROWS - 1)) * 60 / (TV_RATE_ROW_MAX - (TV_RATE_ROWS - 1));
+}
+
+/* Left exactly alone at 100, so the classic rows are bit-for-bit what they
+ * always were rather than a multiply and divide that happens to round back. */
+static int32_t rate_apply(int32_t i, int32_t v)
+{
+    int32_t pct = rate_pct(i);
+
+    return pct == 100 ? v : v * pct / 100;
+}
+
+
 /* The look-ahead state is shared between engine objects, the way the
  * original has it. */
 /* @0x101489e0 */ extern int32_t g_s2_state;
@@ -256,7 +290,8 @@ void TV_THISCALL Stage2_Flush(Engine *self)
         st->ctl->arg = (uint32_t)Stage2_DurFast(self);
         return;
     }
-    st->ctl->arg = (uint32_t)Stage2_DurRules(self);
+    st->ctl->arg = (uint32_t)rate_apply(st->rate_index,
+                                        Stage2_DurRules(self));
     st->ctl->arg = (uint32_t)Stage2_DurAdjust(self);
 }
 
@@ -316,7 +351,7 @@ int32_t TV_THISCALL Stage2_Pause(Engine *self)
     Node *x;
     int32_t v, total, chunk;
 
-    v = g_pause_rate[st->rate_index];
+    v = g_pause_rate[rate_row(st->rate_index)];
     v = (v + ((v >> 31) & 3)) >> 2;
     total = (int32_t)((uint32_t)(v * (int32_t)n->arg) / 100u) * 4;
     if (total < 4)
@@ -349,7 +384,7 @@ int32_t TV_THISCALL Stage2_MinDur(Engine *self, int32_t pct)
 {
     StageCtx *st = &self->stage_ctx[2];
     int32_t lo = self->s2_1ddc / 10;
-    int32_t base = g_dur_rate[st->rate_index];
+    int32_t base = g_dur_rate[rate_row(st->rate_index)];
     int32_t v;
 
     v = (int32_t)((uint32_t)(pct + pct * 9 * 5 * 2) / 100u);
@@ -1209,7 +1244,7 @@ scale:
             v = (v * 123) / 100;
     }
     if (st->rate_index != 0xd)
-        v = Stage2_MinDur(self, v);
+        v = rate_apply(st->rate_index, Stage2_MinDur(self, v));
     if (v > 0x37)
         return 0x37;
     if (v < 2)

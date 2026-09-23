@@ -54,6 +54,14 @@ voice speaks at its intended speed with the slider centred.  There is
 little to lose by this: nine of the ten default to 150 wpm and only Grandpa
 Amos differs, at 120.
 
+The slider reaches **400 wpm**, which is about three and a half times the
+speed of 150.  The 1997 engine stopped at 253: its rate table has 26 rows
+and above them it read off the end, so 254 wpm came out *ten times longer*
+than 253 rather than faster.  OpenTV adds rows past the original's, which
+shorten durations instead -- see the `TVTTS_EXT_RATE` section of
+docs/LIBRARY.md.  Everything at 253 and below is bit-for-bit the original,
+so the voices still sound the way people know them.
+
 **Pitch is absolute.**  One scale for all ten, so picking a voice moves the
 slider to wherever that voice sits.  It is logarithmic -- pitch is heard in
 ratios, not in steps -- which matters more over a range this wide.  Mapped

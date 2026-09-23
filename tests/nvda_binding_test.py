@@ -288,8 +288,8 @@ def binding_tests(_truvoice):
 	check(_truvoice.rateSequence(150) == ESC + "[150r", "rate escape")
 	check(_truvoice.rateSequence(10) == ESC + "[46r",
 		"a low rate is clamped to the first table row")
-	check(_truvoice.rateSequence(9999) == ESC + "[253r",
-		"a high rate is clamped to the last")
+	check(_truvoice.rateSequence(9999) == ESC + "[400r",
+		"a high rate is clamped to the last row OpenTV adds")
 
 	def audioOf(text, **kw):
 		start = len(player.data)
@@ -407,12 +407,14 @@ def driver_tests(_truvoice, commands):
 	# stranger rather than faster.
 	rates = [truvoice._fromPercent(pct, truvoice.MIN_WPM, truvoice.MAX_WPM, 150)
 		for pct in range(101)]
-	check(all(46 <= wpm <= 253 for wpm in rates),
-		"every rate slider position lands inside the engine's table")
-	check(rates == sorted(rates) and rates[0] == 46 and rates[-1] == 253,
+	check(all(46 <= wpm <= 400 for wpm in rates),
+		"every rate slider position lands inside the rate table")
+	check(rates == sorted(rates) and rates[0] == 46 and rates[-1] == 400,
 		"the slider rises across the whole of that range")
-	check(len({(wpm - 46) >> 3 for wpm in rates}) == 26,
-		"and reaches all 26 rows, so no part of it is dead")
+	# 26 rows are the original's; OpenTV adds rows 26..44 on top, and the
+	# slider should reach every one of them.
+	check(len({(wpm - 46) >> 3 for wpm in rates}) == 45,
+		"and reaches all 45 rows, the original 26 plus the added 19")
 
 	# The reported bug: changing voice left the slider reading 50%.
 	driver._voice = "0"

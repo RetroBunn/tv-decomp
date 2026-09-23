@@ -122,10 +122,13 @@ one `TextData` call; `src/port/msvcrt.c` supplies the handful of MSVC 4.2
 runtime functions the engine calls, and `src/port/stubs.c` the one call it
 makes back into the layer above it.
 
-The constant tables have to come from somewhere, so `tools/gen_data.py`
-reads them out of the image at build time and writes an assembly file that
-puts the same bytes at the same relative offsets, with a label wherever an
-annotated symbol sits.  Two whole sections come out at once (`.rdata` and
+The constant tables have to come from somewhere, and they come from
+`data/en/engine.tvdata`, which is committed -- an ordinary build needs no
+Centigram binary at all.  `tools/extract_data.py` is what produced it out
+of the original, and `tools/gen_data.py` reads either that file or a DLL,
+interchangeably, writing an assembly file that puts the same bytes at the
+same relative offsets, with a label wherever an annotated symbol sits.
+NOTICE says whose work the tables are.  Two whole sections come out at once (`.rdata` and
 `.data`, which are nothing but data), because the engine indexes past the
 ends of individual tables and expects to land on the next one -- `g_cls2`
 and `g_phone_attr` are both read with a signed index that reaches in front
