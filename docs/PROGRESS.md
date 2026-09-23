@@ -154,12 +154,25 @@ handles; other node types are control commands it executes in passing.
 ## Where this stands
 
 Taking the call tree below the twelve entry points the CLI uses, excluding
-the MSVC C runtime and the SAPI/COM/UI layer, the engine is 226 functions
+the MSVC C runtime and the SAPI/COM/UI layer, the engine is 227 functions
 and 151,143 bytes.  223 of them are decompiled: 98.2% by function, 99.7% by
-byte.  What is left is the four functions that are the SAPI glue itself --
-the COM-allocated byte buffer at `0x10031120`/`0x100311d0` (the phoneme
-trace, which needs a portable replacement) and the SAPI queue helpers at
-`0x10038530`/`0x100385b0`.  Everything else the tree still references is the
+byte.  The four that are not, 437 bytes between them, are the SAPI glue
+itself -- two containers, each with an append and a grow:
+
+* `ByteList_Append` (`0x100311d0`) and its grow routine (`0x10031120`),
+  which is the one genuinely awkward case: it allocates through
+  `CoGetMalloc` and `IMalloc::Realloc`, so writing it would make the
+  portable build depend on COM.  The list holds the phoneme trace for
+  `ITTSDialogs`, and the engine only fills it when `Engine.w_212c` is set,
+  which nothing outside SAPI does.  `src/port/stubs.c` defines the append
+  as a no-op.
+* `SapiQueue_Push` (`0x100385b0`) and its grow routine (`0x10038530`),
+  which are plain `malloc`/`realloc` with 1.5x growth and would be easy;
+  they are absent because the queue they manage belongs to the SAPI thread,
+  which a CLI does not have.  `src/engine/sapi.c` stubs the push.
+
+Neither structure reaches the audio, which is why stubbing both still gives
+byte-identical output.  Everything else the tree still references is the
 MSVC C runtime, which the portable build takes from the host.
 
 Of the 10,816 basic blocks in those 223 functions the corpus executes
