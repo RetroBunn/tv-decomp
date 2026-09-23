@@ -1,0 +1,21 @@
+LIBRARY tvtts.dll
+EXPORTS
+    tvtts_add_lexicon
+    tvtts_create
+    tvtts_destroy
+    tvtts_get_pitch
+    tvtts_get_rate
+    tvtts_get_voice
+    tvtts_mark_sequence
+    tvtts_set_compat
+    tvtts_set_pitch
+    tvtts_set_rate
+    tvtts_set_voice
+    tvtts_set_volume
+    tvtts_speak_bytes
+    tvtts_speak_utf16
+    tvtts_speak_utf8
+    tvtts_voice_count
+    tvtts_voice_name
+    tvtts_voice_pitch
+    tvtts_voice_rate

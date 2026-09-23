@@ -1,8 +1,9 @@
 /*
- * The few places where the engine reaches back into the SAPI layer that owns
- * it: the audio queue (which carries bookmark records as well as PCM) and
- * the window notifications.  Engine.sapi is NULL in the standalone build, so
- * none of this is reached there.
+ * The few places where the engine reaches back into the layer that owns it:
+ * the audio queue (which carries bookmark records as well as PCM) and the
+ * window notifications.  Outside the hook build the notifications go
+ * nowhere -- there is no window -- and the queue is the library's, in
+ * src/port/tvtts.c, which turns a bookmark record into a callback.
  */
 #include "engine.h"
 #include "crt.h"
@@ -42,15 +43,9 @@ void Sapi_Post(SapiCentral *s, uint32_t msg, uint32_t wp, uint32_t lp)
 {
     (void)s; (void)msg; (void)wp; (void)lp;
 }
-/* Both callers hand over a pointer to a record the queue then owns.  With
- * no queue there is nothing to take it off again, so it is dropped here. */
-int32_t Sapi_QueuePush(SapiCentral *s, const void *data, uint32_t size)
-{
-    (void)s;
-    if (size == sizeof(void *))
-        tv_delete(*(void *const *)data);
-    return 0;
-}
+/* Sapi_QueuePush is the library's (src/port/tvtts.c): it is where a
+ * bookmark leaves the engine, so the layer that owns the engine terminates
+ * it rather than the engine stubbing it out. */
 
 #endif
 

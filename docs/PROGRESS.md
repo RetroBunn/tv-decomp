@@ -11,6 +11,11 @@ the only test that covers the harness's own reconstruction of the SAPI
 engine thread rather than just the decompiled code, and all three builds
 reproduce the recording byte for byte.  See `ref/` in WORKFLOW.md.
 
+`docs/LIBRARY.md` describes `include/tvtts.h`, the flat C API the engine is
+packaged behind: `tvtts.dll` for screen readers and anything else that wants
+the synthesizer without SAPI.  The command line front end is built on it, so
+the corpus test covers the library too.
+
 `docs/VOICES.md` describes the voice system: the 22 synthesis parameter
 tracks, how a voice is stored as percentage deviations from voice 0, and
 the escape command that drives the tracks directly.

@@ -81,7 +81,7 @@ mkdir -p "$PORT/obj"
 PORT_OBJS=""
 for src in $(find src -name '*.c' | sort); do
   obj="$PORT/obj/$(echo "$src" | sed 's|^src/||; s|/|_|g; s|\.c$|.o|')"
-  gcc $CFLAGS -Isrc -I"$GEN" -c "$src" -o "$obj"
+  gcc $CFLAGS -Isrc -Iinclude -I"$GEN" -c "$src" -o "$obj"
   PORT_OBJS="$PORT_OBJS $obj"
 done
 python tools/gen_data.py "$DLL" src "$GEN/tvdata.s" $PORT_OBJS
@@ -89,3 +89,25 @@ gcc $CFLAGS -c "$GEN/tvdata.s" -o "$PORT/obj/tvdata.o"
 RT="$RT_MIN"
 link "$OUT/tv.exe" $PORT_OBJS "$PORT/obj/tvdata.o"
 echo "built $OUT/tv.exe"
+
+# --- library tests ------------------------------------------------------------
+# Everything but the CLI front end, plus the test program in its place.
+LIB_OBJS=$(echo "$PORT_OBJS" | tr ' ' '
+' | grep -v 'port_main\.o$' | tr '
+' ' ')
+gcc $CFLAGS -Isrc -Iinclude -I"$GEN" -c tests/api_test.c -o "$PORT/obj/api_test.o"
+link "$OUT/api_test.exe" "$PORT/obj/api_test.o" $LIB_OBJS "$PORT/obj/tvdata.o"
+echo "built $OUT/api_test.exe"
+
+# --- the shared library -------------------------------------------------------
+# Everything the CLI links, minus the CLI, plus a DLL entry point.  Only the
+# names in harness/rt/tvtts.def are exported, so the engine's own symbols stay
+# private; they are plain cdecl names, which is what ctypes and P/Invoke want.
+gcc $CFLAGS -c harness/rt/dllmain.c -o "$PORT/obj/dllmain.o"
+ld -m i386pe --shared --subsystem console -e _DllMainCRTStartup@12   --disable-dynamicbase --disable-reloc-section   --out-implib "$OUT/libtvtts.a" -o "$OUT/tvtts.dll"   "$PORT/obj/dllmain.o" $LIB_OBJS "$PORT/obj/tvdata.o"   "$OUT/libgcc32.o" "$OUT/chkstk.o" "$OUT/libmsvcrt.a" "$OUT/libkernel32.a"   harness/rt/tvtts.def
+echo "built $OUT/tvtts.dll"
+
+# The same tests again, this time across the DLL boundary, so the exports and
+# the calling convention are exercised rather than assumed.
+ld -m i386pe --subsystem console -e _mainCRTStartup@0 --stack 0x800000   --disable-dynamicbase --disable-reloc-section   -o "$OUT/api_test_dll.exe" "$PORT/obj/api_test.o" $RT_MIN   "$OUT/libtvtts.a" "$OUT/libmsvcrt.a" "$OUT/libkernel32.a"
+echo "built $OUT/api_test_dll.exe"
