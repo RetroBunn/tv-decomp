@@ -42,9 +42,13 @@ void Sapi_Post(SapiCentral *s, uint32_t msg, uint32_t wp, uint32_t lp)
 {
     (void)s; (void)msg; (void)wp; (void)lp;
 }
+/* Both callers hand over a pointer to a record the queue then owns.  With
+ * no queue there is nothing to take it off again, so it is dropped here. */
 int32_t Sapi_QueuePush(SapiCentral *s, const void *data, uint32_t size)
 {
-    (void)s; (void)data; (void)size;
+    (void)s;
+    if (size == sizeof(void *))
+        tv_delete(*(void *const *)data);
     return 0;
 }
 

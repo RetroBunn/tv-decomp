@@ -1149,7 +1149,7 @@ int32_t TV_THISCALL Stage2_DurAdjust(Engine *self)
                 }
                 if (a != 0) {
                     bx = (int16_t)(int8_t)nx;
-                    if (!(Phone_Attr((int16_t)(bx | 0x100)) & 2) &&
+                    if ((Phone_Attr((int16_t)(bx | 0x100)) & 2) &&
                         !(Phone_Attr((int16_t)(bx | 0x200)) & 1))
                         extra = 8;
                     else if (nx == 'R' || nx == 'L' || nx == 'W' || nx == 'Y')
@@ -1221,7 +1221,7 @@ scale:
 /* @0x100ee5b0 */ extern const DurRule *const g_dur_rulesets[16];
 /* @0x100ee5f0 */ extern const int32_t g_dur_rulecount[16];
 /* Which condition each bit of DurRule.cond selects. */
-/* @0x1005c960 */ extern const uint8_t g_dur_cond_idx[];
+/* @0x1005c960 */ extern const uint8_t g_dur_cond_idx[0x40];
 
 /* Try the rules for this word class against the phonemes around the cursor.
  * Returns the matching rule's result, or 0. */
@@ -2786,9 +2786,6 @@ static int32_t px(uint8_t b)
 /* @0x10056590 */
 int32_t TV_THISCALL Stage2_DurFric(Engine *self)
 {
-    /* jt1: the table each fricative uses; -1 means "the tree decides". */
-    static const signed char base_of[11] = {
-        0x18, -1, 0x1a, -1, 0x19, 0x1c, -1, 0x1b, -1, -1, 0x18 };
     /* jt2/jt3: which of the seven context rules applies, 0 for none. */
     static const unsigned char prev_grp[31] = {
         1, 2, 1, 3, 1, 3, 1, 2, 4, 5, 2, 1, 4, 3, 2, 6, 4, 3, 4, 6,

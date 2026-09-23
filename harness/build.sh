@@ -22,13 +22,18 @@ for lib in kernel32 msvcrt user32; do
   fi
 done
 
-RT=""
+# RT_MIN is process startup and the bits of libgcc a freestanding -m32 build
+# needs; the harness tools add the PE loader and its sandbox on top of it.
+RT_MIN=""
+RT_TOOL=""
 for src in harness/rt/start.c harness/rt/libgcc32.c harness/rt/chkstk.S \
            harness/peload.c harness/sandbox.c harness/coverage.c; do
   obj="$OUT/$(basename "$src" | sed 's/\.[cS]$/.o/')"
   gcc $CFLAGS -c "$src" -o "$obj"
-  RT="$RT $obj"
+  case "$src" in harness/rt/*) RT_MIN="$RT_MIN $obj" ;; esac
+  RT_TOOL="$RT_TOOL $obj"
 done
+RT="$RT_TOOL"
 
 link() { # link <exe> <extra ld args...>
   exe=$1; shift
@@ -49,7 +54,7 @@ for f in src/*.fields; do
   python tools/gen_struct.py "$f" "$GEN/$(basename "$f" .fields)_struct.h"
 done
 HOOK_OBJS=""
-for src in $(find src -name '*.c' -not -path 'src/data/*' -not -path 'src/port/*' | sort); do
+for src in $(find src -name '*.c' -not -path 'src/port/*' | sort); do
   obj="$HOOK/obj/$(echo "$src" | sed 's|^src/||; s|/|_|g; s|\.c$|.o|')"
   gcc $CFLAGS -DTV_HOOK_BUILD -Isrc -I"$GEN" -c "$src" -o "$obj"
   HOOK_OBJS="$HOOK_OBJS $obj"
@@ -62,3 +67,25 @@ gcc $CFLAGS -DTV_WITH_HOOKS -c harness/tvh.c -o "$HOOK/tvh_hook.o"
 link "$OUT/tvh_hook.exe" @"$HOOK/defsyms.txt" "$HOOK/tvh_hook.o" "$HOOK/hooks.o" \
   "$HOOK/unit.o" "$HOOK/hooks_gen.o" $HOOK_OBJS
 echo "built $OUT/tvh_hook.exe"
+
+# --- standalone build ---------------------------------------------------------
+# No DLL at run time: the engine is the C in src/, and the constant tables it
+# reads are pulled out of the original image here, at build time.
+DLL=${TV_DLL:-TruVoice/CGRM_EN.DLL}
+if [ ! -f "$DLL" ]; then
+  echo "no $DLL: skipping the standalone build" >&2
+  exit 0
+fi
+PORT=build/port
+mkdir -p "$PORT/obj"
+PORT_OBJS=""
+for src in $(find src -name '*.c' | sort); do
+  obj="$PORT/obj/$(echo "$src" | sed 's|^src/||; s|/|_|g; s|\.c$|.o|')"
+  gcc $CFLAGS -Isrc -I"$GEN" -c "$src" -o "$obj"
+  PORT_OBJS="$PORT_OBJS $obj"
+done
+python tools/gen_data.py "$DLL" src "$GEN/tvdata.s" $PORT_OBJS
+gcc $CFLAGS -c "$GEN/tvdata.s" -o "$PORT/obj/tvdata.o"
+RT="$RT_MIN"
+link "$OUT/tv.exe" $PORT_OBJS "$PORT/obj/tvdata.o"
+echo "built $OUT/tv.exe"

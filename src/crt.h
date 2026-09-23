@@ -75,6 +75,25 @@ void *TV_CDECL tv_bsearch(const void *key, const void *base, size_t n, size_t wi
 /* @0x10088d80 */
 char *TV_CDECL tv_itoa(int v, char *buf, int radix);
 
+/* MSVC's _stricmp in the "C" locale: ASCII case folding, then a byte
+ * compare.  Written out here so neither build depends on the host having it. */
+static inline int tv_stricmp(const char *a, const char *b)
+{
+    const unsigned char *p = (const unsigned char *)a;
+    const unsigned char *q = (const unsigned char *)b;
+    int x, y;
+
+    do {
+        x = *p++;
+        y = *q++;
+        if (x >= 'A' && x <= 'Z')
+            x += 'a' - 'A';
+        if (y >= 'A' && y <= 'Z')
+            y += 'a' - 'A';
+    } while (x != 0 && x == y);
+    return x - y;
+}
+
 /* The compiler's inline strcmp: exactly -1, 0 or 1. */
 static inline int tv_strcmp(const char *a, const char *b)
 {

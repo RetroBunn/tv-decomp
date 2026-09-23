@@ -35,17 +35,10 @@ extern const char g_esc_prefix[3];
 extern const char g_minus_dollar[];
 
 /* g_cls2[(signed char)c]: for c >= 0x80 this reaches the dwords stored in
- * front of the table in the original image (only their low byte matters). */
+ * front of the table, which are there in both builds. */
 static uint32_t cls2_signed(uint8_t c)
 {
-#if defined(TV_HOOK_BUILD)
     return g_cls2[(int8_t)c];
-#else
-    extern const uint8_t g_cls2_before[128]; /* low bytes of the 128 dwords before */
-    if (c < 0x80)
-        return g_cls2[c];
-    return g_cls2_before[c - 0x80];
-#endif
 }
 
 /* ---- bit sets ---------------------------------------------------------- */
@@ -995,16 +988,16 @@ int32_t TV_THISCALL TextIn_Expand(TextIn *self, Token *t, char *buf1, char *buf2
     }
 
     if (t->text != NULL) {
-        if (_stricmp(t->text, "unknown") == 0) {
+        if (tv_stricmp(t->text, "unknown") == 0) {
             if (set_text2(self, t, "un known") == -1)
                 return 1;
-        } else if (_stricmp(t->text, "unsent") == 0) {
+        } else if (tv_stricmp(t->text, "unsent") == 0) {
             if (set_text2(self, t, "un sent") == -1)
                 return 1;
         }
     }
 
-    if (t->len == 2 && _stricmp(t->text, "am") == 0) {
+    if (t->len == 2 && tv_stricmp(t->text, "am") == 0) {
         p = t->prev;
         while (p != NULL && p->len == 0 && p->trail == ' ')
             p = p->prev;
@@ -1014,7 +1007,7 @@ int32_t TV_THISCALL TextIn_Expand(TextIn *self, Token *t, char *buf1, char *buf2
         }
     }
 
-    if (t->len == 3 && (_stricmp(t->text, "jan") == 0 || _stricmp(t->text, "mar") == 0)) {
+    if (t->len == 3 && (tv_stricmp(t->text, "jan") == 0 || tv_stricmp(t->text, "mar") == 0)) {
         int match = 0;
         p = t->prev;
         if (p != NULL && p->is_number != 0 &&

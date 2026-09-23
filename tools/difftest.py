@@ -92,12 +92,13 @@ def configs(full, inputs):
     return runs
 
 
-def run_one(exe, extra, name, path, voice, phone, outdir, suffix="", pargs=()):
+def run_one(exe, extra, name, path, voice, phone, outdir, suffix="", pargs=(),
+            dll=True):
     os.makedirs(outdir, exist_ok=True)
     tag = "%s_v%d%s%s" % (name, voice, "_8k" if phone else "", suffix)
     out = os.path.join(outdir, tag + ".wav")
     args = [exe] + extra + list(pargs) + ["-v", str(voice)] + (["-8"] if phone else []) + \
-        [DLL, "@" + path, out]
+        ([DLL] if dll else []) + ["@" + path, out]
     r = subprocess.run(args, capture_output=True, text=True)
     if r.returncode != 0 or not os.path.exists(out):
         return tag, None, (r.stderr or "")[-400:]
@@ -120,6 +121,9 @@ def main():
     ap.add_argument("--hooks", default="all")
     ap.add_argument("-j", type=int, default=os.cpu_count() or 4)
     ap.add_argument("--only", default="")
+    ap.add_argument("--port", action="store_true",
+                    help="test build/harness/tv.exe, the standalone build, "
+                         "which loads no DLL")
     a = ap.parse_args()
 
     dll_id = md5(DLL)[:8]
@@ -145,9 +149,15 @@ def main():
     fails = 0
     with cf.ThreadPoolExecutor(a.j) as ex:
         refs = dict((t, (o, e)) for t, o, e in ex.map(ref_job, runs))
-        cands = dict((t, (o, e)) for t, o, e in ex.map(
-            lambda r: run_one(TVH_HOOK, ["-H", a.hooks], r[0], r[1], r[2], r[3], canddir,
-                              r[4], r[5]), runs))
+        if a.port:
+            exe = os.path.join(ROOT, "build", "harness", "tv.exe")
+            cands = dict((t, (o, e)) for t, o, e in ex.map(
+                lambda r: run_one(exe, [], r[0], r[1], r[2], r[3], canddir,
+                                  r[4], r[5], dll=False), runs))
+        else:
+            cands = dict((t, (o, e)) for t, o, e in ex.map(
+                lambda r: run_one(TVH_HOOK, ["-H", a.hooks], r[0], r[1], r[2], r[3],
+                                  canddir, r[4], r[5]), runs))
     for tag in sorted(refs):
         ro, re_ = refs[tag]
         co, ce = cands.get(tag, (None, "missing"))
@@ -155,7 +165,7 @@ def main():
             print("REF-FAIL %s: %s" % (tag, re_))
             fails += 1
         elif co is None:
-            print("FAIL     %s: hook build crashed: %s" % (tag, ce))
+            print("FAIL     %s: candidate crashed: %s" % (tag, ce))
             fails += 1
         elif md5(ro) != md5(co):
             print("MISMATCH %s: %s" % (tag, first_diff(ro, co)))

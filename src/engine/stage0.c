@@ -42,15 +42,12 @@ extern const uint32_t g_s0_flag_hi[256];
 /* @0x100c8aa0 */
 extern const uint8_t g_phone_attr[0x280];
 
-/* g_phone_attr with the signed index the original uses (-128..255). */
+/* g_phone_attr with the signed index the original uses (-128..255): a
+ * negative one reaches the bytes stored in front of the table, which are
+ * there in both builds. */
 uint8_t Phone_Attr(int32_t idx)
 {
-#if defined(TV_HOOK_BUILD)
     return g_phone_attr[idx];
-#else
-    extern const uint8_t g_phone_attr_before[128];
-    return idx < 0 ? g_phone_attr_before[idx + 128] : g_phone_attr[idx];
-#endif
 }
 
 static uint8_t phone_attr_signed(uint8_t c)

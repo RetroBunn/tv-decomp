@@ -292,7 +292,7 @@ next_syllable:
                 }
             }
             if (c == '[') {
-                if (!(attr_lo(prev_ch) & 0x80))
+                if (attr_lo(prev_ch) & 0x80)
                     c = prev_ch;
                 q = self->s1_next_start;
                 if ((q->flags & 0x18) == 8) {
@@ -442,9 +442,11 @@ void TV_THISCALL Lts_Syllable(Engine *self, int32_t final)
                 }
             }
         }
+        /* only the "U" branch runs the H test: the original jumps straight
+         * past it when the pending vowel is anything else */
+        if (pc == 'H')
+            self->lts_reduce = 0;
     }
-    if (pc == 'H')
-        self->lts_reduce = 0;
     if (self->lts_reduce != 1)
         goto done;
 

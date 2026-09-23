@@ -1589,7 +1589,7 @@ void TV_THISCALL Stage3_Op4(Engine *self)
             } else if (c_cur == 'N') {
                 p->start = (k == 9) ? sv_start : pole[k - 9];
                 p->mode = (k >= 10 && k <= 12) ? 0 : 1;
-            } else if (!(c_ctl == 'M' && k == 10)) {
+            } else if (!(c_cur == 'M' && k == 10)) {
                 p->mode = 3;
             }
 
@@ -2147,7 +2147,7 @@ void TV_THISCALL Stage3_Op2(Engine *self)
 {
     StageCtx *st = &self->stage_ctx[3];
     int32_t c_cur = px3(st->cur->value);
-    int32_t i, v;
+    int32_t i;
 
     for (i = 9; i < 17; i++)
         self->s3_param[i].shape_out =
@@ -2558,7 +2558,6 @@ void TV_THISCALL Stage3_Op6(Engine *self)
     int32_t c_scan = px3(scan->value);
     uint8_t a, b;
     Node *n;
-    int32_t v;
 
     if (Phone_Attr(c_ctl | 0x180) & 4) {
         int32_t shortened = 0;

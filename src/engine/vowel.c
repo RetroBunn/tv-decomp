@@ -830,7 +830,7 @@ r_done:
             ret = Engine_NodeFree(self, nxt_saved, 0);
     }
 
-    if ((c == '3' && ch_prevv == '3' && ch_prev == '&') ||
+    if ((c == '3' && ch_prevv == '3' && ch_prev != '&') ||
         (ch_prevv == '3' && v40 == '3')) {
         Engine_NodeAlloc(self, n, 0, 3, 'R');
         goto post;
@@ -849,7 +849,7 @@ r_done:
                         goto post;
                     while (p != NULL) {
                         d = p->value;
-                        if (!(attr_lo(d) & 0x80) && d != ' ')
+                        if ((attr_lo(d) & 0x80) && d != ' ')
                             break;
                         p = Node_PrevBoundary(self, p);
                     }

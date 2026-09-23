@@ -1,8 +1,9 @@
 # Decompilation progress
 
 Verification: `python tools/difftest.py --full` compares the decompiled code
-(hooked into the running original) against the original over the corpus.
-All listed functions are byte-exact on every corpus input.
+(hooked into the running original) against the original over the corpus, and
+`--port` does the same for the standalone build, which loads nothing.  Both
+are byte-exact on all 331 configurations.
 
 ## Engine architecture (as understood so far)
 
@@ -82,6 +83,15 @@ handles; other node types are control commands it executes in passing.
 * **User lexicon** `lexicon.c`: `UserLex_Add`, the entry point the SAPI
   lexicon calls, which upper-cases the spelling, copies both strings onto
   the engine's heap and keeps the table sorted for the binary search.
+* **Standalone build** `src/port/`: `main.c`, the command-line driver that
+  does what the SAPI engine thread did for one `TextData` call; `msvcrt.c`,
+  the MSVC 4.2 runtime functions the engine calls -- the character classes
+  and `atol` read the "C" locale table the original CRT built into its own
+  data, so bytes over 0x7f classify the same way; and `stubs.c` for the one
+  call the engine makes back into the layer above it.  The constant tables
+  come out of the image at build time (`tools/gen_data.py`), so the program
+  that comes out loads no DLL, talks to no SAPI and reads no registry: its
+  only import is the C runtime.
 * **Stage resets** `stages.c` + stage 4 driver.
 * **Feeding** `feed.c`: `Engine_Feed`, `Engine_Flush`.
 * **Preformatter** `preformat.c`: accent folding, `ESC[..X` command parser.
@@ -142,31 +152,65 @@ trace, which needs a portable replacement) and the SAPI queue helpers at
 `0x10038530`/`0x100385b0`.  Everything else the tree still references is the
 MSVC C runtime, which the portable build takes from the host.
 
+Of the 10,816 basic blocks in those 223 functions the corpus executes
+9,886 (91%); the 930 that are left sit in 87 functions and are written from
+the disassembly without ever having been run.  Growing the corpus to close
+that gap (see below) turned up six transcription errors that the earlier
+302 configurations had never exercised, all now fixed: a wrong stack slot
+in `Stage3_Op4` (`c_ctl` where the original reads `c_cur`), an inverted
+attribute test in the `B` arm of `Stage2_DurAdjust`, an inverted
+vowel-search condition and an inverted word-boundary test in
+`Stage1_Vowel`, an inverted `prev_ch` test at the `[` in `Stage1_Rules`,
+and an `H` test in `Lts_Syllable` that the original reaches only through
+the `U` branch.  Five of the six are a single inverted condition, which is
+what transcribing `jne`/`je` by hand gets wrong; the last is the one place
+where a jump out of a branch skips code that reads like a separate
+statement.
+
 ## Next
 
-1. Portable build: MSVC-compatible CRT pieces, data extraction from the DLL,
-   `Engine_Read32/Write32` for the raw-offset accesses (see layout.c).
+1. The standalone build is 32-bit, because `Engine` has the original's
+   layout and that layout has 4-byte pointers in it.  A 64-bit build needs
+   the pointer members turned into something width-independent, and
+   `Engine_ZeroDwordIfMinus1` (layout.c) -- the one raw offset access the
+   original makes into its own object -- mapped through the generated
+   accessor rather than pointer arithmetic.
+2. `pow` and `log10` are the only places the output depends on the host's
+   libm: `Engine_SetVolume` turns the result into a small integer, so a
+   library that rounds the last bit differently could shift the attenuation
+   by one at a boundary.  Worth pinning to fixed point.
+3. The four SAPI glue functions, if the phoneme trace is ever wanted.
 
 ## Test corpus
 
-`tests/corpus/*.txt` (42 inputs), run in 302 configurations: ten voices at
+`tests/corpus/*.txt` (58 inputs), run in 331 configurations: ten voices at
 11025 and 8000 Hz, pitch/speed/volume variants, PreFormat and TextIn on and
 off, embedded ESC commands, quoted-mail mode, cp1252 text, malformed
 escapes, phoneme input with `/pitch;duration/` annotations, skim mode
 (`ESC[2f`), `ESC[..N`/`ESC[..F` flag changes, bracket spell mode, English
 morphology and contractions, homographs in context, user-lexicon entries
-added with `-L`, rate and phrase commands embedded mid-sentence, sonorant-dense text, and
-the sample texts shipped with TruVoice when present.  A
-`NAME.opts` file next to an input pins its harness options.
+added with `-L`, rate and phrase commands embedded mid-sentence,
+sonorant-dense text, and the sample texts shipped with TruVoice when
+present.  A `NAME.opts` file next to an input pins its harness options.
+
+The last inputs (54 onwards) are generated rather than written:
+`tools/covgen.py` makes random text, bracket-phoneme and escape-sequence
+lines, runs each candidate through the oracle with block coverage on, and
+keeps only the ones that reach blocks nothing else did.  `--args` passes
+harness options through and writes the matching `.opts`.
 
 ## Known deviations
 
 * `TextIn_ReadEscape` bounds its buffer; the original overruns it for
   `ESC[` sequences longer than 17 characters (no reference output exists).
-* Four functions are written from the disassembly but the corpus never
+* Three functions are written from the disassembly but the corpus never
   reaches them, so they are the ones not verified by execution:
-  `Stage1_VowelAux` (0x10064200), `Stage2_DurFast` (0x1005aa90),
-  `Stage3_NasalPole` (0x10048ef0) and `TextIn_Error` (0x1001ae80).
+  `Stage1_VowelAux` (0x10064200), `Stage2_DurFast` (0x1005aa90) and
+  `TextIn_Error` (0x1001ae80).  `Stage1_VowelAux` in particular is guarded
+  by an exact phoneme sequence ("& P R e S q n" with the accent flag set
+  and `q->b14 != 2`); 400 randomised "press" sentences and targeted
+  bracket-mode sequences all failed to reach it.  `Stage3_NasalPole`
+  (0x10048ef0) runs 3 of its 9 blocks.
 * A few places read a stack slot the original never writes on that path, so
   what they read is whatever the last call left there.  In `Stage3_Op4` and
   `Stage3_LayGlide` the value only reaches a comparison that cannot hold
@@ -181,9 +225,13 @@ the sample texts shipped with TruVoice when present.  A
   test for a space that the same value cannot satisfy, and the "M" tail of
   `Stage3_Op4`, which compares a slot that only ever holds 3 or 13 with 9.
 * The duration tables are wide decision trees and the corpus does not reach
-  every leaf: `Stage2_DurFric` runs about 60% of its 680 basic blocks,
-  `Stage2_DurVowel` about 80% and `Stage2_DurStop` about 84%.  The rest are
-  written from the disassembly.
+  every leaf: `Stage2_DurFric` runs 571 of its 680 basic blocks (84%),
+  `Stage2_DurVowel` 361 of 398 (91%) and `Stage2_DurStop` 888 of 930 (95%).
+  The rest are written from the disassembly.  For `Stage2_DurFric` an
+  exhaustive sweep of 2,688 candidates (previous group x fricative x next
+  group x stress x following context) showed the remaining blocks are not
+  reachable by varying those: they need word-class context that bracket
+  phoneme input bypasses, or are dead for English.
 * `Stage2_Begin` has two paths the corpus cannot reach.  The phoneme
   trace it writes to the COM byte list needs `w_212c`, which only the SAPI
   layer sets, and the boundary marks with argument 7 and 8 (the rising and

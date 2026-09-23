@@ -29,10 +29,19 @@
 #  define TV_CDECL    __attribute__((cdecl))
 #  define TV_LAYOUT_ASSERT(x) _Static_assert(x, #x)
 #else
+/* Nothing outside the engine calls into it, so the standalone build can use
+ * the compiler's own convention throughout. */
 #  define TV_THISCALL
 #  define TV_STDCALL
 #  define TV_CDECL
-#  define TV_LAYOUT_ASSERT(x) _Static_assert(1, "layout checked in hook build only")
+/* The object still has the original's layout wherever pointers are four
+ * bytes wide, and one place (layout.c) reaches into it by raw offset, so
+ * keep checking it there too. */
+#  if defined(__i386__)
+#    define TV_LAYOUT_ASSERT(x) _Static_assert(x, #x)
+#  else
+#    define TV_LAYOUT_ASSERT(x) _Static_assert(1, "layout differs off 32-bit x86")
+#  endif
 #endif
 
 #define TV_COUNTOF(a) (sizeof(a) / sizeof((a)[0]))
