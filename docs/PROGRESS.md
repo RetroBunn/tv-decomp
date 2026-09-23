@@ -3,7 +3,7 @@
 Verification: `python tools/difftest.py --full` compares the decompiled code
 (hooked into the running original) against the original over the corpus, and
 `--port` does the same for the standalone build, which loads nothing.  Both
-are byte-exact on all 331 configurations.
+are byte-exact on all 335 configurations.
 
 `--ref` checks something else: audio recorded from the engine as installed,
 spoken through an ordinary SAPI client, against all three builds.  That is
@@ -179,21 +179,38 @@ statement.
 
 ## Next
 
-1. The standalone build is 32-bit, because `Engine` has the original's
-   layout and that layout has 4-byte pointers in it.  A 64-bit build needs
-   the pointer members turned into something width-independent, and
-   `Engine_ZeroDwordIfMinus1` (layout.c) -- the one raw offset access the
-   original makes into its own object -- mapped through the generated
-   accessor rather than pointer arithmetic.
-2. `pow` and `log10` are the only places the output depends on the host's
-   libm: `Engine_SetVolume` turns the result into a small integer, so a
-   library that rounds the last bit differently could shift the attenuation
-   by one at a boundary.  Worth pinning to fixed point.
+The engine itself is portable C now: it compiles clean for any target,
+and the only thing it asks of the host is 26 ordinary C runtime functions
+(no libm, no Windows API, no SAPI).  What is left is build plumbing and
+pointer width.
+
+1. **A hosted build.**  The standalone binary is still produced by the
+   harness's toolchain -- freestanding `-m32`, `harness/rt/start.c` for
+   process startup, `ld -m i386pe` -- which is why `tv.exe` imports
+   `__getmainargs` and `__iob_func` on top of the C runtime.  `src/port/
+   main.c` is already an ordinary `main()` over `<stdio.h>`, so a hosted
+   32-bit build (`gcc -m32` against the system libc on Linux or macOS)
+   needs no engine changes, only a second path through `harness/build.sh`.
+   It could not be tried here: this machine has no 32-bit libc.
+2. **64-bit.**  Two measured blockers, both outside the engine sources,
+   which compile clean at `-m64` as they stand:
+   - `tools/gen_data.py` emits the 15,013 addresses inside the extracted
+     data as `.long`, and at 64-bit every one of them is a "relocation
+     truncated to fit".  The ~75 pointer tables in that data would have to
+     come out of the raw section images and be emitted as real pointer
+     arrays, leaving the surrounding bytes at their original offsets --
+     the engine indexes past the end of some tables into the next one, so
+     the bytes cannot simply be respaced.
+   - `sizeof(Engine)` grows past the original's 0x9200 once its pointer
+     members widen, so `ENGINE_ALLOC` in `src/port/main.c` stops being the
+     right size, and `Engine_ZeroDwordIfMinus1` (layout.c) -- the one raw
+     offset access the original makes into its own object -- needs mapping
+     through the generated accessor rather than pointer arithmetic.
 3. The four SAPI glue functions, if the phoneme trace is ever wanted.
 
 ## Test corpus
 
-`tests/corpus/*.txt` (58 inputs), run in 331 configurations: ten voices at
+`tests/corpus/*.txt` (59 inputs), run in 335 configurations: ten voices at
 11025 and 8000 Hz, pitch/speed/volume variants, PreFormat and TextIn on and
 off, embedded ESC commands, quoted-mail mode, cp1252 text, malformed
 escapes, phoneme input with `/pitch;duration/` annotations, skim mode

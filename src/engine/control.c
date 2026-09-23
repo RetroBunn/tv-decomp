@@ -7,7 +7,6 @@
  * act in the one stage that owns the setting, and the values are kept
  * per stage in StageCtx.
  */
-#include <math.h>
 #include "engine.h"
 #include "crt.h"
 
@@ -90,7 +89,7 @@ uint8_t TV_THISCALL Engine_RunControl(Engine *self)
             self->cur_volume = 0;
             self->stage->volume_atten = 100;
         } else {
-            self->cur_volume = (uint32_t)(int32_t)(pow(10.0, arg * -0.1) * 65535.0);
+            self->cur_volume = Volume_FromAtten(arg);
             self->mute = 0;
         }
         if (sapi == NULL)

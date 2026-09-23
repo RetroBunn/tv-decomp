@@ -1,7 +1,6 @@
 /*
  * Engine object lifecycle and parameter setters.
  */
-#include <math.h>
 #include "engine.h"
 
 /* Default raw values of the 22 synthesis parameters for a new engine. */
@@ -115,9 +114,7 @@ void TV_THISCALL Engine_SetVolume(Engine *self, uint32_t vol)
         return;
     }
     self->mute = 0;
-    att = (int32_t)(log10((double)vol * (1.0 / 65535.0)) * -10.0);
-    if (att > 15)
-        att = 15;
+    att = Volume_ToAtten(vol);
     self->volume_atten = att;
     for (i = 0; i < 5; i++)
         self->stage_ctx[i].volume_atten = att;

@@ -141,6 +141,12 @@ original's data, and it never enters the repository.
   TextIn front end and the engine fails, so there is no reference output
   for such text.  The decompiled code bounds the copy; the test corpus keeps
   escape sequences within the limit.
+* **Excess precision.**  The 32-bit build does its floating point on the
+  x87, where an intermediate carries 80 bits; SSE2 on any 64-bit target
+  does not.  Where a float result is truncated to a small integer that
+  reaches the audio, the two can disagree at a step boundary.  Both places
+  the original did that -- the volume `pow`/`log10` -- are now tables in
+  `src/engine/volume.c`, and the engine no longer links libm at all.
 * **Text length matters.**  SAPI `TextData` enqueues the caller's text
   plus one NUL of its own (SDK callers usually include their own NUL too);
   the feed routine branches on the total length (0x28, 0x82).

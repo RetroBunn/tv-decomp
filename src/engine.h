@@ -60,6 +60,10 @@ void TV_THISCALL Engine_SetPitch(Engine *self, int32_t pitch);
 void TV_THISCALL Engine_SetSpeed(Engine *self, int32_t wpm);
 /* @0x1002c870 */
 void TV_THISCALL Engine_SetVolume(Engine *self, uint32_t vol);
+
+/* volume.c: the tabulated pow()/log10() the original used here. */
+uint32_t Volume_FromAtten(int32_t arg);
+int32_t Volume_ToAtten(uint32_t vol);
 /* @0x1002c8f0 */
 void TV_THISCALL Engine_SetVoice(Engine *self, uint32_t voice);
 /* @0x10027ea0 */
