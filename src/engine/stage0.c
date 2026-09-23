@@ -27,7 +27,7 @@ extern const char g_stage0_wordchars[];
 /* Word lists, indexed by the selector byte of the match opcodes; each is a
  * NULL-terminated array of "word\0replacement\0" strings. */
 /* @0x101209a8 */
-extern const char *const *const g_stage0_words[256];
+extern const tv_ref g_stage0_words[256];
 /* Flag bits per condition opcode 2 parameter. */
 /* @0x100f83a0 */
 extern const uint32_t g_s0_flag_lo[16];
@@ -101,13 +101,13 @@ uint8_t TV_CDECL Stage0_IsPlain(char c)
 uint8_t TV_THISCALL Stage0_MatchWord(Engine *self, uint8_t list, uint8_t fold_case)
 {
     StageCtx *st = &self->stage_ctx[0];
-    const char *const *words = g_stage0_words[list];
+    const tv_ref *words = TV_REF(tv_ref, g_stage0_words[list]);
     const char *w;
     Node *n;
 
     for (;;) {
-        w = *words;
-        if (w == NULL)
+        w = TV_REF(char, *words);
+        if (!TV_REF_OK(*words))
             return 0;
         words++;
         n = st->d14;

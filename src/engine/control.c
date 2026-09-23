@@ -134,7 +134,7 @@ uint8_t TV_THISCALL Engine_RunControl(Engine *self)
                     if (arg == 0)
                         n->notify = 0;
                     Sapi_Lock(sapi);
-                    Sapi_QueuePush(sapi, &rec, 4);
+                    Sapi_QueuePush(sapi, &rec, sizeof rec);
                     Sapi_Unlock(sapi);
                     Sapi_Post(sapi, 0x4c8, 0, 0);
                 }

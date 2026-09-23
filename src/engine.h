@@ -6,6 +6,7 @@
 #define TV_ENGINE_H
 
 #include "tv_common.h"
+#include "tv_ref.h"
 #include "engine_struct.h" /* generated from engine.fields */
 
 #define TV_RING_SIZE 0x1000
@@ -194,35 +195,35 @@ void TV_THISCALL Stage1_Close(Engine *self);
 /* One rule of the letter-to-sound table.  The rules for a letter follow each
  * other in memory and are tried in order. */
 typedef struct LtsEntry {
-    const char *left;     /* 0x00 left-context letters, matched backwards */
-    const uint8_t *out;   /* 0x04 control bytes, then the phonemes to emit */
-    const uint8_t *cond;  /* 0x08 right-context condition program */
-    const uint32_t *want; /* 0x0c the two feature masks the rule needs */
-    const uint32_t *set;  /* 0x10 the two feature masks it leaves behind */
+    tv_ref left;     /* 0x00 left-context letters, matched backwards */
+    tv_ref out;   /* 0x04 control bytes, then the phonemes to emit */
+    tv_ref cond;  /* 0x08 right-context condition program */
+    tv_ref want; /* 0x0c the two feature masks the rule needs */
+    tv_ref set;  /* 0x10 the two feature masks it leaves behind */
 } LtsEntry;
 
 /* The rules for each letter, indexed by the letter ('@'..'['). */
 /* @0x100b4ee0 */
-extern const LtsEntry *const g_lts_rules[];
+extern const tv_ref g_lts_rules[];
 
 /* One affix (prefix/suffix) rule.  The rules for a given letter form a
  * NULL-terminated array of pointers, and `next` chains to the array to try
  * after this one matched. */
 typedef struct LtsRule {
-    const char *text;     /* 0x00 the letters, in match order */
-    const uint8_t *cond;  /* 0x04 context condition program */
+    tv_ref text;     /* 0x00 the letters, in match order */
+    tv_ref cond;  /* 0x04 context condition program */
     uint8_t b08;          /* 0x08 re-run the lexicon after stripping */
     uint8_t b09;          /* 0x09 word class */
     uint8_t b0a;          /* 0x0a stress level, or > 1: a s1_1c2d code */
     uint8_t b0b;
-    const struct LtsRule *const *next; /* 0x0c */
+    tv_ref next; /* 0x0c */
 } LtsRule;
 
 /* Rule lists indexed by the last / first letter of the word. */
 /* @0x100e4134 */
-extern const LtsRule *const *const g_lts_suffix[256];
+extern const tv_ref g_lts_suffix[256];
 /* @0x100e4dd4 */
-extern const LtsRule *const *const g_lts_prefix[256];
+extern const tv_ref g_lts_prefix[256];
 /* Letter-class descriptors: high byte selects a g_phone_attr bank, low byte
  * the bit to test. */
 /* @0x100c89e0 */
@@ -236,8 +237,8 @@ uint8_t TV_THISCALL Lts_MatchLeft(Engine *self, const LtsEntry *r);
 uint8_t TV_THISCALL Lts_TestContext(Engine *self, const uint8_t *cond, Node *n,
                                     int32_t dir);
 /* @0x10063480 */
-const LtsRule *TV_THISCALL Lts_MatchAffix(Engine *self, Node *a, Node *b,
-                                          const LtsRule *const *set, int32_t dir);
+tv_ref TV_THISCALL Lts_MatchAffix(Engine *self, Node *a, Node *b,
+                                          const tv_ref *set, int32_t dir);
 /* @0x10063230 */
 uint8_t TV_THISCALL Stage1_Lookup(Engine *self);
 /* @0x100635a0 */
@@ -267,8 +268,12 @@ typedef struct LexEntry {
     const char *pron;
 } LexEntry;
 
-/* @0x101312c0 */ extern const LexEntry g_lexicon[];
-/* @0x101312b8 */ extern const uint32_t g_lexicon_count;
+/* The table is written as well as read, and where a pointer is wider
+ * than the original's four bytes its entries no longer fit the room the
+ * image left for them, so outside the hook build the library owns it
+ * (lexicon.c).  The original ships it empty, so that is the same table. */
+/* @0x101312c0 */ extern LexEntry g_lexicon[];
+/* @0x101312b8 */ extern uint32_t g_lexicon_count;
 
 /* @0x10003980 */
 int32_t TV_CDECL UserLex_Compare(const void *a, const void *b);
@@ -310,7 +315,8 @@ typedef struct DictPhState {
 /* Entry size per key state and suffix count: [state * 17 + n]. */
 /* @0x100f9a98 */ extern const uint8_t g_dict_skip[];
 /* The blob's index: one bucket pointer per letter, then a limit. */
-/* @0x100f9acc */ extern const uint32_t *const g_dict_base;
+/* The bucket table: a reference to an array of references. */
+/* @0x100f9acc */ extern const tv_ref g_dict_base;
 
 /* @0x10050d20 */
 uint8_t TV_CDECL Dict_Byte(const void *p);
@@ -393,11 +399,11 @@ typedef struct DurRule {
     uint8_t len;        /* 0x00 phonemes in `text` */
     uint8_t back;       /* 0x01 steps back before matching */
     uint8_t pad02[2];
-    const char *text;   /* 0x04 */
+    tv_ref text;   /* 0x04 */
     uint8_t cond;       /* 0x08 flag-condition bits */
     uint8_t ntests;     /* 0x09 */
     uint8_t pad0a[2];
-    const DurTest *tests; /* 0x0c */
+    tv_ref tests; /* 0x0c */
     uint8_t result;     /* 0x10 */
     uint8_t pad11[3];
 } DurRule;
@@ -567,13 +573,13 @@ typedef struct S3Edit {
 typedef struct S3Pair {
     uint8_t ch;            /* 0x00, zero ends the list */
     uint8_t pad[3];
-    const uint8_t *set;    /* 0x04 */
+    tv_ref set;    /* 0x04 */
 } S3Pair;
 
 typedef struct S3Rule {
-    const uint8_t *cond;        /* 0x00 conditions, terminated by 0x18 */
-    const S3Edit *const *edits; /* 0x04 blocks of edits, NULL-terminated */
-    const uint8_t *ops;         /* 0x08 routines to run, terminated by 0 */
+    tv_ref cond;        /* 0x00 conditions, terminated by 0x18 */
+    tv_ref edits; /* 0x04 blocks of edits, NULL-terminated */
+    tv_ref ops;         /* 0x08 routines to run, terminated by 0 */
 } S3Rule;
 
 

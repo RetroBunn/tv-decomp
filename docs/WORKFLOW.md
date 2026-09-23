@@ -19,6 +19,7 @@ binaries are not part of this repository; place your own copy in
 | `build/harness/api_test.exe`, `api_test_dll.exe` | the library tests, statically linked and across the DLL boundary |
 | `python tools/difftest.py [--full]` | byte-exact comparison of `tvh_hook.exe` against `tvh.exe` over the corpus |
 | `python tools/difftest.py --port [--full]` | the same comparison for `tv.exe`, the standalone build |
+| `python tools/difftest.py --port64 [--full]` | the same comparison for `tv64.exe`, the 64-bit build |
 | `python tools/difftest.py --ref` | checks all three builds against recordings of the real installed engine in `ref/` |
 | `python tools/voicedump.py [dll...]` | prints the per-voice parameter tables out of a language DLL (see docs/VOICES.md) |
 

@@ -31,6 +31,7 @@ DLL = os.path.join(ROOT, "TruVoice", "CGRM_EN.DLL")
 TVH = os.path.join(ROOT, "build", "harness", "tvh.exe")
 TVH_HOOK = os.path.join(ROOT, "build", "harness", "tvh_hook.exe")
 TV_PORT = os.path.join(ROOT, "build", "harness", "tv.exe")
+TV_PORT64 = os.path.join(ROOT, "build", "harness", "tv64.exe")
 WORK = os.path.join(ROOT, "work", "difftest")
 REFDIR = os.path.join(ROOT, "ref")
 
@@ -250,6 +251,9 @@ def main():
     ap.add_argument("--port", action="store_true",
                     help="test build/harness/tv.exe, the standalone build, "
                          "which loads no DLL")
+    ap.add_argument("--port64", action="store_true",
+                    help="test build/harness/tv64.exe, the 64-bit standalone "
+                         "build")
     ap.add_argument("--ref", action="store_true",
                     help="instead of the corpus, check every build against "
                          "the recordings in ref/, made with the real "
@@ -282,9 +286,10 @@ def main():
     fails = 0
     with cf.ThreadPoolExecutor(a.j) as ex:
         refs = dict((t, (o, e)) for t, o, e in ex.map(ref_job, runs))
-        if a.port:
+        if a.port or a.port64:
+            exe = TV_PORT64 if a.port64 else TV_PORT
             cands = dict((t, (o, e)) for t, o, e in ex.map(
-                lambda r: run_one(TV_PORT, [], r[0], r[1], r[2], r[3], canddir,
+                lambda r: run_one(exe, [], r[0], r[1], r[2], r[3], canddir,
                                   r[4], r[5], dll=False), runs))
         else:
             cands = dict((t, (o, e)) for t, o, e in ex.map(

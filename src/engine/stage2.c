@@ -790,7 +790,7 @@ merge:
 }
 
 /* Place-of-articulation classes, used to spot a homorganic pair. */
-/* @0x100ef6d8 */ extern const uint8_t *const g_phone_place;
+/* @0x100ef6d8 */ extern const tv_ref g_phone_place;
 
 /* The full duration rules: build up a list of percentage adjustments, apply
  * them all, and interpolate between the phoneme's minimum and nominal
@@ -832,7 +832,7 @@ int32_t TV_THISCALL Stage2_DurRules(Engine *self)
             pct -= 0x14;
             if (self->s2_1daa != 0 &&
                 (Phone_Attr((int16_t)(cx | 0x100)) & 1)) {
-                const uint8_t *place = g_phone_place;
+                const uint8_t *place = TV_REF(uint8_t, g_phone_place);
 
                 if (place[(int32_t)(int8_t)self->s2_prev1->value] ==
                     place[(int32_t)(int8_t)n->value])
@@ -1218,7 +1218,7 @@ scale:
 }
 
 /* The vowel duration rule tables, one set per word class (Node.b19). */
-/* @0x100ee5b0 */ extern const DurRule *const g_dur_rulesets[16];
+/* @0x100ee5b0 */ extern const tv_ref g_dur_rulesets[16];
 /* @0x100ee5f0 */ extern const int32_t g_dur_rulecount[16];
 /* Which condition each bit of DurRule.cond selects. */
 /* @0x1005c960 */ extern const uint8_t g_dur_cond_idx[0x40];
@@ -1274,7 +1274,7 @@ int32_t TV_THISCALL Stage2_DurTable(Engine *self, int32_t c0, int32_t a1,
 
     set = 0;
     b19 = st->ctl->b19;
-    r = g_dur_rulesets[b19];
+    r = TV_REF(DurRule, g_dur_rulesets[b19]);
     if (g_dur_rulecount[b19] <= 0)
         return 0;
 
@@ -1294,7 +1294,7 @@ int32_t TV_THISCALL Stage2_DurTable(Engine *self, int32_t c0, int32_t a1,
         }
 
         /* match the text forwards */
-        s = r->text;
+        s = TV_REF(char, r->text);
         j = 0;
         if (ok) {
             while (n != NULL && (int32_t)r->len > j) {
@@ -1337,7 +1337,7 @@ int32_t TV_THISCALL Stage2_DurTable(Engine *self, int32_t c0, int32_t a1,
         f_stress = 0;
         f_match = 0;
         if (r->ntests != 0 && ok) {
-            t = r->tests;
+            t = TV_REF(DurTest, r->tests);
             for (i = 0; (int32_t)r->ntests > i; i++, t++) {
                 if (t->dir != 0)
                     n = st->ctl;
@@ -1397,7 +1397,7 @@ int32_t TV_THISCALL Stage2_DurTable(Engine *self, int32_t c0, int32_t a1,
         if (ok == 1)
             return r->result;
 
-        r = (const DurRule *)((const uint8_t *)r + 0x14);
+        r++;   /* 0x14 in the original, which is sizeof(DurRule) */
         set++;
         if (g_dur_rulecount[st->ctl->b19] <= set)
             return 0;
@@ -2139,7 +2139,7 @@ store:
 }
 
 /* One duration table per sonorant, each a 20-wide grid of context by class. */
-/* @0x100ed988 */ extern const uint8_t *const g_dur_tables[];
+/* @0x100ed988 */ extern const tv_ref g_dur_tables[];
 /* The floor for each phoneme, stressed then unstressed. */
 /* @0x100ee710 */ extern const uint8_t g_dur_floor[];
 /* Which table each phoneme, left letter and right letter selects. */
@@ -2240,7 +2240,7 @@ int32_t TV_THISCALL Stage2_DurNasal(Engine *self)
         }
     }
 
-    tab = g_dur_tables[base];
+    tab = TV_REF(uint8_t, g_dur_tables[base]);
     if (c == 'M' || c == 'N' || c == 'm' || c == 'n') {
         v = tab[stress ? (scan * 3 + ctx) * 20 + klass
                        : (scan * 3 + ctx + 6) * 20 + klass];
@@ -2560,7 +2560,7 @@ have_class:
         ctx = 0;
     }
 
-    tab = g_dur_tables[vidx];
+    tab = TV_REF(uint8_t, g_dur_tables[vidx]);
     v = tab[stress ? (ctx + scan * 2) * 20 + klass
                    : (ctx + scan * 2 + 4) * 20 + klass];
 
@@ -3403,7 +3403,7 @@ done:
     }
 
     if (base >= 0) {
-        const uint8_t *tab = g_dur_tables[base];
+        const uint8_t *tab = TV_REF(uint8_t, g_dur_tables[base]);
 
         v = tab[stress ? (ctx + scan * 2) * 20 + klass
                        : (ctx + scan * 2 + 4) * 20 + klass];
@@ -3427,7 +3427,7 @@ done:
 
     /* nothing said anything: fall back on the table's own default */
     if (base >= 0) {
-        const uint8_t *tab = g_dur_tables[base];
+        const uint8_t *tab = TV_REF(uint8_t, g_dur_tables[base]);
 
         v = stress ? tab[3] : tab[0x53];
     }

@@ -5,6 +5,9 @@ Verification: `python tools/difftest.py --full` compares the decompiled code
 `--port` does the same for the standalone build, which loads nothing.  Both
 are byte-exact on all 335 configurations.
 
+`--port64` runs the same corpus through the 64-bit build.  All three are
+byte-exact, and byte-exact with each other.
+
 `--ref` checks something else: audio recorded from the engine as installed,
 spoken through an ordinary SAPI client, against all three builds.  That is
 the only test that covers the harness's own reconstruction of the SAPI
@@ -195,36 +198,48 @@ what transcribing `jne`/`je` by hand gets wrong; the last is the one place
 where a jump out of a branch skips code that reads like a separate
 statement.
 
+## Pointer width
+
+The engine builds and runs at 32 and 64 bits, from the same sources, with
+byte-identical output.  The 64-bit build is the first there has ever been.
+
+What made it possible was *not* widening the data.  The engine reads past
+the end of its tables on purpose -- `Stage3_GlideTab` asks `g_gt0_info` for
+element 11 of a table of four and uses what it finds in the table after it
+-- and the values that come back are load-bearing: forcing one to a
+constant broke 328 of the 335 configurations.  Widening the stored
+addresses moves everything after each one, so those reads land somewhere
+else.
+
+So the extracted data keeps the original's bytes exactly, and a stored
+address stays four bytes wide whatever a pointer is on the host.  `tv_ref`
+(src/tv_ref.h) is that stored address: an offset from `tv_data` in the
+standalone build, the loader's own address in the hook build.  The five
+structures the data holds keep the original's layout at any width for the
+same reason, since their pointer members are `tv_ref` too.
+
+The rest of the port was four width assumptions in the engine:
+
+* `dict.c` walked the dictionary's links as `uint32_t` and strode its
+  tables by a literal 4.
+* `lts.c` and `stage2.c` stepped rule arrays by a literal `0x14`, which is
+  `sizeof(LtsEntry)` and `sizeof(DurRule)` at four-byte pointers.
+* The user lexicon is written as well as read, and at eight-byte pointers
+  its entries no longer fit the room the image left for them, so outside
+  the hook build the library owns that table (lexicon.c).  The original
+  ships it empty, so it is the same table.
+* The bookmark record was queued with a literal 4 for the size of a
+  pointer.
+
+Two raw-offset accesses are left, both unreachable: `Engine_ZeroDwordIfMinus1`
+(layout.c), which the original only reaches on pathological input, and a
+read at `textin.c:916` through `Token.d18`, which is only ever NULL.
+
 ## Next
 
-The engine itself is portable C now: it compiles clean for any target,
-and the only thing it asks of the host is 26 ordinary C runtime functions
-(no libm, no Windows API, no SAPI).  What is left is build plumbing and
-pointer width.
-
-1. **A hosted build.**  The standalone binary is still produced by the
-   harness's toolchain -- freestanding `-m32`, `harness/rt/start.c` for
-   process startup, `ld -m i386pe` -- which is why `tv.exe` imports
-   `__getmainargs` and `__iob_func` on top of the C runtime.  `src/port/
-   main.c` is already an ordinary `main()` over `<stdio.h>`, so a hosted
-   32-bit build (`gcc -m32` against the system libc on Linux or macOS)
-   needs no engine changes, only a second path through `harness/build.sh`.
-   It could not be tried here: this machine has no 32-bit libc.
-2. **64-bit.**  Two measured blockers, both outside the engine sources,
-   which compile clean at `-m64` as they stand:
-   - `tools/gen_data.py` emits the 15,013 addresses inside the extracted
-     data as `.long`, and at 64-bit every one of them is a "relocation
-     truncated to fit".  The ~75 pointer tables in that data would have to
-     come out of the raw section images and be emitted as real pointer
-     arrays, leaving the surrounding bytes at their original offsets --
-     the engine indexes past the end of some tables into the next one, so
-     the bytes cannot simply be respaced.
-   - `sizeof(Engine)` grows past the original's 0x9200 once its pointer
-     members widen, so `ENGINE_ALLOC` in `src/port/main.c` stops being the
-     right size, and `Engine_ZeroDwordIfMinus1` (layout.c) -- the one raw
-     offset access the original makes into its own object -- needs mapping
-     through the generated accessor rather than pointer arithmetic.
-3. The four SAPI glue functions, if the phoneme trace is ever wanted.
+The four SAPI glue functions, if the phoneme trace is ever wanted.  Nothing
+else is outstanding: see docs/LIBRARY.md for the library the engine is
+packaged behind.
 
 ## Test corpus
 

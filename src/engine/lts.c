@@ -121,14 +121,14 @@ void TV_THISCALL Stage1_Rules(Engine *self)
             self->lts_cur = Engine_NodeFree(self, n, 0);
             goto tail;
         }
-        r = g_lts_rules[(int8_t)c];
+        r = TV_REF(LtsEntry, g_lts_rules[(int8_t)c]);
         self->lts_back = n;
         for (;;) {
             if (Lts_TestFeatures(self, r) && Lts_MatchLeft(self, r) &&
-                Lts_TestContext(self, r->cond, self->lts_back, 0))
+                Lts_TestContext(self, TV_REF(uint8_t, r->cond), self->lts_back, 0))
                 break;
             self->lts_back = self->lts_cur;
-            r = (const LtsEntry *)((const uint8_t *)r + 0x14);
+            r++;   /* 0x14 in the original, which is sizeof(LtsEntry) */
         }
 
         /* Replace the letters the rule covered with its phonemes. */
@@ -140,7 +140,7 @@ void TV_THISCALL Stage1_Rules(Engine *self)
             at_end = 1;
         self->lts_back = NULL;
 
-        p = r->out;
+        p = TV_REF(uint8_t, r->out);
         if (*p != 0 && (int8_t)*p < 0x20) {
             if (*p == 0x10) {
                 /* drop the morpheme boundary, except after "MC" or "H[" */
@@ -179,7 +179,7 @@ void TV_THISCALL Stage1_Rules(Engine *self)
                 /* A stressable vowel opens a syllable. */
                 if (first_syl != 0 && self->lts_syllables > 0)
                     self->lts_syllables--;
-                if (r->set[1] & 8)
+                if (TV_REF(uint32_t, r->set)[1] & 8)
                     self->lts_reduce = 0;
                 if (self->lts_pending != NULL) {
                     Lts_Syllable(self, 0);
@@ -262,7 +262,7 @@ after_stress:
                 if (reduced == 0 &&
                     (self->lts_syllables != 0 || c == 'o' || c == 'a') &&
                     !(Phone_Attr((int16_t)(ch16 | 0x200)) & 0x40) &&
-                    !(r->set[0] & 0x4000)) {
+                    !(TV_REF(uint32_t, r->set)[0] & 0x4000)) {
                     self->lts_reduce = 1;
                 } else {
                     self->lts_reduce = 0;
@@ -321,10 +321,10 @@ next_syllable:
                 self->lts_reduce = 0;
         }
 
-        bits_lo = (int32_t)(r->set[0] & 0xffff7fffu);
+        bits_lo = (int32_t)(TV_REF(uint32_t, r->set)[0] & 0xffff7fffu);
         if (reduced == 1 && (attr_x(prev_ch) & 2))
             bits_lo |= 0x4000;
-        bits_hi = (int32_t)(r->set[1] & 0xffff7fffu);
+        bits_hi = (int32_t)(TV_REF(uint32_t, r->set)[1] & 0xffff7fffu);
         self->lts_feat_hi = (uint32_t)bits_hi;
         if (feat_carry != 0)
             self->lts_feat_hi = (uint32_t)(feat_carry | bits_hi);

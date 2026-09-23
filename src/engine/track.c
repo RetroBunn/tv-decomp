@@ -13,7 +13,7 @@
 
 /* The decay curves, indexed by how many frames the move is spread over. */
 /* @0x100ef5f8 */
-extern const uint8_t *const g_track_shape[];
+extern const tv_ref g_track_shape[];
 
 /* Interpolate linearly across the run from at-back to at+fwd, taking the two
  * end values from the track itself. */
@@ -44,7 +44,7 @@ void TV_THISCALL Track_Decay(Engine *self, uint8_t *buf, int32_t pos,
                              int32_t shape, int32_t n, uint8_t from,
                              uint8_t to)
 {
-    const uint8_t *s = g_track_shape[shape];
+    const uint8_t *s = TV_REF(uint8_t, g_track_shape[shape]);
     int32_t delta = (int32_t)from - (int32_t)to;
     int32_t w = (int32_t)*s++ << 7;
     int32_t left = n;
@@ -70,7 +70,7 @@ void TV_THISCALL Track_Decay(Engine *self, uint8_t *buf, int32_t pos,
 void TV_THISCALL Track_BlendBack(Engine *self, uint8_t *buf, int32_t pos,
                                  int32_t shape, int32_t n, uint8_t target)
 {
-    const uint8_t *s = g_track_shape[shape] + 1;
+    const uint8_t *s = TV_REF(uint8_t, g_track_shape[shape]) + 1;
     int32_t w = (int32_t)*s << 7;
     int32_t left = n;
     uint8_t *p;
@@ -93,7 +93,7 @@ void TV_THISCALL Track_BlendBack(Engine *self, uint8_t *buf, int32_t pos,
 void TV_THISCALL Track_BlendFwd(Engine *self, uint8_t *buf, int32_t pos,
                                 int32_t shape, int32_t n, uint8_t target)
 {
-    const uint8_t *s = g_track_shape[shape];
+    const uint8_t *s = TV_REF(uint8_t, g_track_shape[shape]);
     int32_t w = (int32_t)*s++ << 7;
     int32_t left = n;
     uint8_t *p;
@@ -149,7 +149,7 @@ void TV_THISCALL Track_Nudge(Engine *self, uint8_t *buf, int32_t mode,
                              int32_t pos, int32_t shape, int32_t n,
                              int32_t delta)
 {
-    const uint8_t *s = g_track_shape[shape] + 1;
+    const uint8_t *s = TV_REF(uint8_t, g_track_shape[shape]) + 1;
     int32_t p = pos - 1;
     int32_t w, v;
     (void)self;

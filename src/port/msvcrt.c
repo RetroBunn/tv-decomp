@@ -21,7 +21,7 @@
  * over 0x7f is a letter.  The pointer is two bytes into the table, so index
  * -1 (EOF) is a slot of its own.
  */
-/* @0x1012ef40 */ extern const uint16_t *const g_ctype;
+/* @0x1012ef40 */ extern const tv_ref g_ctype;
 
 #define CT_UPPER 0x001
 #define CT_LOWER 0x002
@@ -31,17 +31,17 @@
 
 int TV_CDECL tv_isalpha(int c)
 {
-    return g_ctype[c] & (CT_ALPHA | CT_LOWER | CT_UPPER);
+    return TV_REF(uint16_t, g_ctype)[c] & (CT_ALPHA | CT_LOWER | CT_UPPER);
 }
 
 int TV_CDECL tv_islower(int c)
 {
-    return g_ctype[c] & CT_LOWER;
+    return TV_REF(uint16_t, g_ctype)[c] & CT_LOWER;
 }
 
 int TV_CDECL tv_isalnum(int c)
 {
-    return g_ctype[c] & (CT_ALPHA | CT_LOWER | CT_UPPER | CT_DIGIT);
+    return TV_REF(uint16_t, g_ctype)[c] & (CT_ALPHA | CT_LOWER | CT_UPPER | CT_DIGIT);
 }
 
 int TV_CDECL tv_tolower(int c)
@@ -67,13 +67,13 @@ long TV_CDECL tv_atol(const char *s)
     int32_t n = 0;
     unsigned char c, sign;
 
-    while (g_ctype[*p] & CT_SPACE)
+    while (TV_REF(uint16_t, g_ctype)[*p] & CT_SPACE)
         p++;
     c = *p++;
     sign = c;
     if (c == '-' || c == '+')
         c = *p++;
-    while (g_ctype[c] & CT_DIGIT) {
+    while (TV_REF(uint16_t, g_ctype)[c] & CT_DIGIT) {
         n = n * 10 + (int32_t)c - '0';
         c = *p++;
     }

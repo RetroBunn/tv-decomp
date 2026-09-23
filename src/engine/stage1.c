@@ -612,8 +612,8 @@ void TV_THISCALL Stage1_Close(Engine *self)
 /* @0x10060140 */
 uint8_t TV_THISCALL Lts_TestFeatures(Engine *self, const LtsEntry *r)
 {
-    uint32_t lo = r->want[0];
-    uint32_t hi = r->want[1];
+    uint32_t lo = TV_REF(uint32_t, r->want)[0];
+    uint32_t hi = TV_REF(uint32_t, r->want)[1];
 
     if (!(lo & 0x8000) && !(hi & 0x8000))
         return (uint8_t)((self->lts_feat_lo & lo) == lo &&
@@ -628,7 +628,7 @@ uint8_t TV_THISCALL Lts_TestFeatures(Engine *self, const LtsEntry *r)
 /* @0x100601c0 */
 uint8_t TV_THISCALL Lts_MatchLeft(Engine *self, const LtsEntry *r)
 {
-    const char *s = r->left;
+    const char *s = TV_REF(char, r->left);
     Node *n;
 
     if (*s == '\0')
@@ -649,9 +649,9 @@ uint8_t TV_THISCALL Lts_MatchLeft(Engine *self, const LtsEntry *r)
 
 /* The engine sign-extends the character it indexes these tables with, so a
  * byte >= 0x80 reads the 128 entries before the table. */
-static const LtsRule *const *lts_list(const LtsRule *const *const *table, int32_t c)
+static const tv_ref *lts_list(const tv_ref *table, int32_t c)
 {
-    return table[c];
+    return TV_REF(tv_ref, table[c]);
 }
 
 /* Does the context around n satisfy the rule's condition program?  The
@@ -820,8 +820,8 @@ uint8_t TV_THISCALL Lts_TestContext(Engine *self, const uint8_t *cond, Node *n,
 /* Try each rule in `set` against the letters at the cursor.  On a match a
  * "[" boundary node is inserted and the matched rule returned. */
 /* @0x10063480 */
-const LtsRule *TV_THISCALL Lts_MatchAffix(Engine *self, Node *a, Node *b,
-                                          const LtsRule *const *set, int32_t dir)
+tv_ref TV_THISCALL Lts_MatchAffix(Engine *self, Node *a, Node *b,
+                                          const tv_ref *set, int32_t dir)
 {
     StageCtx *st = &self->stage_ctx[1];
     Node *cur, *stop, *end;
@@ -836,12 +836,12 @@ const LtsRule *TV_THISCALL Lts_MatchAffix(Engine *self, Node *a, Node *b,
         stop = b;
     }
 
-    if (*set == NULL)
-        return NULL;
+    if (!TV_REF_OK(*set))
+        return 0;
     do {
-        s = (*set)->text;
-        if (s == NULL)
-            return NULL;
+        s = TV_REF(char, TV_REF(LtsRule, *set)->text);
+        if (!TV_REF_OK(TV_REF(LtsRule, *set)->text))
+            return 0;
         end = cur;
         if (end->value == (uint8_t)*s) {
             while (stop != end) {
@@ -854,7 +854,8 @@ const LtsRule *TV_THISCALL Lts_MatchAffix(Engine *self, Node *a, Node *b,
             }
         }
         if (*s == '\0' &&
-            Lts_TestContext(self, (*set)->cond, end, dir)) {
+            Lts_TestContext(self, TV_REF(uint8_t, TV_REF(LtsRule, *set)->cond),
+                            end, dir)) {
             if (dir == 0) {
                 st->d18 = end->prev;
                 Engine_NodeAlloc(self, end, 0, 2, '[');
@@ -862,7 +863,7 @@ const LtsRule *TV_THISCALL Lts_MatchAffix(Engine *self, Node *a, Node *b,
                 st->d14 = end->next;
                 Engine_NodeAlloc(self, end, 1, 2, '[');
             }
-            lvl = (*set)->b0a;
+            lvl = TV_REF(LtsRule, *set)->b0a;
             if ((int8_t)lvl > 1) {
                 self->s1_1c2d = lvl;
             } else {
@@ -873,8 +874,8 @@ const LtsRule *TV_THISCALL Lts_MatchAffix(Engine *self, Node *a, Node *b,
             return *set;
         }
         set++;
-    } while (*set != NULL);
-    return NULL;
+    } while (TV_REF_OK(*set));
+    return 0;
 }
 
 /* Try to pronounce the word: first straight from the lexicon, then by
@@ -884,8 +885,8 @@ const LtsRule *TV_THISCALL Lts_MatchAffix(Engine *self, Node *a, Node *b,
 uint8_t TV_THISCALL Stage1_Lookup(Engine *self)
 {
     StageCtx *st = &self->stage_ctx[1];
-    const LtsRule *r;
-    const LtsRule *const *set;
+    tv_ref r;
+    const tv_ref *set;
     Node *n;
     int32_t i, cons;
     uint8_t seen = 0;
@@ -902,7 +903,7 @@ uint8_t TV_THISCALL Stage1_Lookup(Engine *self)
     i = 0;
     cons = 0;
     self->s1_1c28 = 0;
-    self->s1_rule = NULL;
+    self->s1_rule = 0;
     for (;;) {
         if (i > 2 && cons != 0)
             break;
@@ -921,19 +922,19 @@ uint8_t TV_THISCALL Stage1_Lookup(Engine *self)
     while (set != NULL) {
         r = Lts_MatchAffix(self, n, st->d18, set, 0);
         self->s1_rule = r;
-        if (r == NULL)
+        if (!TV_REF_OK(r))
             break;
         if (seen == 0) {
-            if (r->b09 == 6)
+            if (TV_REF(LtsRule, r)->b09 == 6)
                 self->s1_1c2c = 6;
-            if (r->b09 == 0xf)
+            if (TV_REF(LtsRule, r)->b09 == 0xf)
                 self->s1_1c2c = 0xf;
-            if (r->b09 == 8) {
+            if (TV_REF(LtsRule, r)->b09 == 8) {
                 self->s1_1c2c = 8;
                 self->s1_next_start->value = '%';
             }
         }
-        if (r->b08 == 1) {
+        if (TV_REF(LtsRule, r)->b08 == 1) {
             if (UserLex_Try(self) == 1)
                 return 0;
             if (Lexicon_Try(self) == 1)
@@ -942,7 +943,7 @@ uint8_t TV_THISCALL Stage1_Lookup(Engine *self)
                 return 0;
         }
         seen = 1;
-        set = r->next;
+        set = TV_REF(tv_ref, TV_REF(LtsRule, r)->next);
     }
 
     /* Same again from the front of the word. */
@@ -968,15 +969,15 @@ uint8_t TV_THISCALL Stage1_Lookup(Engine *self)
     set = lts_list(g_lts_prefix, (int8_t)st->d14->value);
     while (set != NULL) {
         r = Lts_MatchAffix(self, st->d14, n, set, 1);
-        if (r == NULL)
+        if (!TV_REF_OK(r))
             break;
-        if (r->b08 == 1) {
+        if (TV_REF(LtsRule, r)->b08 == 1) {
             if (Lexicon_Try(self) == 1)
                 return 0;
             if (Lts_ApplyAffix(self, 0) == 1)
                 return 0;
         }
-        set = r->next;
+        set = TV_REF(tv_ref, TV_REF(LtsRule, r)->next);
     }
 
 done:
@@ -995,7 +996,7 @@ int32_t TV_THISCALL Lts_ApplyAffix(Engine *self, int32_t dir)
     StageCtx *st = &self->stage_ctx[1];
     Node *n = st->d18;
     Node *p, *q;
-    const void *r;
+    tv_ref r;
     uint8_t c, allow_y;
 
     /* "running" -> "runn" -> "run" */
@@ -1016,10 +1017,10 @@ int32_t TV_THISCALL Lts_ApplyAffix(Engine *self, int32_t dir)
 
     /* "hoping" -> "hope": only these suffixes can have dropped an "E". */
     r = self->s1_rule;
-    if (r == &g_lts_rule_ing || r == &g_lts_rule_est || r == &g_lts_rule_ily) {
+    if (r == TV_REF_OF(&g_lts_rule_ing) || r == TV_REF_OF(&g_lts_rule_est) || r == TV_REF_OF(&g_lts_rule_ily)) {
         /* fall through */
-    } else if (r == &g_lts_rule_able || r == &g_lts_rule_ably ||
-               r == &g_lts_rule_or) {
+    } else if (r == TV_REF_OF(&g_lts_rule_able) || r == TV_REF_OF(&g_lts_rule_ably) ||
+               r == TV_REF_OF(&g_lts_rule_or)) {
         if (Lts_TestContext(self, g_lts_cond_stem_ok, n->next, 0))
             goto repair_y;
     } else {
@@ -1044,7 +1045,7 @@ add_e:
     self->s1_1c28 = 1;
 
 repair_y:
-    allow_y = (self->s1_rule == &g_lts_rule_s) ? 0 : (uint8_t)dir;
+    allow_y = (self->s1_rule == TV_REF_OF(&g_lts_rule_s)) ? 0 : (uint8_t)dir;
 
     /* "tried" -> "trie" -> "try" */
     if (n->value == 'E' && n->prev->value == 'I') {

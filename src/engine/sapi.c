@@ -80,7 +80,7 @@ void TV_THISCALL Sapi_PhoneNotify(Engine *self, int32_t ch)
     rec[1] = 0;
     rec[2] = (int32_t)(int8_t)c;
     Sapi_Lock(s);
-    Sapi_QueuePush(s, &rec, 4);
+    Sapi_QueuePush(s, &rec, sizeof rec);
     Sapi_Unlock(s);
     Sapi_Post(s, 0x4c8, 0, 0);
 }

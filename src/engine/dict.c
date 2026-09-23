@@ -36,7 +36,13 @@ uint8_t TV_CDECL Dict_Byte(const void *p)
     return *(const uint8_t *)p;
 }
 
-#define DICT_U32(a) (*(const uint32_t *)(uintptr_t)(a))
+/* The dictionary is a graph of stored references rather than C pointers,
+ * because that is how the original walked it: it does its own arithmetic on
+ * them, so they stay four-byte references here too.  DICT_ADDR reads the one
+ * a reference points at; DICT_BASE is the bucket table. */
+#define DICT_ADDR(r)  (*TV_REF(tv_ref, (r)))
+#define DICT_BASE     TV_REF(tv_ref, g_dict_base)
+#define DICT_STRIDE   ((tv_ref)sizeof(tv_ref))
 
 /* Walk the word between st->d14 and st->d18 through the dictionary.  On a hit
  * the letters are replaced by the phoneme nodes the entry unpacks to, and 1
@@ -53,7 +59,7 @@ uint8_t TV_THISCALL Lexicon_Try(Engine *self)
     char suffix[48];
     char word[112];
     uint8_t *bufp, *cmpp;
-    uint32_t p, q, endp, cand = 0, lim, slot;
+    tv_ref p, q, endp, cand = 0, lim, slot;
     int32_t letter, nletters = 0, nsuffix = 0, keylen, i, j;
     int32_t keep_start = 0, keep_end = 0, first_try = 1;
     int32_t flagA = 0, flagB = 0, wcls, wflags;
@@ -94,25 +100,25 @@ uint8_t TV_THISCALL Lexicon_Try(Engine *self)
     if ((int8_t)c < 'A')
         return 0;
     letter = (int8_t)(c - 'A');
-    lim = g_dict_base[26];
-    slot = g_dict_base[letter] + (uint32_t)letter * 0 + (uint32_t)nletters * 4;
+    lim = DICT_BASE[26];
+    slot = DICT_BASE[letter] + (tv_ref)nletters * DICT_STRIDE;
     if (slot >= lim)
         return 0;
-    p = DICT_U32(slot);
-    endp = DICT_U32(slot + 4);
-    if (endp == p || DICT_U32(g_dict_base[letter + 1]) <= p ||
-        DICT_U32(lim) <= p)
+    p = DICT_ADDR(slot);
+    endp = DICT_ADDR(slot + DICT_STRIDE);
+    if (endp == p || DICT_ADDR(DICT_BASE[letter + 1]) <= p ||
+        DICT_ADDR(lim) <= p)
         goto use_candidate;
 
     for (;;) {
         /* --- try the entry at p ----------------------------------------- */
-        nsuffix = Dict_Byte((const void *)(uintptr_t)p) & 0xf;
+        nsuffix = Dict_Byte(TV_REF_AT(p)) & 0xf;
         if (nletters != 0) {
             q = p + 1;
             cmpp = key;
             if (bufp > key) {
                 do {
-                    if (Dict_Byte((const void *)(uintptr_t)q) != *cmpp)
+                    if (Dict_Byte(TV_REF_AT(q)) != *cmpp)
                         break;
                     q++;
                     cmpp++;
@@ -128,10 +134,10 @@ uint8_t TV_THISCALL Lexicon_Try(Engine *self)
         }
 
         if (cmpp == bufp &&
-            (uint8_t)(Dict_Byte((const void *)(uintptr_t)q) & mask_last) ==
+            (uint8_t)(Dict_Byte(TV_REF_AT(q)) & mask_last) ==
                 (uint8_t)(*cmpp & mask_last)) {
             /* The key matched; the high nibble is the word class. */
-            wclass = (uint8_t)((Dict_Byte((const void *)(uintptr_t)p) >> 4) & 0xf);
+            wclass = (uint8_t)((Dict_Byte(TV_REF_AT(p)) >> 4) & 0xf);
             n = self->s1_next_start;
             if ((n->flags & 0x20u) && n->arg == 4) {
                 /* Keep this one in reserve and look for a better entry. */
@@ -263,9 +269,9 @@ uint8_t TV_THISCALL Lexicon_Try(Engine *self)
 next_entry:
         keylen = (int32_t)(bufp - key);
         if (nsuffix != 0)
-            p += (uint32_t)((int32_t)g_dict_skip[state * 17 + nsuffix] + keylen);
+            p += (tv_ref)((int32_t)g_dict_skip[state * 17 + nsuffix] + keylen);
         else
-            p += (uint32_t)(keylen + 3);
+            p += (tv_ref)(keylen + 3);
         if (endp > p)
             continue;
 use_candidate:
@@ -284,7 +290,7 @@ accept:
 
     if (nsuffix == 0) {
         q++;
-        self->s1_1c29 = Dict_Byte((const void *)(uintptr_t)q);
+        self->s1_1c29 = Dict_Byte(TV_REF_AT(q));
         return 1;
     }
 
@@ -305,12 +311,12 @@ accept:
     do {
         pstate = g_dict_ph[pstate].next;
         shift = g_dict_ph[pstate].shift;
-        a = Dict_Byte((const void *)(uintptr_t)q);
+        a = Dict_Byte(TV_REF_AT(q));
         v = ((uint32_t)(int32_t)(int8_t)a & g_dict_ph[pstate].mask) >> shift;
         if (pstate >= 1) {
             if (pstate <= 2) {
                 q++;
-                v |= (uint8_t)(Dict_Byte((const void *)(uintptr_t)q) &
+                v |= (uint8_t)(Dict_Byte(TV_REF_AT(q)) &
                                g_dict_ph[pstate].mask2);
             } else if (pstate == 3) {
                 q++;

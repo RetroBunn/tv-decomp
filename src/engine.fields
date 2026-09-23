@@ -126,7 +126,7 @@ struct Engine 0x9184
 0x1c18 Node    *s0_pending_ptr
 0x1c1c uint8_t  s0_1c1c
 0x1c20 int32_t  s1_1c20
-0x1c24 const void *s1_rule       # the suffix rule that matched
+0x1c24 uint32_t  s1_rule         # the suffix rule that matched, a tv_ref
 0x1c28 uint8_t  s1_1c28
 0x1c29 uint8_t  s1_1c29
 0x1c2a uint8_t  s1_1c2a           # word was preceded by '~'

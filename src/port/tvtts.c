@@ -19,9 +19,11 @@
 #include "crt.h"
 #include "tvtts.h"
 
-/* The engine object is the original's size; it lives on a thread stack in
- * the original, so it has no allocator of its own. */
-#define ENGINE_ALLOC 0x9200
+/* The engine object has no allocator of its own -- in the original it lives
+ * on a thread stack -- so the caller provides the block.  0x9200 is what the
+ * original reserved; where pointers are wider than the original's four bytes
+ * the struct outgrows that, and the struct wins. */
+#define ENGINE_ALLOC (sizeof(Engine) > 0x9200 ? sizeof(Engine) : (size_t)0x9200)
 #define OUTBUF_SIZE  0x34bc
 
 /* @0x100b5350 */ extern const uint32_t g_voice_pitch[10];

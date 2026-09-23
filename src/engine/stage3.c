@@ -569,7 +569,7 @@ Node *TV_THISCALL Stage3_Next(Engine *self)
 }
 
 /* Where in the phoneme's own class table its transition rules live. */
-/* @0x100eece0 */ extern const uint8_t *const g_phone_class;
+/* @0x100eece0 */ extern const tv_ref g_phone_class;
 /* @0x100ef338 */ extern const uint8_t g_class_kind[];
 /* How fast the nasal parameters settle, and how far, per voice. */
 /* @0x100b52e8 */ extern const int32_t g_voice_nasal_rate[];
@@ -778,7 +778,7 @@ void TV_THISCALL Stage3_Phone(Engine *self)
                 (ctl->flags & 0x40u))
                 self->s3_flag[5] = 1;
         }
-        v = (int32_t)g_class_kind[g_phone_class[px3(n->value)]];
+        v = (int32_t)g_class_kind[TV_REF(uint8_t, g_phone_class)[px3(n->value)]];
         if (v == 0)
             self->s3_flag[6] = 1;
         else if (v == 1)
@@ -859,14 +859,14 @@ void TV_THISCALL Stage3_Phone(Engine *self)
 
 /* The rules, reached through the classes of the phoneme being written and
  * the one before it. */
-/* @0x10095040 */ extern const uint8_t *const g_rule_sel[];
-/* @0x10094870 */ extern const S3Rule *const g_rule_set[];
+/* @0x10095040 */ extern const tv_ref g_rule_sel[];
+/* @0x10094870 */ extern const tv_ref g_rule_set[];
 /* @0x10094948 */ extern const uint8_t g_rule_count[];
 /* Which attribute bit an "is it ..." condition asks about. */
 /* @0x100c89e0 */ extern const uint32_t g_attr_mask[128];
 
 /* @0x10051890 */
-void TV_THISCALL Stage3_Apply(Engine *self, const S3Edit *const *edits,
+void TV_THISCALL Stage3_Apply(Engine *self, const tv_ref *edits,
                               int32_t mode);
 
 /* The sixteen routines a rule can ask for. */
@@ -906,14 +906,15 @@ void TV_THISCALL Stage3_Rules(Engine *self)
     uint32_t mask;
     uint8_t b, c, d, found;
 
-    k = (int32_t)g_rule_sel[g_phone_class[px3(st->ctl->value)]]
-                           [g_phone_class[px3(st->cur->value)]];
-    r = g_rule_set[k];
+    k = (int32_t)TV_REF(uint8_t,
+             g_rule_sel[TV_REF(uint8_t, g_phone_class)[px3(st->ctl->value)]])
+                 [TV_REF(uint8_t, g_phone_class)[px3(st->cur->value)]];
+    r = TV_REF(S3Rule, g_rule_set[k]);
     count = (int32_t)g_rule_count[k];
 
     for (i = 0; i < count; i++, r++) {
-        s = r->cond;
-        if (s != NULL) {
+        s = TV_REF(uint8_t, r->cond);
+        if (TV_REF_OK(r->cond)) {
             for (;;) {
                 b = *s;
                 want = b & 1;
@@ -958,11 +959,11 @@ void TV_THISCALL Stage3_Rules(Engine *self)
             }
         }
 
-        if (r->edits != NULL)
-            Stage3_Apply(self, r->edits, 1);
+        if (TV_REF_OK(r->edits))
+            Stage3_Apply(self, TV_REF(tv_ref, r->edits), 1);
 
-        s = r->ops;
-        if (s == NULL || *s == 0)
+        s = TV_REF(uint8_t, r->ops);
+        if (!TV_REF_OK(r->ops) || *s == 0)
             return;
         do {
             switch (*s++) {
@@ -1001,18 +1002,19 @@ next:
  * accumulator carries a value from one record to the next.
  */
 /* @0x10051890 */
-void TV_THISCALL Stage3_Apply(Engine *self, const S3Edit *const *edits,
+void TV_THISCALL Stage3_Apply(Engine *self, const tv_ref *edits,
                               int32_t mode)
 {
-    const S3Edit *const *blk = edits + 1;
-    const S3Edit *e = edits[0];
+    const tv_ref *blk = edits + 1;
+    tv_ref eref = edits[0];
+    const S3Edit *e = TV_REF(S3Edit, eref);
     /* The original seeds both of these from the block cursor; a record that
      * used either before setting it would be writing into the rule table. */
     int32_t *p = (int32_t *)(void *)blk;
     int32_t acc = (int32_t)(intptr_t)blk;
     int32_t i;
 
-    while (e != NULL) {
+    while (TV_REF_OK(eref)) {
         for (;;) {
             if (((int32_t)e->when & mode) != 0) {
                 switch (e->field) {
@@ -1064,7 +1066,8 @@ void TV_THISCALL Stage3_Apply(Engine *self, const S3Edit *const *edits,
                 break;
             e++;
         }
-        e = *blk++;
+        eref = *blk++;
+        e = TV_REF(S3Edit, eref);
     }
 }
 
@@ -1244,7 +1247,7 @@ void TV_THISCALL Stage3_Op11(Engine *self)
             st->scan->value == 'R')
             skip = 1;
         if (!skip && c_ctl == 'z' && c_cur == 'J') {
-            k = (int32_t)g_class_kind[g_phone_class[px3(st->scan->value)]];
+            k = (int32_t)g_class_kind[TV_REF(uint8_t, g_phone_class)[px3(st->scan->value)]];
             if (k == 1 || k == 0x62)
                 skip = 1;
         }
@@ -1515,7 +1518,7 @@ void TV_THISCALL Stage3_Op4(Engine *self)
         v = self->s3_1e44;
         self->s3_1e44 = (int32_t)(((uint32_t)(len * v) / ctl->arg) + v) >> 1;
         self->s3_1e48 =
-            Synth_MulQ15(len, g_nasal_frac[g_phone_class[c_ctl]]);
+            Synth_MulQ15(len, g_nasal_frac[TV_REF(uint8_t, g_phone_class)[c_ctl]]);
         if (c_cur == 'N')
             Stage3_NasalPole(self, pole);
 
@@ -1605,7 +1608,7 @@ void TV_THISCALL Stage3_Op4(Engine *self)
         }
         if (!(ctl->flags & 0x20u))
             self->s3_param[0].target -= 3;
-        v = (int32_t)g_class_kind[g_phone_class[c_ctl]];
+        v = (int32_t)g_class_kind[TV_REF(uint8_t, g_phone_class)[c_ctl]];
         if ((v == 3 || v == 2) && c_cur == 'G')
             self->s3_param[9].mode = 6;
         return;
@@ -2089,7 +2092,7 @@ void TV_THISCALL Stage3_Op1(Engine *self)
 }
 
 /* A second phoneme grouping, used to pick how fast the formants move. */
-/* @0x100ef6d8 */ extern const uint8_t *const g_phone_group;
+/* @0x100ef6d8 */ extern const tv_ref g_phone_group;
 /* @0x100ef278 */ extern const uint8_t g_group_shape[];
 
 /*
@@ -2132,7 +2135,7 @@ void TV_THISCALL Stage3_Op8(Engine *self)
     if (Phone_Attr(c_cur | 0x200) & 1)
         v = 5;
     else
-        v = (int32_t)g_group_shape[g_phone_group[c_ctl]];
+        v = (int32_t)g_group_shape[TV_REF(uint8_t, g_phone_group)[c_ctl]];
     for (i = 9; i < 17; i++)
         self->s3_param[i].shape_out = v;
     self->s3_param[9].shape_out = self->s3_param[9].shape_out / 2 + 1;
@@ -2151,7 +2154,7 @@ void TV_THISCALL Stage3_Op2(Engine *self)
 
     for (i = 9; i < 17; i++)
         self->s3_param[i].shape_out =
-            (int32_t)g_group_shape[g_phone_group[px3(st->cur->value)]];
+            (int32_t)g_group_shape[TV_REF(uint8_t, g_phone_group)[px3(st->cur->value)]];
     self->s3_param[9].shape_out = self->s3_param[9].shape_out / 2 + 1;
 
     if (Phone_Attr(c_cur | 0x80) & 8) {
@@ -2257,15 +2260,15 @@ void TV_THISCALL Stage3_Op5(Engine *self)
 /* @0x100eee28 */ extern const uint8_t g_pt_b2[64];
 /* @0x100eee68 */ extern const uint8_t g_pt_b3[64];
 /* @0x100eeea8 */ extern const uint8_t g_pt_av[64];
-/* @0x100ef158 */ extern const uint8_t *const g_pt_a1;
-/* @0x100ef180 */ extern const uint8_t *const g_pt_a2;
-/* @0x100ef1a8 */ extern const uint8_t *const g_pt_a3;
-/* @0x100ef1d0 */ extern const uint8_t *const g_pt_a4;
-/* @0x100ef1f8 */ extern const uint8_t *const g_pt_a5;
-/* @0x100ef220 */ extern const uint8_t *const g_pt_a6;
-/* @0x100ef248 */ extern const uint8_t *const g_pt_a7;
-/* @0x100ef270 */ extern const uint8_t *const g_pt_a8;
-/* @0x100ef330 */ extern const uint8_t *const g_pt_a16;
+/* @0x100ef158 */ extern const tv_ref g_pt_a1;
+/* @0x100ef180 */ extern const tv_ref g_pt_a2;
+/* @0x100ef1a8 */ extern const tv_ref g_pt_a3;
+/* @0x100ef1d0 */ extern const tv_ref g_pt_a4;
+/* @0x100ef1f8 */ extern const tv_ref g_pt_a5;
+/* @0x100ef220 */ extern const tv_ref g_pt_a6;
+/* @0x100ef248 */ extern const tv_ref g_pt_a7;
+/* @0x100ef270 */ extern const tv_ref g_pt_a8;
+/* @0x100ef330 */ extern const tv_ref g_pt_a16;
 /* The second set, for the classes below 0x13. */
 /* @0x100eefd8 */ extern const uint8_t g_at_f1[];
 /* @0x100eeff0 */ extern const uint8_t g_at_f2[];
@@ -2311,8 +2314,8 @@ void TV_THISCALL Stage3_Targets(Engine *self)
     Node *scan;
     int32_t c_ctl = px3(ctl->value);
     uint8_t c_cur = cur->value;
-    int32_t cls_ctl = (int32_t)(int8_t)g_phone_class[c_ctl];
-    int32_t cls_cur = (int32_t)g_phone_class[px3(c_cur)];
+    int32_t cls_ctl = (int32_t)(int8_t)TV_REF(uint8_t, g_phone_class)[c_ctl];
+    int32_t cls_cur = (int32_t)TV_REF(uint8_t, g_phone_class)[px3(c_cur)];
     int32_t voice = st->voice;
     int32_t i, v, kind, cls_scan, idx;
     uint8_t a, a_scan, c, d;
@@ -2378,14 +2381,14 @@ void TV_THISCALL Stage3_Targets(Engine *self)
         goto defaults;
     }
 
-    self->s3_param[1].target = (int32_t)g_pt_a1[cls_ctl];
-    self->s3_param[2].target = (int32_t)g_pt_a2[cls_ctl];
-    self->s3_param[3].target = (int32_t)g_pt_a3[cls_ctl];
-    self->s3_param[4].target = (int32_t)g_pt_a4[cls_ctl];
-    self->s3_param[5].target = (int32_t)g_pt_a5[cls_ctl];
-    self->s3_param[6].target = (int32_t)g_pt_a6[cls_ctl];
-    self->s3_param[7].target = (int32_t)g_pt_a7[cls_ctl];
-    self->s3_param[8].target = (int32_t)g_pt_a8[cls_ctl];
+    self->s3_param[1].target = (int32_t)TV_REF(uint8_t, g_pt_a1)[cls_ctl];
+    self->s3_param[2].target = (int32_t)TV_REF(uint8_t, g_pt_a2)[cls_ctl];
+    self->s3_param[3].target = (int32_t)TV_REF(uint8_t, g_pt_a3)[cls_ctl];
+    self->s3_param[4].target = (int32_t)TV_REF(uint8_t, g_pt_a4)[cls_ctl];
+    self->s3_param[5].target = (int32_t)TV_REF(uint8_t, g_pt_a5)[cls_ctl];
+    self->s3_param[6].target = (int32_t)TV_REF(uint8_t, g_pt_a6)[cls_ctl];
+    self->s3_param[7].target = (int32_t)TV_REF(uint8_t, g_pt_a7)[cls_ctl];
+    self->s3_param[8].target = (int32_t)TV_REF(uint8_t, g_pt_a8)[cls_ctl];
 
     if (cls_ctl < 0x22 || cls_ctl >= 0x2b)
         goto defaults;
@@ -2393,7 +2396,7 @@ void TV_THISCALL Stage3_Targets(Engine *self)
     scan = st->scan;
     if (cls_ctl >= 0x26 && cls_ctl < 0x29) {
         /* an affricate: the burst depends on what follows */
-        kind = (int32_t)g_class_kind[g_phone_class[px3(scan->value)]];
+        kind = (int32_t)g_class_kind[TV_REF(uint8_t, g_phone_class)[px3(scan->value)]];
         if (kind == 8 || kind == 9)
             goto defaults;
         self->s3_1e5c[1] = 0x7f;
@@ -2425,7 +2428,7 @@ void TV_THISCALL Stage3_Targets(Engine *self)
     self->s3_param[8].target = (int32_t)g_stop_burst[idx + 4];
 
     d = scan->value;
-    kind = (int32_t)g_class_kind[g_phone_class[px3(d)]];
+    kind = (int32_t)g_class_kind[TV_REF(uint8_t, g_phone_class)[px3(d)]];
     if (kind == 8 || kind == 9) {
         c = ctl->value;
         if (c == 'P' || c == 'K' || c == 'B' || c == 'G' || c == 'T' ||
@@ -2515,7 +2518,7 @@ void TV_THISCALL Stage3_Targets(Engine *self)
 
 defaults:
     if (cls_ctl >= 0x35)
-        self->s3_param[16].target = (int32_t)g_pt_a16[cls_ctl] * 4 + 0xc0;
+        self->s3_param[16].target = (int32_t)TV_REF(uint8_t, g_pt_a16)[cls_ctl] * 4 + 0xc0;
     else
         self->s3_param[16].target = 0xf8;
 
@@ -2530,7 +2533,7 @@ defaults:
     self->s3_param[21].mode = 4;
 
     /* and a look-ahead at where the next phoneme wants the formants */
-    cls_scan = (int32_t)(int8_t)g_phone_class[px3(st->scan->value)];
+    cls_scan = (int32_t)(int8_t)TV_REF(uint8_t, g_phone_class)[px3(st->scan->value)];
     self->s3_next[9]  = (int32_t)g_pt_f1[cls_scan] << 2;
     self->s3_next[10] = ((int32_t)g_pt_f2[cls_scan] << 3) + 0x1f4;
     self->s3_next[11] = (int32_t)g_pt_f3[cls_scan] << 4;
@@ -2728,7 +2731,7 @@ void TV_THISCALL Stage3_Op3(Engine *self)
     if (c_cur == 'T' && ((a_ctl & 2) || c_ctl == 'n')) {
         restore = 1;
     } else if (c_cur == 'K') {
-        kind = (int32_t)g_class_kind[g_phone_class[c_ctl]];
+        kind = (int32_t)g_class_kind[TV_REF(uint8_t, g_phone_class)[c_ctl]];
         if (kind == 3 || kind == 2 || c_ctl == 'a' || c_ctl == 'l' ||
             c_ctl == 'W' || c_ctl == 'L' || c_ctl == 'Y' || c_ctl == 'p')
             restore = 1;
@@ -2834,7 +2837,7 @@ int32_t TV_STDCALL Bits_Count(int32_t which, int32_t n)
 /* @0x10050670 */
 void TV_STDCALL Stage3_FindPair(int32_t *out, uint8_t c1, uint8_t c2,
                                 const int32_t *counts,
-                                const S3Pair *const *tab)
+                                const tv_ref *tab)
 {
     const S3Pair *p;
     const uint8_t *s;
@@ -2846,11 +2849,11 @@ void TV_STDCALL Stage3_FindPair(int32_t *out, uint8_t c1, uint8_t c2,
         if (slot != 0)
             base += counts[slot - 1];
         for (i = 0; i < counts[slot] && !found; i++) {
-            p = tab[base + i];
+            p = TV_REF(S3Pair, tab[base + i]);
             for (; p->ch != 0 && !found; p++) {
                 if (p->ch != c1)
                     continue;
-                for (s = p->set; *s != 0 && !found; s++) {
+                for (s = TV_REF(uint8_t, p->set); *s != 0 && !found; s++) {
                     if (*s == c2) {
                         found = 1;
                         out[slot] = i;
@@ -2906,12 +2909,12 @@ int32_t TV_STDCALL Bits_Rank(int32_t bit, int32_t row, int32_t which)
 
 /* The rows of each table, indexed by which table and which row. */
 /* @0x1003b20c */ extern const uint8_t g_row_sel[22];
-/* @0x1012c4a0 */ extern const uint8_t *const g_row0[];
-/* @0x1010b3a0 */ extern const uint8_t *const g_row1[];
-/* @0x100aec90 */ extern const uint8_t *const g_row2[];
-/* @0x10102514 */ extern const uint8_t *const g_row3[];
-/* @0x100c898c */ extern const uint8_t *const g_row4[];
-/* @0x100f8084 */ extern const uint8_t *const g_row5[];
+/* @0x1012c4a0 */ extern const tv_ref g_row0[];
+/* @0x1010b3a0 */ extern const tv_ref g_row1[];
+/* @0x100aec90 */ extern const tv_ref g_row2[];
+/* @0x10102514 */ extern const tv_ref g_row3[];
+/* @0x100c898c */ extern const tv_ref g_row4[];
+/* @0x100f8084 */ extern const tv_ref g_row5[];
 
 /*
  * Look for a value in one row of a table.
@@ -2932,12 +2935,12 @@ int32_t TV_THISCALL Stage3_FindRow(Engine *self, int32_t slot, int32_t which,
     i = which - 2;
     if ((uint32_t)i <= 0x15) {
         switch (g_row_sel[i]) {
-        case 0: tab = g_row0[which]; break;
-        case 1: tab = g_row1[which]; break;
-        case 2: tab = g_row2[which]; break;
-        case 3: tab = g_row3[which]; break;
-        case 4: tab = g_row4[which]; break;
-        default: tab = g_row5[which]; break;
+        case 0: tab = TV_REF(uint8_t, g_row0[which]); break;
+        case 1: tab = TV_REF(uint8_t, g_row1[which]); break;
+        case 2: tab = TV_REF(uint8_t, g_row2[which]); break;
+        case 3: tab = TV_REF(uint8_t, g_row3[which]); break;
+        case 4: tab = TV_REF(uint8_t, g_row4[which]); break;
+        default: tab = TV_REF(uint8_t, g_row5[which]); break;
         }
     } else {
         /* the original falls back on its own "this" here, which cannot be a
@@ -3108,10 +3111,10 @@ void TV_THISCALL Stage3_Sweep(Engine *self, int32_t v1, int32_t v2,
  */
 /* @0x100504c0 */
 void TV_THISCALL Stage3_Glide(Engine *self, int32_t param,
-                              const S3Param *recs, int32_t idx)
+                              tv_ref recs, int32_t idx)
 {
     StageCtx *st = &self->stage_ctx[3];
-    const S3Param *r = &recs[idx];
+    const S3Param *r = &TV_REF(S3Param, recs)[idx];
     const int32_t *how = &r->mode;    /* mode, shape_in, shape_out */
     const int32_t *val = &r->lead;    /* lead, start, target */
     int32_t dw[3];
@@ -3180,17 +3183,17 @@ void TV_THISCALL Stage3_Glide(Engine *self, int32_t param,
  * lists are chosen by what the glide is between.  The "pair" tables say
  * which record a given pair of phonemes calls for.
  */
-/* @0x100d0768 */ extern const S3Param *const *const g_glide_r_vowel;
-/* @0x100d076c */ extern const S3Param *const *const g_glide_r_edge;
-/* @0x100d0770 */ extern const S3Param *const *const g_glide_any;
-/* @0x100d0fc8 */ extern const S3Param *const *const g_glide_y;
-/* @0x100d15d8 */ extern const S3Param *const *const g_glide_l;
-/* @0x100d0778 */ extern const int32_t *const *const g_glide_r_target;
-/* @0x100d0f58 */ extern const S3Pair *const g_pair_y_tab[];
+/* @0x100d0768 */ extern const tv_ref g_glide_r_vowel;
+/* @0x100d076c */ extern const tv_ref g_glide_r_edge;
+/* @0x100d0770 */ extern const tv_ref g_glide_any;
+/* @0x100d0fc8 */ extern const tv_ref g_glide_y;
+/* @0x100d15d8 */ extern const tv_ref g_glide_l;
+/* @0x100d0778 */ extern const tv_ref g_glide_r_target;
+/* @0x100d0f58 */ extern const tv_ref g_pair_y_tab[];
 /* @0x100d0fa8 */ extern const int32_t g_pair_y_count[];
-/* @0x100d05f0 */ extern const S3Pair *const g_pair_tab[];
+/* @0x100d05f0 */ extern const tv_ref g_pair_tab[];
 /* @0x100d0708 */ extern const int32_t g_pair_count[];
-/* @0x100d1568 */ extern const S3Pair *const g_pair_l_tab[];
+/* @0x100d1568 */ extern const tv_ref g_pair_l_tab[];
 /* @0x100d15b8 */ extern const int32_t g_pair_l_count[];
 
 /*
@@ -3207,10 +3210,10 @@ void TV_THISCALL Stage3_Formants(Engine *self, int32_t setup)
 {
     StageCtx *st = &self->stage_ctx[3];
     Node *ctl = st->ctl;
-    const S3Param *const *recs;
+    const tv_ref *recs;
     const S3Param *rec;
-    const int32_t *const *tgt;
-    const S3Pair *const *pairs;
+    const tv_ref *tgt;
+    const tv_ref *pairs;
     const int32_t *counts;
     int32_t pick[4];
     uint8_t c_ctl = ctl->value;
@@ -3223,9 +3226,9 @@ void TV_THISCALL Stage3_Formants(Engine *self, int32_t setup)
         c = ctl->next->value;
         if ((c == '%' || c == '&') && ctl->next->next->value == 'R') {
             /* an "R" that opens the next word */
-            tgt = g_glide_r_target;
+            tgt = TV_REF(tv_ref, g_glide_r_target);
             self->s3_param[9].target =
-                tgt[0][(c_ctl == 'K') ? 0 : 1];
+                TV_REF(int32_t, tgt[0])[(c_ctl == 'K') ? 0 : 1];
 
             if (c_ctl == 'x')      k = 0;
             else if (c_ctl == 'X') k = 1;
@@ -3233,7 +3236,7 @@ void TV_THISCALL Stage3_Formants(Engine *self, int32_t setup)
             else if (c_ctl == 'j' || c_ctl == 'l') k = 3;
             else if (c_ctl == 'P' || c_ctl == 'S') k = 4;
             else k = (c_ctl == 's') ? 5 : 6;
-            self->s3_param[10].target = tgt[1][k];
+            self->s3_param[10].target = TV_REF(int32_t, tgt[1])[k];
 
             if (c_ctl == 'G' || c_ctl == 'J' || c_ctl == 'Z' ||
                 c_ctl == 'z')
@@ -3242,12 +3245,12 @@ void TV_THISCALL Stage3_Formants(Engine *self, int32_t setup)
             else if (c_ctl == 'K') k = 2;
             else if (c_ctl == 'X' || c_ctl == 'S') k = 3;
             else k = 4;
-            self->s3_param[11].target = tgt[2][k];
+            self->s3_param[11].target = TV_REF(int32_t, tgt[2])[k];
 
             if (c_ctl == '~') k = 0;
             else if (c_ctl == 'R' || c_ctl == 'z') k = 1;
             else k = (c_ctl == 'P') ? 2 : 3;
-            self->s3_param[12].target = tgt[3][k];
+            self->s3_param[12].target = TV_REF(int32_t, tgt[3])[k];
             return;
         }
 
@@ -3258,19 +3261,19 @@ void TV_THISCALL Stage3_Formants(Engine *self, int32_t setup)
             c_ctl = 'T';
         c = ctl->next->next->value;
         if (ctl->next->value == 'L') {
-            recs = g_glide_l;
+            recs = TV_REF(tv_ref, g_glide_l);
             counts = g_pair_l_count;
             pairs = g_pair_l_tab;
         } else {
             if (c == 'l')
                 c = '|';
-            recs = g_glide_any;
+            recs = TV_REF(tv_ref, g_glide_any);
             counts = g_pair_count;
             pairs = g_pair_tab;
         }
         Stage3_FindPair(pick, c_ctl, c, counts, pairs);
         for (i = 0; i < 4; i++) {
-            rec = &recs[i][pick[i]];
+            rec = &TV_REF(S3Param, recs[i])[pick[i]];
             self->s3_param[9 + i].target = rec->lead;
         }
         return;
@@ -3279,7 +3282,7 @@ void TV_THISCALL Stage3_Formants(Engine *self, int32_t setup)
     a_cur = (uint8_t)(Phone_Attr(px3(c_cur) | 0x100) & 2);
     if (a_cur != 0 && c_ctl == 'R') {
         /* "R" after a vowel */
-        recs = g_glide_r_vowel;
+        recs = TV_REF(tv_ref, g_glide_r_vowel);
         pick[0] = 0;
         if (c_cur == 'A' || c_cur == 'b' || c_cur == 'E' || c_cur == 'I' ||
             c_cur == 'y') {
@@ -3341,7 +3344,7 @@ void TV_THISCALL Stage3_Formants(Engine *self, int32_t setup)
             pick[3] = 1;
         else
             pick[3] = (c_cur == 'P') ? 2 : 3;
-        recs = g_glide_r_edge;
+        recs = TV_REF(tv_ref, g_glide_r_edge);
         for (i = 0; i < 4; i++)
             Stage3_Glide(self, 9 + i, recs[i], pick[i]);
         goto ramp;
@@ -3349,7 +3352,7 @@ void TV_THISCALL Stage3_Formants(Engine *self, int32_t setup)
 
     if (a_cur != 0 && c_ctl == 'Y') {
         Stage3_FindPair(pick, c_cur, c_scan, g_pair_y_count, g_pair_y_tab);
-        recs = g_glide_y;
+        recs = TV_REF(tv_ref, g_glide_y);
         for (i = 0; i < 4; i++)
             Stage3_Glide(self, 9 + i, recs[i], pick[i]);
         goto modes;
@@ -3371,7 +3374,7 @@ void TV_THISCALL Stage3_Formants(Engine *self, int32_t setup)
             c_scan = '|';
     }
     Stage3_FindPair(pick, c_cur, c_scan, counts, pairs);
-    recs = (c_ctl == 'L') ? g_glide_l : g_glide_any;
+    recs = (c_ctl == 'L') ? TV_REF(tv_ref, g_glide_l) : TV_REF(tv_ref, g_glide_any);
     for (i = 0; i < 4; i++)
         Stage3_Glide(self, 9 + i, recs[i], pick[i]);
 
@@ -3454,7 +3457,7 @@ void TV_THISCALL Stage3_Voiced(Engine *self)
 
         if (((cur->flags & 0x20u) &&
              ((Phone_Attr(c_ctl) & 1) ||
-              g_class_kind[g_phone_class[c_ctl]] == 4)) ||
+              g_class_kind[TV_REF(uint8_t, g_phone_class)[c_ctl]] == 4)) ||
             (c_cur == 'K' &&
              (c_ctl == 'r' || c_ctl == 'g' || c_ctl == 'c'))) {
             if (c_cur == 'P' || c_cur == 'T' || c_cur == 'K') {
@@ -3898,7 +3901,7 @@ void TV_THISCALL Stage3_Op16_D(Engine *self)
                 self->s3_param[15].target = 0xa6;
             }
         } else {
-            k = (int32_t)g_class_kind[g_phone_class[c_scan]];
+            k = (int32_t)g_class_kind[TV_REF(uint8_t, g_phone_class)[c_scan]];
             if (k == 0) {
                 self->s3_param[8].target = 0x3e;
             } else if (k == 1) {
@@ -3916,7 +3919,7 @@ void TV_THISCALL Stage3_Op16_D(Engine *self)
                     self->s3_1e5c[0] = 0x35;
                     self->s3_1e5c[1] = 0x34;
                 } else {
-                    k = (int32_t)g_class_kind[g_phone_class[c_scan]];
+                    k = (int32_t)g_class_kind[TV_REF(uint8_t, g_phone_class)[c_scan]];
                     if (k == 1) {
                         self->s3_1e5c[0] = 0x2d;
                         self->s3_1e5c[1] = 0x37;
@@ -3935,7 +3938,7 @@ void TV_THISCALL Stage3_Op16_D(Engine *self)
                 self->s3_1e5c[1] = 0x3a;
                 self->s3_1e5c[2] = 0x30;
             } else {
-                k = (int32_t)g_class_kind[g_phone_class[c_scan]];
+                k = (int32_t)g_class_kind[TV_REF(uint8_t, g_phone_class)[c_scan]];
                 if (k == 0) {
                     self->s3_1e5c[0] = 0;
                     self->s3_1e5c[1] = 0x37;
@@ -4139,7 +4142,7 @@ void TV_THISCALL Stage3_Op16_R(Engine *self)
     default:
         if (Phone_IsVowel(c_scan))
             break;
-        k = (int32_t)g_class_kind[g_phone_class[px3(c_scan)]];
+        k = (int32_t)g_class_kind[TV_REF(uint8_t, g_phone_class)[px3(c_scan)]];
         if (k == 0) {
             self->s3_param[0].target = 0x3c;
         } else if (k == 2) {
@@ -4150,7 +4153,7 @@ void TV_THISCALL Stage3_Op16_R(Engine *self)
             v = self->s3_param[10].target;
             v -= Synth_MulQ15(v, 0x2008);
             self->s3_param[10].target = v;
-            v = ((int32_t)g_pt_f2[g_phone_class[px3(scan->value)]] << 3) +
+            v = ((int32_t)g_pt_f2[TV_REF(uint8_t, g_phone_class)[px3(scan->value)]] << 3) +
                 0x1f4;
             self->s3_param[10].target += Synth_MulQ15(v, 0x2008);
             self->s3_param[11].target = self->s3_param[10].target + 0x190;
@@ -4881,25 +4884,25 @@ void TV_THISCALL Stage3_SetGlide(Engine *self, int32_t to, int32_t bw,
 /* @0x1003bc30 */ extern const uint8_t g_glide_alt1[0x35];
 /* @0x1003bc88 */ extern const uint8_t g_glide_alt2[0x35];
 
-/* @0x1012c440 */ extern const uint8_t *const g_gt0_data[];
+/* @0x1012c440 */ extern const tv_ref g_gt0_data[];
 /* @0x1012c430 */ extern const int32_t g_gt0_max[];
-/* @0x1012c450 */ extern const uint8_t *const g_gt0_info[];
-/* @0x1010b318 */ extern const uint8_t *const g_gt1_data[];
+/* @0x1012c450 */ extern const tv_ref g_gt0_info[];
+/* @0x1010b318 */ extern const tv_ref g_gt1_data[];
 /* @0x1010b338 */ extern const int32_t g_gt1_max[];
-/* @0x1010b348 */ extern const uint8_t *const g_gt1_info[];
-/* @0x100aec80 */ extern const uint8_t *const g_gt2_data[];
+/* @0x1010b348 */ extern const tv_ref g_gt1_info[];
+/* @0x100aec80 */ extern const tv_ref g_gt2_data[];
 /* @0x100aec70 */ extern const int32_t g_gt2_max[];
-/* @0x100aeca0 */ extern const uint8_t *const g_gt2_info[];
-/* @0x1010249c */ extern const uint8_t *const g_gt3_data[];
+/* @0x100aeca0 */ extern const tv_ref g_gt2_info[];
+/* @0x1010249c */ extern const tv_ref g_gt3_data[];
 /* @0x101024b4 */ extern const int32_t g_gt3_max[];
-/* @0x101024c4 */ extern const uint8_t *const g_gt3_info[];
-/* @0x100c8914 */ extern const uint8_t *const g_gt4_data[];
+/* @0x101024c4 */ extern const tv_ref g_gt3_info[];
+/* @0x100c8914 */ extern const tv_ref g_gt4_data[];
 /* @0x100c892c */ extern const int32_t g_gt4_max[];
-/* @0x100c893c */ extern const uint8_t *const g_gt4_info[];
-/* @0x100f8014 */ extern const uint8_t *const g_gt5_data[];
+/* @0x100c893c */ extern const tv_ref g_gt4_info[];
+/* @0x100f8014 */ extern const tv_ref g_gt5_data[];
 /* @0x100f8024 */ extern const int32_t g_gt5_max[];
-/* @0x100f8034 */ extern const uint8_t *const g_gt5_info[];
-/* @0x100cf098 */ extern const uint8_t *const g_gt6_data[];
+/* @0x100f8034 */ extern const tv_ref g_gt5_info[];
+/* @0x100cf098 */ extern const tv_ref g_gt6_data[];
 /* @0x100cf0a8 */ extern const int32_t g_gt6_max[];
 
 /* One of seven stand-ins, by what the phoneme is closest to. */
@@ -5073,32 +5076,32 @@ boundary:
     i = px3(s1) - 0x33;
     switch (((uint32_t)i <= 0x49) ? g_gtab_sel[i] : 22) {
     case 0: case 2: case 14: case 18:
-        data = g_gt4_data[which]; limit = g_gt4_max[which];
-        info = g_gt4_info[which];
+        data = TV_REF(uint8_t, g_gt4_data[which]); limit = g_gt4_max[which];
+        info = TV_REF(uint8_t, g_gt4_info[which]);
         break;
     case 1: case 11: case 16:
-        data = g_gt5_data[which]; limit = g_gt5_max[which];
-        info = g_gt5_info[which];
+        data = TV_REF(uint8_t, g_gt5_data[which]); limit = g_gt5_max[which];
+        info = TV_REF(uint8_t, g_gt5_info[which]);
         break;
     case 3: case 21:
-        data = g_gt6_data[which]; limit = g_gt6_max[which];
+        data = TV_REF(uint8_t, g_gt6_data[which]); limit = g_gt6_max[which];
         info = spare;   /* the original leaves this one unset */
         break;
     case 4: case 5: case 6: case 20:
-        data = g_gt1_data[which]; limit = g_gt1_max[which];
-        info = g_gt1_info[which];
+        data = TV_REF(uint8_t, g_gt1_data[which]); limit = g_gt1_max[which];
+        info = TV_REF(uint8_t, g_gt1_info[which]);
         break;
     case 7: case 8: case 10: case 13:
-        data = g_gt0_data[which]; limit = g_gt0_max[which];
-        info = g_gt0_info[which];
+        data = TV_REF(uint8_t, g_gt0_data[which]); limit = g_gt0_max[which];
+        info = TV_REF(uint8_t, g_gt0_info[which]);
         break;
     case 9: case 12: case 15:
-        data = g_gt2_data[which]; limit = g_gt2_max[which];
-        info = g_gt2_info[which];
+        data = TV_REF(uint8_t, g_gt2_data[which]); limit = g_gt2_max[which];
+        info = TV_REF(uint8_t, g_gt2_info[which]);
         break;
     case 17: case 19:
-        data = g_gt3_data[which]; limit = g_gt3_max[which];
-        info = g_gt3_info[which];
+        data = TV_REF(uint8_t, g_gt3_data[which]); limit = g_gt3_max[which];
+        info = TV_REF(uint8_t, g_gt3_info[which]);
         break;
     default:
         /* all three left unset in the original */
@@ -5642,7 +5645,7 @@ void TV_THISCALL Stage3_Op9(Engine *self)
                 self->s3_param[i].mode = 5;
             } else if (i == 0 && (scan->flags & 0x20u) &&
                        ctl->value == 'D' && cur->value != ' ' &&
-                       g_class_kind[g_phone_class[px3(scan->value)]] == 1) {
+                       g_class_kind[TV_REF(uint8_t, g_phone_class)[px3(scan->value)]] == 1) {
                 self->s3_param[i].mode = 5;
             } else {
                 self->s3_param[i].mode = 4;
@@ -5860,7 +5863,7 @@ void TV_THISCALL Stage3_Op14(Engine *self)
         }
         break;
     case 3:
-        v = (int32_t)g_class_kind[g_phone_class[c_scan]];
+        v = (int32_t)g_class_kind[TV_REF(uint8_t, g_phone_class)[c_scan]];
         if (v == 0 || v == 1) {
             self->s3_param[2].start = 0xa;
             self->s3_param[2].shape_out = 5;
@@ -6988,7 +6991,7 @@ tail_f:
                 }
                 if (c_ctl == 'o' || c_ctl == 'u' || c_ctl == 'b')
                     p[0].shape_out = 4;
-                if (g_class_kind[g_phone_class[c_ctl]] == 0)
+                if (g_class_kind[TV_REF(uint8_t, g_phone_class)[c_ctl]] == 0)
                     p[10].start = 0x784;
             }
             break;
@@ -6996,7 +6999,7 @@ tail_f:
             p[11].shape_in = 0;
             p[0].shape_out = 5;
             p[10].shape_in = 0;
-            v = (int32_t)g_class_kind[g_phone_class[c_ctl]];
+            v = (int32_t)g_class_kind[TV_REF(uint8_t, g_phone_class)[c_ctl]];
             if (v == 2 || v == 3) {
                 for (i = 9; i < 13; i++)
                     p[i].shape_out = 5;
@@ -7013,7 +7016,7 @@ tail_f:
                 p[11].shape_out = 6;
             break;
         case 5:
-            v = (int32_t)g_class_kind[g_phone_class[c_ctl]];
+            v = (int32_t)g_class_kind[TV_REF(uint8_t, g_phone_class)[c_ctl]];
             if ((v == 0 || v == 1) &&
                 (Phone_Attr(c_ctl | 0x100) & 0x20) &&
                 (Phone_Attr(c_ctl | 0x200) & 1) && c_ctl != 'E') {
@@ -7594,30 +7597,30 @@ void TV_THISCALL Stage3_LayPath(Engine *self, int32_t v1, int32_t v2,
 /* @0x10039b04 */ extern const uint8_t g_red_sel[0x4a];
 
 /* The four tables of records each group keeps, and the two headers. */
-/* @0x1012c470 */ extern const uint8_t *const g_gt0_rec1[];
-/* @0x1012c480 */ extern const uint8_t *const g_gt0_rec2[];
-/* @0x1012c460 */ extern const uint8_t *const g_gt0_rec0[];
-/* @0x1012c490 */ extern const uint8_t *const g_gt0_rec3[];
-/* @0x1010b368 */ extern const uint8_t *const g_gt1_rec1[];
-/* @0x1010b378 */ extern const uint8_t *const g_gt1_rec2[];
-/* @0x1010b358 */ extern const uint8_t *const g_gt1_rec0[];
-/* @0x1010b388 */ extern const uint8_t *const g_gt1_rec3[];
-/* @0x100aecc0 */ extern const uint8_t *const g_gt2_rec1[];
-/* @0x100aecd0 */ extern const uint8_t *const g_gt2_rec2[];
-/* @0x100aecb0 */ extern const uint8_t *const g_gt2_rec0[];
-/* @0x100aece0 */ extern const uint8_t *const g_gt2_rec3[];
-/* @0x101024e4 */ extern const uint8_t *const g_gt3_rec1[];
-/* @0x101024f4 */ extern const uint8_t *const g_gt3_rec2[];
-/* @0x101024d4 */ extern const uint8_t *const g_gt3_rec0[];
-/* @0x10102504 */ extern const uint8_t *const g_gt3_rec3[];
-/* @0x100c895c */ extern const uint8_t *const g_gt4_rec1[];
-/* @0x100c896c */ extern const uint8_t *const g_gt4_rec2[];
-/* @0x100c894c */ extern const uint8_t *const g_gt4_rec0[];
-/* @0x100c897c */ extern const uint8_t *const g_gt4_rec3[];
-/* @0x100f8054 */ extern const uint8_t *const g_gt5_rec1[];
-/* @0x100f8064 */ extern const uint8_t *const g_gt5_rec2[];
-/* @0x100f8044 */ extern const uint8_t *const g_gt5_rec0[];
-/* @0x100f8074 */ extern const uint8_t *const g_gt5_rec3[];
+/* @0x1012c470 */ extern const tv_ref g_gt0_rec1[];
+/* @0x1012c480 */ extern const tv_ref g_gt0_rec2[];
+/* @0x1012c460 */ extern const tv_ref g_gt0_rec0[];
+/* @0x1012c490 */ extern const tv_ref g_gt0_rec3[];
+/* @0x1010b368 */ extern const tv_ref g_gt1_rec1[];
+/* @0x1010b378 */ extern const tv_ref g_gt1_rec2[];
+/* @0x1010b358 */ extern const tv_ref g_gt1_rec0[];
+/* @0x1010b388 */ extern const tv_ref g_gt1_rec3[];
+/* @0x100aecc0 */ extern const tv_ref g_gt2_rec1[];
+/* @0x100aecd0 */ extern const tv_ref g_gt2_rec2[];
+/* @0x100aecb0 */ extern const tv_ref g_gt2_rec0[];
+/* @0x100aece0 */ extern const tv_ref g_gt2_rec3[];
+/* @0x101024e4 */ extern const tv_ref g_gt3_rec1[];
+/* @0x101024f4 */ extern const tv_ref g_gt3_rec2[];
+/* @0x101024d4 */ extern const tv_ref g_gt3_rec0[];
+/* @0x10102504 */ extern const tv_ref g_gt3_rec3[];
+/* @0x100c895c */ extern const tv_ref g_gt4_rec1[];
+/* @0x100c896c */ extern const tv_ref g_gt4_rec2[];
+/* @0x100c894c */ extern const tv_ref g_gt4_rec0[];
+/* @0x100c897c */ extern const tv_ref g_gt4_rec3[];
+/* @0x100f8054 */ extern const tv_ref g_gt5_rec1[];
+/* @0x100f8064 */ extern const tv_ref g_gt5_rec2[];
+/* @0x100f8044 */ extern const tv_ref g_gt5_rec0[];
+/* @0x100f8074 */ extern const tv_ref g_gt5_rec3[];
 
 /* How many bits a field of this many values needs. */
 static int32_t red_width(int32_t v)
@@ -7862,44 +7865,44 @@ uint8_t TV_THISCALL Stage3_Reduce(Engine *self, int32_t which)
     i = px3(c_ctl) - 0x33;
     switch (((uint32_t)i <= 0x49) ? g_red_sel[i] : 22) {
     case 0: case 2: case 14: case 18:
-        data = g_gt4_data[which]; info = g_gt4_info[which];
+        data = TV_REF(uint8_t, g_gt4_data[which]); info = TV_REF(uint8_t, g_gt4_info[which]);
         limit = g_gt4_max[which];
-        rc[0] = g_gt4_rec0[which]; rc[1] = g_gt4_rec1[which];
-        rc[2] = g_gt4_rec2[which]; rc[3] = g_gt4_rec3[which];
+        rc[0] = TV_REF(uint8_t, g_gt4_rec0[which]); rc[1] = TV_REF(uint8_t, g_gt4_rec1[which]);
+        rc[2] = TV_REF(uint8_t, g_gt4_rec2[which]); rc[3] = TV_REF(uint8_t, g_gt4_rec3[which]);
         break;
     case 1: case 11: case 16:
-        data = g_gt5_data[which]; info = g_gt5_info[which];
+        data = TV_REF(uint8_t, g_gt5_data[which]); info = TV_REF(uint8_t, g_gt5_info[which]);
         limit = g_gt5_max[which];
-        rc[0] = g_gt5_rec0[which]; rc[1] = g_gt5_rec1[which];
-        rc[2] = g_gt5_rec2[which]; rc[3] = g_gt5_rec3[which];
+        rc[0] = TV_REF(uint8_t, g_gt5_rec0[which]); rc[1] = TV_REF(uint8_t, g_gt5_rec1[which]);
+        rc[2] = TV_REF(uint8_t, g_gt5_rec2[which]); rc[3] = TV_REF(uint8_t, g_gt5_rec3[which]);
         break;
     case 3: case 21:
-        data = g_gt6_data[which];
+        data = TV_REF(uint8_t, g_gt6_data[which]);
         limit = g_gt6_max[which];
         break;
     case 4: case 5: case 6: case 20:
-        data = g_gt1_data[which]; info = g_gt1_info[which];
+        data = TV_REF(uint8_t, g_gt1_data[which]); info = TV_REF(uint8_t, g_gt1_info[which]);
         limit = g_gt1_max[which];
-        rc[0] = g_gt1_rec0[which]; rc[1] = g_gt1_rec1[which];
-        rc[2] = g_gt1_rec2[which]; rc[3] = g_gt1_rec3[which];
+        rc[0] = TV_REF(uint8_t, g_gt1_rec0[which]); rc[1] = TV_REF(uint8_t, g_gt1_rec1[which]);
+        rc[2] = TV_REF(uint8_t, g_gt1_rec2[which]); rc[3] = TV_REF(uint8_t, g_gt1_rec3[which]);
         break;
     case 7: case 8: case 10: case 13:
-        data = g_gt0_data[which]; info = g_gt0_info[which];
+        data = TV_REF(uint8_t, g_gt0_data[which]); info = TV_REF(uint8_t, g_gt0_info[which]);
         limit = g_gt0_max[which];
-        rc[0] = g_gt0_rec0[which]; rc[1] = g_gt0_rec1[which];
-        rc[2] = g_gt0_rec2[which]; rc[3] = g_gt0_rec3[which];
+        rc[0] = TV_REF(uint8_t, g_gt0_rec0[which]); rc[1] = TV_REF(uint8_t, g_gt0_rec1[which]);
+        rc[2] = TV_REF(uint8_t, g_gt0_rec2[which]); rc[3] = TV_REF(uint8_t, g_gt0_rec3[which]);
         break;
     case 9: case 12: case 15:
-        data = g_gt2_data[which]; info = g_gt2_info[which];
+        data = TV_REF(uint8_t, g_gt2_data[which]); info = TV_REF(uint8_t, g_gt2_info[which]);
         limit = g_gt2_max[which];
-        rc[0] = g_gt2_rec0[which]; rc[1] = g_gt2_rec1[which];
-        rc[2] = g_gt2_rec2[which]; rc[3] = g_gt2_rec3[which];
+        rc[0] = TV_REF(uint8_t, g_gt2_rec0[which]); rc[1] = TV_REF(uint8_t, g_gt2_rec1[which]);
+        rc[2] = TV_REF(uint8_t, g_gt2_rec2[which]); rc[3] = TV_REF(uint8_t, g_gt2_rec3[which]);
         break;
     case 17: case 19:
-        data = g_gt3_data[which]; info = g_gt3_info[which];
+        data = TV_REF(uint8_t, g_gt3_data[which]); info = TV_REF(uint8_t, g_gt3_info[which]);
         limit = g_gt3_max[which];
-        rc[0] = g_gt3_rec0[which]; rc[1] = g_gt3_rec1[which];
-        rc[2] = g_gt3_rec2[which]; rc[3] = g_gt3_rec3[which];
+        rc[0] = TV_REF(uint8_t, g_gt3_rec0[which]); rc[1] = TV_REF(uint8_t, g_gt3_rec1[which]);
+        rc[2] = TV_REF(uint8_t, g_gt3_rec2[which]); rc[3] = TV_REF(uint8_t, g_gt3_rec3[which]);
         break;
     default:
         break;

@@ -111,3 +111,32 @@ echo "built $OUT/tvtts.dll"
 # the calling convention are exercised rather than assumed.
 ld -m i386pe --subsystem console -e _mainCRTStartup@0 --stack 0x800000   --disable-dynamicbase --disable-reloc-section   -o "$OUT/api_test_dll.exe" "$PORT/obj/api_test.o" $RT_MIN   "$OUT/libtvtts.a" "$OUT/libmsvcrt.a" "$OUT/libkernel32.a"
 echo "built $OUT/api_test_dll.exe"
+
+# --- 64-bit ---------------------------------------------------------------
+# The first 64-bit TruVoice.  Nothing freestanding here: at 64 bits a normal
+# hosted toolchain is available, so this is an ordinary gcc build against the
+# system C runtime.  The data comes out of the image with eight-byte pointers
+# (tools/gen_data.py --bits 64).
+P64=build/port64
+mkdir -p "$P64/obj"
+CF64="-m64 -std=gnu11 -O2 -g -Wall -Wno-unused-function -fwrapv \
+  -fno-strict-aliasing -Isrc -Iinclude -I$GEN"
+OBJ64=""
+for src in $(find src -name '*.c' | sort); do
+  obj="$P64/obj/$(echo "$src" | sed 's|^src/||; s|/|_|g; s|\.c$|.o|')"
+  gcc $CF64 -c "$src" -o "$obj"
+  OBJ64="$OBJ64 $obj"
+done
+python tools/gen_data.py "$DLL" src "$GEN/tvdata64.s" $OBJ64
+gcc -m64 -c "$GEN/tvdata64.s" -o "$P64/obj/tvdata.o"
+gcc -m64 -o "$OUT/tv64.exe" $OBJ64 "$P64/obj/tvdata.o"
+echo "built $OUT/tv64.exe"
+
+LIB64=$(echo "$OBJ64" | tr ' ' '\n' | grep -v 'port_main\.o$' | tr '\n' ' ')
+gcc $CF64 -c tests/api_test.c -o "$P64/obj/api_test.o"
+gcc -m64 -o "$OUT/api_test64.exe" "$P64/obj/api_test.o" $LIB64 "$P64/obj/tvdata.o"
+echo "built $OUT/api_test64.exe"
+
+gcc -m64 -shared -o "$OUT/tvtts64.dll" $LIB64 "$P64/obj/tvdata.o" \
+  -Wl,--out-implib,"$OUT/libtvtts64.a" harness/rt/tvtts.def
+echo "built $OUT/tvtts64.dll"

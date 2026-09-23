@@ -168,7 +168,7 @@ uint8_t TV_THISCALL UserLex_Try(Engine *self)
 
     Lexicon_Lock();
     hit = (const LexEntry *)tv_bsearch(&key, g_lexicon, g_lexicon_count,
-                                       8, UserLex_Compare);
+                                       sizeof(LexEntry), UserLex_Compare);
     if (hit != NULL) {
         const char *p = hit->pron;
         for (i = 0; (pron[i] = p[i]) != '\0'; i++)
@@ -254,6 +254,12 @@ uint8_t TV_THISCALL UserLex_Try(Engine *self)
     return 1;
 }
 
+#if !defined(TV_HOOK_BUILD)
+/* The user lexicon itself: see the note in engine.h. */
+LexEntry g_lexicon[0x1388];
+uint32_t g_lexicon_count;
+#endif
+
 /* Set whenever the user lexicon changes, so the SAPI layer knows to save it. */
 /* @0x1012c4f4 */ extern int32_t g_lexicon_dirty;
 
@@ -268,8 +274,8 @@ uint8_t TV_THISCALL UserLex_Try(Engine *self)
 /* @0x10003d00 */
 void TV_CDECL UserLex_Add(const char *word, const char *pron)
 {
-    LexEntry *tab = (LexEntry *)g_lexicon;
-    uint32_t *count = (uint32_t *)&g_lexicon_count;
+    LexEntry *tab = g_lexicon;
+    uint32_t *count = &g_lexicon_count;
     LexEntry *hit;
     char *w, *p;
 
@@ -283,7 +289,8 @@ void TV_CDECL UserLex_Add(const char *word, const char *pron)
     strcpy(p, pron);
 
     Lexicon_Lock();
-    hit = (LexEntry *)tv_bsearch(&w, tab, *count, 8, UserLex_Compare);
+    hit = (LexEntry *)tv_bsearch(&w, tab, *count, sizeof(LexEntry),
+                                 UserLex_Compare);
     if (hit != NULL) {
         tv_delete((void *)hit->word);
         tv_delete((void *)hit->pron);
@@ -293,7 +300,7 @@ void TV_CDECL UserLex_Add(const char *word, const char *pron)
         tab[*count].word = w;
         tab[*count].pron = p;
         (*count)++;
-        tv_qsort(tab, *count, 8, UserLex_Compare);
+        tv_qsort(tab, *count, sizeof(LexEntry), UserLex_Compare);
     }
     Lexicon_Unlock();
     g_lexicon_dirty = 1;
