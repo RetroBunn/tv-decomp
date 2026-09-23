@@ -52,6 +52,8 @@ Mkfile.old
 dkms.conf
 
 *.ini
+# ...but the add-on manifest is source.
+!nvda-addon/manifest.ini
 
 # tv-decomp: the original Centigram distribution, generated analysis output,
 # build products and reference audio -- all derived from or part of

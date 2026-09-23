@@ -96,12 +96,94 @@ TVTTS_API int TVTTS_CALL tvtts_speak_bytes(tvtts_synth *s, const void *text,
                                            void *user);
 
 /*
+ * Phonemes, in the engine's own alphabet: one character per phoneme, with
+ * "1" and "2" marking primary and secondary stress, so "hello" is "HeLO1".
+ * The alphabet is the engine's internal one, not ARPABET and not the
+ * bracket notation ("[HH AH L OW]") the rule interpreter also understands.
+ *
+ * This is the 5.1 builds' tts_SpeakPhoneme, which is a wrapper that puts
+ * ESC[1I in front of the string and ESC[0I after it and speaks the result;
+ * the escape is in this engine too.  Round-tripping is close but not exact:
+ * speaking the phonemes tvtts_text_to_phonemes gives for "hello" is byte
+ * for byte the same as speaking the word, while for some other words the
+ * final intonation differs slightly.  See docs/VOICES.md.
+ */
+TVTTS_API int TVTTS_CALL tvtts_speak_phonemes(tvtts_synth *s,
+                                              const char *phonemes,
+                                              tvtts_callback cb, void *user);
+
+/*
+ * The other direction: what the engine would say for this text, in that
+ * same alphabet.  Written NUL-terminated into buf, snprintf-style -- the
+ * return is the number of bytes needed including the terminator, so a
+ * short buffer is truncated but the return still says how much was wanted,
+ * and buf may be NULL (with cap 0) purely to ask the size.  Returns -1 if
+ * the arguments are bad or it ran out of memory.
+ *
+ * The engine only produces the trace as a side effect of synthesising, so
+ * this runs the text through and throws the audio away: it costs what
+ * speaking would, and it advances the synth exactly as a tvtts_speak call
+ * does.  Settings are left alone.
+ */
+TVTTS_API int TVTTS_CALL tvtts_text_to_phonemes(tvtts_synth *s,
+                                                const char *text,
+                                                char *buf, uint32_t cap);
+
+/*
  * Index marks.  The engine takes them inline in the text, so a caller with
  * a sequence of (text, bookmark) pieces writes the escape between them.
  * Writes at most 16 bytes including the terminator and returns the length,
  * or 0 if the buffer is too small.
  */
 TVTTS_API int TVTTS_CALL tvtts_mark_sequence(char *buf, size_t cap, uint32_t mark);
+
+/*
+ * A pause, for the same reason: the engine takes one inline, in hundredths
+ * of a second, biased by 49.  Rounded down to a hundredth and clamped to
+ * the 2060 ms the engine can express.  Writes at most 16 bytes including
+ * the terminator and returns the length, or 0 if the buffer is too small.
+ */
+TVTTS_API int TVTTS_CALL tvtts_break_sequence(char *buf, size_t cap, uint32_t ms);
+
+/*
+ * Speak punctuation rather than pause on it: with this on, the comma and
+ * period of "Hi, there." are said aloud.  It is a flag, so it stays on
+ * until turned off -- including into later utterances on the same synth.
+ *
+ * It does not spell anything.  There is no need to: the engine already
+ * names a letter given on its own, so "A" alone says "ay" rather than the
+ * article.  What loses that is putting any escape after the letter, which
+ * makes it no longer the last word -- so a caller wanting a letter named
+ * should end the text with the letter.
+ */
+TVTTS_API int TVTTS_CALL tvtts_punctuation_sequence(char *buf, size_t cap, int on);
+
+/*
+ * Pitch and rate part way through an utterance, for the prosody a caller
+ * puts on a capital letter or an emphasised word.  Both take the same units
+ * as tvtts_set_pitch and tvtts_set_rate and clamp to what the engine can
+ * usefully do: pitch 50..400, rate 46..253 words per minute (see
+ * TVTTS_RATE_MIN below for where those two numbers come from).
+ */
+TVTTS_API int TVTTS_CALL tvtts_pitch_sequence(char *buf, size_t cap, int pitch);
+TVTTS_API int TVTTS_CALL tvtts_rate_sequence(char *buf, size_t cap, int wpm);
+
+/*
+ * The engine's rate is a 26-row table, picked by (wpm - 46) / 8, so it
+ * takes 46..253 words per minute in steps of eight -- and only those.
+ *
+ * Below 46 the subtraction is done unsigned and wraps, giving an index
+ * of about 0x1fffffff and a wild read: the original crashes there and so
+ * does this, so tvtts_set_rate raises anything lower to 46.  Above 253
+ * the index runs past the end of the table and the engine reads whatever
+ * follows it, which sounds nothing like speeding up -- a sentence at 254
+ * comes out ten times longer than at 253.  That is the original's own
+ * behaviour, reproduced exactly, so it is left alone rather than clamped;
+ * callers that want speech rather than fidelity should stay inside the
+ * range.  46..76 all select the slowest row.
+ */
+#define TVTTS_RATE_MIN 46
+#define TVTTS_RATE_MAX 253
 
 /* Settings.  These persist across utterances, as SAPI's did. */
 TVTTS_API void TVTTS_CALL tvtts_set_voice(tvtts_synth *s, int voice);

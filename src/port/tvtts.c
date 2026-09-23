@@ -18,6 +18,7 @@
 #include "engine.h"
 #include "crt.h"
 #include "tvtts.h"
+#include "bytelist.h"
 
 /* The engine object has no allocator of its own -- in the original it lives
  * on a thread stack -- so the caller provides the block.  0x9200 is what the
@@ -50,6 +51,9 @@ struct tvtts_synth {
     void          *user;
     uint32_t       pos;          /* samples emitted so far this utterance */
     int            aborted;
+    /* Marks waiting for the audio to reach them; see queue_mark. */
+    struct { uint32_t mark, pos; } *pending;
+    int            npending, cpending;
 };
 
 /* Sapi_QueuePush recovers the synth by casting; make that true. */
@@ -105,6 +109,58 @@ static uint32_t mark_position(const tvtts_synth *s)
 }
 
 /*
+ * A mark fires ahead of its own audio, so it waits here until the stream
+ * reaches it.  Delivering it early would make every caller keep this list
+ * itself and split its audio buffer; delivering it in order means a caller
+ * can feed what it is given and act on a mark when it sees one.
+ */
+static void queue_mark(tvtts_synth *s, uint32_t mark, uint32_t pos)
+{
+    if (s->npending == s->cpending) {
+        int cap = s->cpending ? s->cpending * 2 : 8;
+        void *p = realloc(s->pending, (size_t)cap * sizeof *s->pending);
+
+        if (p == NULL)
+            return;             /* drop it rather than fail the utterance */
+        s->pending = p;
+        s->cpending = cap;
+    }
+    s->pending[s->npending].mark = mark;
+    s->pending[s->npending].pos = pos;
+    s->npending++;
+}
+
+/* Hand over `n` samples, releasing any mark the stream passes on the way. */
+static void emit_audio(tvtts_synth *s, const int16_t *smp, uint32_t n)
+{
+    uint32_t done = 0;
+
+    while (done < n && !s->aborted) {
+        uint32_t take = n - done;
+        int i, first = -1;
+
+        /* the earliest mark that falls inside what is left */
+        for (i = 0; i < s->npending; i++)
+            if (s->pending[i].pos <= s->pos + take &&
+                (first < 0 || s->pending[i].pos < s->pending[first].pos))
+                first = i;
+        if (first >= 0) {
+            uint32_t at = s->pending[first].pos;
+            take = at > s->pos ? at - s->pos : 0;
+        }
+        if (take != 0) {
+            emit(s, TVTTS_AUDIO, smp + done, take, 0, s->pos);
+            s->pos += take;
+            done += take;
+        }
+        if (first < 0)
+            break;
+        emit(s, TVTTS_MARK, NULL, 0, s->pending[first].mark, s->pos);
+        s->pending[first] = s->pending[--s->npending];
+    }
+}
+
+/*
  * Where a bookmark surfaces.  Stage 3 reaches an index-mark node, builds a
  * three-word record and hands it to the layer above; the record's first word
  * says what it is (0 a bookmark, 1 a phoneme trace) and the queue then owns
@@ -126,7 +182,7 @@ int32_t Sapi_QueuePush(SapiCentral *ctl, const void *data, uint32_t size)
      * engine's own end-of-item marker rather than one of the caller's, and
      * it also tells the node to stop reporting, so it is not passed on. */
     if (rec[0] == 0 && rec[2] != 0)
-        emit(s, TVTTS_MARK, NULL, 0, rec[2], mark_position(s));
+        queue_mark(s, rec[2], mark_position(s));
     tv_delete(rec);
     return 0;
 }
@@ -208,26 +264,79 @@ static char *to_cp1252_utf8(const char *u8, uint32_t *out_len)
     return b;
 }
 
+static int esc_seq(char *buf, size_t cap, uint32_t n, char letter);
+
 int TVTTS_CALL tvtts_mark_sequence(char *buf, size_t cap, uint32_t mark)
 {
+    return esc_seq(buf, cap, mark, 'i');
+}
+
+static int esc_seq(char *buf, size_t cap, uint32_t n, char letter)
+{
     char digits[12];
-    int nd = 0, n = 0;
+    int nd = 0, i = 0;
 
     if (buf == NULL || cap < 4)
         return 0;
     do {
-        digits[nd++] = (char)('0' + mark % 10u);
-        mark /= 10u;
-    } while (mark != 0);
+        digits[nd++] = (char)('0' + n % 10u);
+        n /= 10u;
+    } while (n != 0);
     if (cap < (size_t)nd + 4)
         return 0;
-    buf[n++] = 0x1b;
-    buf[n++] = '[';
+    buf[i++] = 0x1b;
+    buf[i++] = '[';
     while (nd > 0)
-        buf[n++] = digits[--nd];
-    buf[n++] = 'i';
-    buf[n] = 0;
-    return n;
+        buf[i++] = digits[--nd];
+    buf[i++] = letter;
+    buf[i] = 0;
+    return i;
+}
+
+int TVTTS_CALL tvtts_break_sequence(char *buf, size_t cap, uint32_t ms)
+{
+    /* Measured: the engine inserts (argument - 49) frames of a hundredth of
+     * a second each, so 49 is silence and 255 is its longest pause. */
+    uint32_t n = 49u + ms / 10u;
+
+    if (n > 255u)
+        n = 255u;
+    return esc_seq(buf, cap, n, 's');
+}
+
+int TVTTS_CALL tvtts_punctuation_sequence(char *buf, size_t cap, int on)
+{
+    /* Flag 2 of the ESC[..N/F set.  Measured from the phoneme stream: with
+     * it on, "Hi, there." gains the words "comma" and "period"; no word is
+     * ever spelled.  Turning it off again gives byte-identical audio to
+     * never having set it, but nothing else does -- it outlives the
+     * utterance that set it. */
+    return esc_seq(buf, cap, 2, on ? 'N' : 'F');
+}
+
+int TVTTS_CALL tvtts_pitch_sequence(char *buf, size_t cap, int pitch)
+{
+    /* ESC[<n>p sets the pitch to 2n, checked against tvtts_set_pitch for
+     * several values; the command itself takes 25..200. */
+    int n = pitch / 2;
+
+    if (n < 25)
+        n = 25;
+    if (n > 200)
+        n = 200;
+    return esc_seq(buf, cap, (uint32_t)n, 'p');
+}
+
+int TVTTS_CALL tvtts_rate_sequence(char *buf, size_t cap, int wpm)
+{
+    /* Both ends clamped here: unlike the setter this builds text for a
+     * caller to speak, so there is no fidelity case for letting it ask
+     * the engine for a rate that is not speech. */
+    if (wpm < TVTTS_RATE_MIN)
+        wpm = TVTTS_RATE_MIN;
+    if (wpm > TVTTS_RATE_MAX)
+        wpm = TVTTS_RATE_MAX;
+    return esc_seq(buf, cap, (uint32_t)wpm, 'r');
 }
 
 /* ---- lifetime ------------------------------------------------------------ */
@@ -262,7 +371,7 @@ tvtts_synth *TVTTS_CALL tvtts_create(uint32_t sample_rate)
 
     Engine_Construct(s->eng);
     s->eng->w_212e = 1;
-    s->eng->w_212c = 0;          /* no phoneme trace: nothing collects it */
+    s->eng->w_212c = 0;
     s->eng->w_2130 = 1;
     s->eng->sapi = &s->host;
     s->eng->sample_rate = (uint16_t)sample_rate;
@@ -282,6 +391,7 @@ void TVTTS_CALL tvtts_destroy(tvtts_synth *s)
         return;
     free(s->eng);
     free(s->outbuf);
+    free(s->pending);
     free(s);
 }
 
@@ -295,8 +405,15 @@ void TVTTS_CALL tvtts_set_voice(tvtts_synth *s, int voice)
 
 void TVTTS_CALL tvtts_set_rate(tvtts_synth *s, int wpm)
 {
+    /* Engine_SetSpeed does (wpm - 46) >> 3 unsigned, so anything below
+     * TVTTS_RATE_MIN wraps to a vast index and reads wildly out of the
+     * rate table.  The original crashes there too, so there is no
+     * behaviour to be faithful to and the floor costs nothing.  The
+     * ceiling is deliberately not enforced: past 253 the engine reads
+     * off the end of the table, which is nonsense but is the original's
+     * nonsense, and the corpus checks it at 260 and 400. */
     if (s != NULL)
-        s->host.speed = wpm;
+        s->host.speed = wpm < TVTTS_RATE_MIN ? TVTTS_RATE_MIN : wpm;
 }
 
 void TVTTS_CALL tvtts_set_pitch(tvtts_synth *s, int pitch)
@@ -341,15 +458,26 @@ int TVTTS_CALL tvtts_voice_count(void)
     return TV_VOICES;
 }
 
-/* Walk the paired ANSI/UTF-16 name table; see docs/VOICES.md. */
+/*
+ * Walk the paired ANSI/UTF-16 name table; see docs/VOICES.md.
+ *
+ * The names do not sit in voice order.  The engine registers them with the
+ * layer above in the order Peter, Sidney, Eager Eddie, ... , Julia, and the
+ * compiler emitted the literals for everything after the first in the
+ * reverse of that, so the block reads Peter, Julia, Wanda, ... , Sidney.
+ * Checked against the pointer sequence in the initialisation code, where
+ * each voice's two names are pushed in turn, and it holds in all five of
+ * the language DLLs.
+ */
 static const char *voice_entry(int voice)
 {
     const char *p = g_voice_names;
-    int i;
+    int i, pos;
 
     if (voice < 0 || voice >= TV_VOICES)
         return NULL;
-    for (i = 0; i < voice; i++) {
+    pos = voice == 0 ? 0 : TV_VOICES - voice;
+    for (i = 0; i < pos; i++) {
         size_t n = strlen(p) + 1;          /* the ANSI name */
         p += (n + 3) & ~(size_t)3;
         n = 0;
@@ -478,10 +606,8 @@ int TVTTS_CALL tvtts_speak_bytes(tvtts_synth *s, const void *text, uint32_t len,
         if (r & 2) {
             uint32_t n = E->out_count / 2;
             E->out_count = 0;
-            if (n != 0) {
-                emit(s, TVTTS_AUDIO, (const int16_t *)s->outbuf, n, 0, s->pos);
-                s->pos += n;
-            }
+            if (n != 0)
+                emit_audio(s, (const int16_t *)s->outbuf, n);
         }
         if (r & 1)
             pending = 0;
@@ -491,6 +617,16 @@ int TVTTS_CALL tvtts_speak_bytes(tvtts_synth *s, const void *text, uint32_t len,
             break;
     }
 
+    /* Anything still queued belongs at the end of what was produced. */
+    while (!s->aborted && s->npending > 0) {
+        int i, first = 0;
+        for (i = 1; i < s->npending; i++)
+            if (s->pending[i].pos < s->pending[first].pos)
+                first = i;
+        emit(s, TVTTS_MARK, NULL, 0, s->pending[first].mark, s->pos);
+        s->pending[first] = s->pending[--s->npending];
+    }
+    s->npending = 0;
     if (!s->aborted)
         emit(s, TVTTS_END, NULL, 0, 0, s->pos);
     r = s->aborted;
@@ -498,6 +634,77 @@ int TVTTS_CALL tvtts_speak_bytes(tvtts_synth *s, const void *text, uint32_t len,
     s->user = NULL;
     free(buf);
     return r;
+}
+
+/* ---- phonemes ------------------------------------------------------------ */
+
+/* The audio a phoneme conversion produces is not wanted, only the trace. */
+static int TVTTS_CALL discard_audio(const tvtts_event *ev, void *user)
+{
+    (void)ev;
+    (void)user;
+    return 0;
+}
+
+int TVTTS_CALL tvtts_speak_phonemes(tvtts_synth *s, const char *phonemes,
+                                    tvtts_callback cb, void *user)
+{
+    /* tts_SpeakPhoneme in the 5.1 builds does exactly this: bracket the
+     * caller's string with the two escapes and hand it to tts_Speak. */
+    char open[8], close[8], *buf;
+    size_t n, no, nc;
+    int r;
+
+    if (s == NULL || phonemes == NULL)
+        return -1;
+    no = (size_t)esc_seq(open, sizeof open, 1, 'I');
+    nc = (size_t)esc_seq(close, sizeof close, 0, 'I');
+    n = strlen(phonemes);
+    buf = (char *)malloc(no + n + nc + 1);
+    if (buf == NULL)
+        return -1;
+    memcpy(buf, open, no);
+    memcpy(buf + no, phonemes, n);
+    memcpy(buf + no + n, close, nc);
+    buf[no + n + nc] = 0;
+    r = tvtts_speak_bytes(s, buf, (uint32_t)(no + n + nc), cb, user);
+    free(buf);
+    return r;
+}
+
+int TVTTS_CALL tvtts_text_to_phonemes(tvtts_synth *s, const char *text,
+                                      char *buf, uint32_t cap)
+{
+    tv_bytelist list;
+    uint32_t need;
+    int r;
+
+    if (s == NULL || text == NULL || (buf == NULL && cap != 0))
+        return -1;
+
+    /* Stage 2 reports each phoneme through ByteList_Append while w_212c is
+     * set; it guards nothing else, so the audio is unaffected. */
+    memset(&list, 0, sizeof list);
+    s->eng->s2_bytes = &list;
+    s->eng->w_212c = 1;
+    r = tvtts_speak_bytes(s, text, (uint32_t)strlen(text), discard_audio, NULL);
+    s->eng->w_212c = 0;
+    s->eng->s2_bytes = NULL;
+
+    if (r < 0 || list.failed) {
+        tv_bytelist_free(&list);
+        return -1;
+    }
+    need = list.len + 1;
+    if (buf != NULL && cap != 0) {
+        uint32_t n = need > cap ? cap - 1 : list.len;
+
+        if (n != 0)
+            memcpy(buf, list.buf, n);
+        buf[n] = 0;
+    }
+    tv_bytelist_free(&list);
+    return (int)need;
 }
 
 int TVTTS_CALL tvtts_speak_utf8(tvtts_synth *s, const char *text,

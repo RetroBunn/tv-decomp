@@ -22,6 +22,8 @@ binaries are not part of this repository; place your own copy in
 | `python tools/difftest.py --port64 [--full]` | the same comparison for `tv64.exe`, the 64-bit build |
 | `python tools/difftest.py --ref` | checks all three builds against recordings of the real installed engine in `ref/` |
 | `python tools/voicedump.py [dll...]` | prints the per-voice parameter tables out of a language DLL (see docs/VOICES.md) |
+| `python tools/make_addon.py [--32]` | packages the NVDA add-on (see docs/NVDA.md) |
+| `python tests/nvda_binding_test.py` | drives the add-on's binding layer with NVDA's modules stubbed |
 
 `work/`, `build/` and `ref/` are gitignored: they contain material derived
 from the copyrighted binaries.

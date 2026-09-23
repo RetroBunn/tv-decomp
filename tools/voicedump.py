@@ -25,16 +25,38 @@ ADJ_COLS = ["F1%", "B1%", "F2%", "B2%", "F3%", "B3%", "F4%",
             "a7", "a8", "a9", "a10", "a11", "p2+", "p18", "p19"]
 
 
-def voice_names(mem, base):
-    """The speaker names, as an ANSI string followed by the same name in
-    UTF-16LE -- the pair the SAPI mode-info block is filled from."""
-    out = []
+def voice_names(mem, base, relocs, text):
+    """The speaker names, in voice order.
+
+    Each is an ANSI string followed by the same name in UTF-16LE -- the pair
+    the SAPI mode-info block is filled from -- but they do not sit in voice
+    order.  The compiler emitted the literals for every name after the first
+    in the reverse of the order the engine registers them, so the block
+    reads Peter, Julia, Wanda, ... when the voices are Peter, Sidney, Eager
+    Eddie, ...  The registration code is the authority, so the order comes
+    from the sequence in which it refers to them.
+    """
     pat = rb"([\x20-\x7e]{3,20})\x00{1,4}((?:[\x20-\x7e]\x00){3,20})\x00\x00"
+    byaddr = {}
     for m in re.finditer(pat, mem):
         ansi = m.group(1).decode("latin1")
         wide = m.group(2).decode("utf-16-le")
         if wide and (ansi == wide or ansi.split()[-1] == wide):
-            out.append((m.start() + base, ansi))
+            byaddr[m.start() + base] = ansi
+    if not byaddr:
+        return []
+    seen, out = set(), []
+    for r in sorted(relocs):
+        if not (text.va <= r < text.va + text.vsize):
+            continue
+        t = struct.unpack_from("<I", mem, r - base)[0]
+        if t in byaddr and t not in seen:
+            seen.add(t)
+            out.append((t, byaddr[t]))
+    if len(out) != len(byaddr):
+        print("warning: %d names but %d registered; falling back to the order"
+              " they are stored in" % (len(byaddr), len(out)))
+        out = sorted(byaddr.items())
     return out
 
 
@@ -68,7 +90,8 @@ def scalar_table(mem, base, start, voices, lo, hi, limit=0x400):
 def dump(path):
     img = Image(path)
     mem, base = bytes(img.mem), img.base
-    names = voice_names(mem, base)
+    text = [sec for sec in img.sections if sec.name == ".text"][0]
+    names = voice_names(mem, base, img.relocs, text)
     print("== %s (image base 0x%x) ==" % (os.path.basename(path), base))
     if names:
         print("speakers @ 0x%x: %s"

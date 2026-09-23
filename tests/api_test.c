@@ -32,6 +32,7 @@ typedef struct {
     uint32_t mark[MAX_MARKS];
     uint32_t mark_pos[MAX_MARKS];
     int      marks;
+    int      out_of_order;
     int      ended;
     /* abort after this many samples, 0 for never */
     size_t   stop_after;
@@ -57,6 +58,9 @@ static int on_event(const tvtts_event *ev, void *user)
             s->mark[s->marks] = ev->mark;
             s->mark_pos[s->marks] = ev->sample_pos;
         }
+        /* the audio up to the mark must already have been handed over */
+        if (ev->sample_pos != (uint32_t)s->n)
+            s->out_of_order++;
         s->marks++;
     } else if (ev->type == TVTTS_END) {
         s->ended = 1;
@@ -151,6 +155,8 @@ static void test_marks(void)
         if (out.mark_pos[i] < out.mark_pos[i - 1])
             ordered = 0;
     check(ordered, "mark positions do not go backwards");
+    check(out.out_of_order == 0,
+          "a mark arrives with its audio already delivered");
     check(out.marks > 0 && out.mark_pos[out.marks - 1] < out.n,
           "the last mark lands inside the audio");
     tvtts_destroy(s);
@@ -207,8 +213,23 @@ static void test_voices(void)
     }
     check(named, "every voice has a name");
     check(distinct, "the names are distinct");
-    check(tvtts_voice_name(0) != NULL && !strcmp(tvtts_voice_name(0), "Peter"),
-          "voice 0 is Peter");
+    {
+        /* The order the engine registers them in, which is not the order the
+         * strings sit in memory.  Peter and Grandpa Amos land in the same
+         * place under either order, so checking only those would have missed
+         * the whole thing -- and did. */
+        static const char *const want[10] = {
+            "Peter", "Sidney", "Eager Eddie", "Deep Douglas", "Biff",
+            "Grandpa Amos", "Melvin", "Alex", "Wanda", "Julia"
+        };
+        int ok = 1;
+
+        for (i = 0; i < 10; i++)
+            if (tvtts_voice_name(i) == NULL ||
+                strcmp(tvtts_voice_name(i), want[i]) != 0)
+                ok = 0;
+        check(ok, "the voices are named in the engine's own order");
+    }
     check(tvtts_voice_name(-1) == NULL && tvtts_voice_name(n) == NULL,
           "out-of-range voices give no name");
 
@@ -251,6 +272,52 @@ static void test_edges(void)
     tvtts_destroy(NULL);
 }
 
+static void test_phonemes(void)
+{
+    tvtts_synth *s = tvtts_create(11025);
+    char buf[256], small[4];
+    sink spoken, viaphon;
+    int n;
+
+    n = tvtts_text_to_phonemes(s, "hello", buf, sizeof buf);
+    check(n > 0, "text converts to phonemes");
+    check(n == (int)strlen(buf) + 1, "the return counts the terminator");
+    check(strcmp(buf, "&HeLO1.") == 0, "and is the engine's own alphabet");
+    if (strcmp(buf, "&HeLO1.") != 0)
+        printf("     got: [%s]\n", buf);
+
+    /* snprintf-style: NULL asks the size, a short buffer truncates but
+     * still reports what was wanted. */
+    check(tvtts_text_to_phonemes(s, "hello", NULL, 0) == n,
+          "a null buffer just measures");
+    check(tvtts_text_to_phonemes(s, "hello", small, sizeof small) == n,
+          "a short buffer still reports the full size");
+    check(strlen(small) == sizeof small - 1, "and is truncated, not overrun");
+
+    /* The round trip: speaking the phonemes matches speaking the word. */
+    say(s, "hello", &spoken);
+    memset(&viaphon, 0, sizeof viaphon);
+    tvtts_speak_phonemes(s, "HeLO1", on_event, &viaphon);
+    check(viaphon.n > 0, "phonemes produce audio");
+    check(same(&spoken, &viaphon), "and say the same thing, byte for byte");
+
+    check(tvtts_speak_phonemes(NULL, "HeLO1", on_event, NULL) < 0,
+          "a null synth is refused");
+    check(tvtts_text_to_phonemes(s, NULL, buf, sizeof buf) < 0,
+          "so is null text");
+
+    /* Collecting the trace must not disturb the synth. */
+    sink_free(&spoken);
+    say(s, "hello", &spoken);
+    tvtts_text_to_phonemes(s, "something else entirely", buf, sizeof buf);
+    sink_free(&viaphon);
+    say(s, "hello", &viaphon);
+    check(same(&spoken, &viaphon), "a conversion leaves the synth as it was");
+
+    tvtts_destroy(s);
+    sink_free(&spoken); sink_free(&viaphon);
+}
+
 int main(void)
 {
     test_reuse();
@@ -259,6 +326,7 @@ int main(void)
     test_text();
     test_voices();
     test_edges();
+    test_phonemes();
     printf("%s\n", failures ? "FAILED" : "all passed");
     return failures != 0;
 }
