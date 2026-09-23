@@ -5,6 +5,12 @@ Verification: `python tools/difftest.py --full` compares the decompiled code
 `--port` does the same for the standalone build, which loads nothing.  Both
 are byte-exact on all 331 configurations.
 
+`--ref` checks something else: audio recorded from the engine as installed,
+spoken through an ordinary SAPI client, against all three builds.  That is
+the only test that covers the harness's own reconstruction of the SAPI
+engine thread rather than just the decompiled code, and all three builds
+reproduce the recording byte for byte.  See `ref/` in WORKFLOW.md.
+
 ## Engine architecture (as understood so far)
 
 ```
@@ -224,6 +230,9 @@ harness options through and writes the matching `.opts`.
   a comment: the "D before a vowel" arm of `Stage3_Op9`, which is inside a
   test for a space that the same value cannot satisfy, and the "M" tail of
   `Stage3_Op4`, which compares a slot that only ever holds 3 or 13 with 9.
+* The reference recordings in `ref/` cover the default settings only, so
+  the voice, pitch, speed and volume variants are checked against the DLL
+  but not against the shipping product.
 * The duration tables are wide decision trees and the corpus does not reach
   every leaf: `Stage2_DurFric` runs 571 of its 680 basic blocks (84%),
   `Stage2_DurVowel` 361 of 398 (91%) and `Stage2_DurStop` 888 of 930 (95%).

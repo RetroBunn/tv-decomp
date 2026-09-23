@@ -1,6 +1,7 @@
 """Differential test: decompiled (hooked) engine vs the original DLL.
 
 Usage: python tools/difftest.py [--full] [--hooks SPEC] [-j N] [--only SUBSTR]
+       python tools/difftest.py --ref
 
 Runs every input of the corpus through build/harness/tvh.exe (original code
 only, results cached in work/difftest/ref) and build/harness/tvh_hook.exe
@@ -9,12 +10,19 @@ only, results cached in work/difftest/ref) and build/harness/tvh_hook.exe
 Corpus: tests/corpus/*.txt (UTF-8, converted to cp1252 like SAPI's
 WideCharToMultiByte would) plus TruVoice/*.TXT when present locally.
 --full additionally runs a subset under all ten voices at 11025 and 8000 Hz.
+
+--ref is a different check: it compares against audio captured from the real
+installed engine through a SAPI client, which is the only thing that tests
+the harness's own reconstruction of the engine thread rather than just the
+decompiled code.  See ref_inputs() for the file layout.  It is skipped when
+ref/ is empty, so it costs nothing to leave in a test run.
 """
 import argparse
 import concurrent.futures as cf
 import glob
 import hashlib
 import os
+import struct
 import subprocess
 import sys
 
@@ -22,7 +30,9 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DLL = os.path.join(ROOT, "TruVoice", "CGRM_EN.DLL")
 TVH = os.path.join(ROOT, "build", "harness", "tvh.exe")
 TVH_HOOK = os.path.join(ROOT, "build", "harness", "tvh_hook.exe")
+TV_PORT = os.path.join(ROOT, "build", "harness", "tv.exe")
 WORK = os.path.join(ROOT, "work", "difftest")
+REFDIR = os.path.join(ROOT, "ref")
 
 
 def md5(path):
@@ -115,6 +125,122 @@ def first_diff(a, b):
     return "sizes differ: %d vs %d" % (len(da), len(db))
 
 
+def wav_data(path):
+    """(format, PCM payload) of a WAV file.  The reference recordings come
+    from whatever SAPI client made them and need not have the harness's
+    44-byte header -- Balabolka writes an 18-byte `fmt ` chunk -- so the
+    chunks have to be walked rather than assumed."""
+    d = open(path, "rb").read()
+    if d[:4] != b"RIFF" or d[8:12] != b"WAVE":
+        raise ValueError("not a RIFF/WAVE file")
+    fmt, pos = None, 12
+    while pos + 8 <= len(d):
+        cid = d[pos:pos + 4]
+        size = struct.unpack_from("<I", d, pos + 4)[0]
+        if cid == b"fmt " and size >= 16:
+            tag, ch, rate, _, _, bits = struct.unpack_from("<HHIIHH", d, pos + 8)
+            fmt = (tag, ch, rate, bits)
+        elif cid == b"data":
+            return fmt, d[pos + 8:pos + 8 + size]
+        pos += 8 + size + (size & 1)
+    raise ValueError("no data chunk")
+
+
+def fmt_str(f):
+    if not f:
+        return "unknown"
+    return "%d Hz %d-bit %s%s" % (f[2], f[3],
+                                  "mono" if f[1] == 1 else "%d-channel" % f[1],
+                                  "" if f[0] == 1 else " (not PCM)")
+
+
+def ref_inputs():
+    """Audio captured from the real installed engine, as
+    ref/NAME.wav + ref/NAME.txt (+ optional ref/NAME.opts).
+
+    Each *line* of the .txt is one utterance, rendered as its own TextData
+    call, and the PCM is concatenated -- which is what a SAPI client that
+    splits on sentences produces, and is how the recordings were made.  A
+    client that speaks the lot in one call gets one line.  .opts pins the
+    harness options, as in the corpus.
+    """
+    out = []
+    for wav in sorted(glob.glob(os.path.join(REFDIR, "*.wav"))):
+        base = os.path.splitext(wav)[0]
+        if not os.path.exists(base + ".txt"):
+            continue
+        text = open(base + ".txt", encoding="utf-8").read()
+        lines = [l.rstrip("\r") for l in text.split("\n")]
+        lines = [l for l in lines if l.strip()]
+        opts = []
+        if os.path.exists(base + ".opts"):
+            opts = open(base + ".opts").read().split()
+        if lines:
+            out.append((os.path.basename(base), wav, lines, opts))
+    return out
+
+
+def run_ref(exe, dll, tag, lines, opts, outdir):
+    """Render each line as its own utterance; return the concatenated PCM."""
+    os.makedirs(outdir, exist_ok=True)
+    pcm, fmt = b"", None
+    for i, line in enumerate(lines):
+        src = os.path.join(outdir, "%s_%02d.txt" % (tag, i))
+        out = os.path.join(outdir, "%s_%02d.wav" % (tag, i))
+        open(src, "wb").write(line.encode("cp1252"))
+        args = [exe] + list(opts) + ([DLL] if dll else []) + ["@" + src, out]
+        r = subprocess.run(args, capture_output=True, text=True)
+        if r.returncode != 0 or not os.path.exists(out):
+            return None, None, (r.stderr or "no output file").strip()[-400:]
+        fmt, data = wav_data(out)
+        pcm += data
+    return fmt, pcm, None
+
+
+def ref_main(hooks):
+    refs = ref_inputs()
+    if not refs:
+        print("ref/: no NAME.wav + NAME.txt pairs -- skipped")
+        return 0
+    engines = [("oracle", TVH, [], True),
+               ("hooked", TVH_HOOK, ["-H", hooks], True)]
+    if os.path.exists(TV_PORT):
+        engines.append(("standalone", TV_PORT, [], False))
+    outdir = os.path.join(WORK, "refaudio")
+    fails = checks = 0
+    for name, wav, lines, opts in refs:
+        try:
+            want_fmt, want = wav_data(wav)
+        except ValueError as e:
+            print("REF-BAD  %s: %s" % (name, e))
+            fails += 1
+            continue
+        print("%s: %d utterance(s), %d samples, %s%s"
+              % (name, len(lines), len(want) // 2, fmt_str(want_fmt),
+                 (", opts " + " ".join(opts)) if opts else ""))
+        for label, exe, extra, dll in engines:
+            checks += 1
+            fmt, got, err = run_ref(exe, dll, "%s_%s" % (name, label), lines,
+                                    list(extra) + list(opts), outdir)
+            if got is None:
+                print("  FAIL      %-11s crashed: %s" % (label, err))
+                fails += 1
+            elif fmt != want_fmt:
+                print("  MISMATCH  %-11s format: got %s, reference is %s"
+                      % (label, fmt_str(fmt), fmt_str(want_fmt)))
+                fails += 1
+            elif got != want:
+                n = min(len(got), len(want))
+                at = next((i for i in range(n) if got[i] != want[i]), n)
+                print("  MISMATCH  %-11s at sample %d; %d vs %d samples"
+                      % (label, at // 2, len(got) // 2, len(want) // 2))
+                fails += 1
+            else:
+                print("  ok        %-11s %d samples" % (label, len(got) // 2))
+    print("%d/%d reference checks identical" % (checks - fails, checks))
+    return fails
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--full", action="store_true")
@@ -124,7 +250,14 @@ def main():
     ap.add_argument("--port", action="store_true",
                     help="test build/harness/tv.exe, the standalone build, "
                          "which loads no DLL")
+    ap.add_argument("--ref", action="store_true",
+                    help="instead of the corpus, check every build against "
+                         "the recordings in ref/, made with the real "
+                         "installed engine")
     a = ap.parse_args()
+
+    if a.ref:
+        sys.exit(1 if ref_main(a.hooks) else 0)
 
     dll_id = md5(DLL)[:8]
     inputs = prepare_inputs()
@@ -150,9 +283,8 @@ def main():
     with cf.ThreadPoolExecutor(a.j) as ex:
         refs = dict((t, (o, e)) for t, o, e in ex.map(ref_job, runs))
         if a.port:
-            exe = os.path.join(ROOT, "build", "harness", "tv.exe")
             cands = dict((t, (o, e)) for t, o, e in ex.map(
-                lambda r: run_one(exe, [], r[0], r[1], r[2], r[3], canddir,
+                lambda r: run_one(TV_PORT, [], r[0], r[1], r[2], r[3], canddir,
                                   r[4], r[5], dll=False), runs))
         else:
             cands = dict((t, (o, e)) for t, o, e in ex.map(

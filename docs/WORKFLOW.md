@@ -18,9 +18,35 @@ binaries are not part of this repository; place your own copy in
 | `sh harness/build.sh` | builds `build/harness/tvh.exe` (oracle), `tvh_hook.exe` (decompiled code hooked in) and `tv.exe` (standalone) |
 | `python tools/difftest.py [--full]` | byte-exact comparison of `tvh_hook.exe` against `tvh.exe` over the corpus |
 | `python tools/difftest.py --port [--full]` | the same comparison for `tv.exe`, the standalone build |
+| `python tools/difftest.py --ref` | checks all three builds against recordings of the real installed engine in `ref/` |
 
 `work/`, `build/` and `ref/` are gitignored: they contain material derived
 from the copyrighted binaries.
+
+## Reference recordings
+
+Everything above compares the decompiled code against `CGRM_EN.DLL` *as
+loaded by this harness*.  That cannot catch a mistake in the harness
+itself: if `tvh.c` reconstructed the SAPI engine thread wrongly -- a wrong
+default, a missing init call, the wrong number of trailing NULs on the feed
+-- every comparison would still pass, consistently wrong.
+
+`ref/` closes that hole with audio captured from the engine as actually
+installed, played through a normal SAPI client (Balabolka) and saved as
+11025 Hz 16-bit mono PCM, which is the engine's native output and so needs
+no resampling.  Each recording is `ref/NAME.wav` plus `ref/NAME.txt`, and
+optionally `ref/NAME.opts` for harness options as in the corpus.
+
+**Every line of the `.txt` is one utterance**: `--ref` renders each line as
+its own `TextData` call and concatenates the PCM.  That is not a detail of
+the file format but of the clients -- Balabolka splits text on sentences and
+makes one call per sentence, and the engine's prosody spans a whole
+utterance, so the same text spoken in one call and in two does not give the
+same samples.  A client that speaks everything at once gets one line.
+
+`ref/` is gitignored, and `--ref` prints a line and succeeds when it is
+empty, so it is safe to leave in a test run on a machine that has no
+recordings.
 
 ## The oracle
 
