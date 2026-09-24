@@ -78,3 +78,8 @@ __pycache__/
 *.pyc
 
 /nvda/
+
+# Reference checkouts of other projects, kept locally to work against.
+# TGSpeechBox is MIT and its fast-speech technique is credited in NOTICE,
+# but it is his repository, not ours to redistribute.
+/TGSpeechBox/

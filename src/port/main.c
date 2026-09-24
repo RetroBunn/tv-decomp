@@ -124,6 +124,7 @@ int main(int argc, char **argv)
     int voice = 0, phone = 0, i, verbose = 0;
     int nuls = 2, opt_preformat = 1, opt_textin = 1;
     long opt_pitch = -1, opt_speed = -1, opt_volume = -1;
+    int hifi = 0;
     const char *lex_add[16];
     int n_lex = 0;
     const char *textarg, *out;
@@ -137,12 +138,15 @@ int main(int argc, char **argv)
     for (i = 1; i < argc && argv[i][0] == '-' && argv[i][1] != '\0'; i++) {
         if (!strcmp(argv[i], "-v") && i + 1 < argc) voice = atoi(argv[++i]);
         else if (!strcmp(argv[i], "-8")) phone = 1;
+        else if (!strcmp(argv[i], "-H")) hifi = 1;
         else if (!strcmp(argv[i], "-m")) verbose = 1;
         else if (!strcmp(argv[i], "-z") && i + 1 < argc) nuls = atoi(argv[++i]);
         else if (!strcmp(argv[i], "-p") && i + 1 < argc) opt_pitch = strtol(argv[++i], NULL, 0);
         else if (!strcmp(argv[i], "-s") && i + 1 < argc) opt_speed = strtol(argv[++i], NULL, 0);
         else if (!strcmp(argv[i], "-V") && i + 1 < argc) opt_volume = (long)strtoul(argv[++i], NULL, 0);
         else if (!strcmp(argv[i], "-C")) tvtts_set_extensions(0);
+        else if (!strcmp(argv[i], "-X") && i + 1 < argc)
+            tvtts_set_extensions((uint32_t)strtoul(argv[++i], NULL, 0));
         else if (!strcmp(argv[i], "-P0")) opt_preformat = 0;
         else if (!strcmp(argv[i], "-T0")) opt_textin = 0;
         else if (!strcmp(argv[i], "-L") && i + 1 < argc && n_lex < 16)
@@ -150,8 +154,8 @@ int main(int argc, char **argv)
         else { fprintf(stderr, "unknown option %s\n", argv[i]); return 2; }
     }
     if (argc - i != 2 || voice < 0 || voice >= tvtts_voice_count()) {
-        fprintf(stderr, "usage: tv [-v 0-9] [-8] [-m] [-p pitch] [-s wpm]"
-                        " [-V volume] [-C] [-P0] [-T0] [-z nuls]"
+        fprintf(stderr, "usage: tv [-v 0-9] [-8] [-H] [-m] [-p pitch] [-s wpm]"
+                        " [-V volume] [-C] [-X mask] [-P0] [-T0] [-z nuls]"
                         " [-L word=phonemes] <text|@file> <out.wav>\n");
         return 2;
     }
@@ -176,7 +180,7 @@ int main(int argc, char **argv)
         }
     }
 
-    rate = phone ? 8000u : 11025u;
+    rate = phone ? 8000u : (hifi ? tvtts_sample_rate_hz(TVTTS_SR_16K) : 11025u);
     s = tvtts_create(rate);
     if (s == NULL) {
         fprintf(stderr, "out of memory\n");

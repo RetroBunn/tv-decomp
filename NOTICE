@@ -55,6 +55,47 @@ reason.
 If you hold these rights and would rather the data were not distributed
 here, please open an issue on the repository and it will be removed.
 
+Borrowed from TGSpeechBox
+-------------------------
+
+The rate-adaptive bandwidth widening in `src/engine/frame.c` -- the idea
+that formant bandwidths should widen as the speech rate climbs, so a
+resonator settles inside a shortened phoneme instead of ringing on into the
+next one -- is taken from TGSpeechBox by Tamas Geczy, along with its
+threshold and 1.3x widening factor:
+
+    https://github.com/tgeczy/TGSpeechBox
+
+TGSpeechBox is MIT licensed:
+
+    Copyright (c) 2014 NV Access Limited
+    Copyright (c) 2025-2026 Tamas Geczy
+
+    Permission is hereby granted, free of charge, to any person obtaining a
+    copy of this software and associated documentation files (the
+    "Software"), to deal in the Software without restriction, including
+    without limitation the rights to use, copy, modify, merge, publish,
+    distribute, sublicense, and/or sell copies of the Software, and to
+    permit persons to whom the Software is furnished to do so, subject to
+    the following conditions:
+
+    The above copyright notice and this permission notice shall be included
+    in all copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+    OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+    MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+    IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+    CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+    TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+    SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+No TGSpeechBox code is copied here.  It is a C++ engine with a different
+frame model; what crossed over is the technique and the constants, written
+against TruVoice's own resonator tables.  TGSpeechBox is itself a fork of
+NV Access's NV Speech Player, which is why NV Access holds the earlier
+copyright above.
+
 The original binaries
 ---------------------
 

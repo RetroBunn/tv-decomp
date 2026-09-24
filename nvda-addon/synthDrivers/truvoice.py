@@ -27,6 +27,8 @@ import math
 
 from collections import OrderedDict
 
+from autoSettingsUtils.driverSetting import DriverSetting
+from autoSettingsUtils.utils import StringParameterInfo
 from logHandler import log
 from speech.commands import (
 	BreakCommand,
@@ -90,6 +92,9 @@ class SynthDriver(SynthDriver):
 
 	supportedSettings = (
 		SynthDriver.VoiceSetting(),
+		# The engine has exactly three output rates, each with its own
+		# resonator tables, so this is a choice rather than a slider.
+		DriverSetting("samplerate", _("Sample &rate"), defaultVal="1"),
 		SynthDriver.RateSetting(),
 		SynthDriver.PitchSetting(),
 		SynthDriver.VolumeSetting(),
@@ -206,6 +211,26 @@ class SynthDriver(SynthDriver):
 			synthDoneSpeaking.notify(synth=self)
 
 	# ---- voices -----------------------------------------------------------
+
+	# ---- output rate ------------------------------------------------------
+
+	def _get_availableSamplerates(self):
+		return OrderedDict(
+			(str(i), StringParameterInfo(str(i), label))
+			for i, _hz, label in _truvoice.SAMPLE_RATES
+		)
+
+	def _get_samplerate(self) -> str:
+		which = _truvoice.getSampleRate()
+		return str(which if which >= 0 else 1)
+
+	def _set_samplerate(self, value: str):
+		try:
+			which = int(value)
+		except (TypeError, ValueError):
+			return
+		if any(which == i for i, _hz, _label in _truvoice.SAMPLE_RATES):
+			_truvoice.setSampleRate(which)
 
 	def _getAvailableVoices(self) -> OrderedDict[str, VoiceInfo]:
 		voices = OrderedDict()

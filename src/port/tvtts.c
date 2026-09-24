@@ -353,7 +353,7 @@ tvtts_synth *TVTTS_CALL tvtts_create(uint32_t sample_rate)
 {
     tvtts_synth *s;
 
-    if (sample_rate != 11025 && sample_rate != 8000)
+    if (sample_rate != 11025 && sample_rate != 8000 && sample_rate != TV_SR_HIFI)
         return NULL;
     s = (tvtts_synth *)calloc(1, sizeof *s);
     if (s == NULL)
@@ -378,6 +378,7 @@ tvtts_synth *TVTTS_CALL tvtts_create(uint32_t sample_rate)
     s->host.ctx = 0;
 
     tv_ext_rate = (g_ext & TVTTS_EXT_RATE) != 0;
+    tv_ext_clarity = (g_ext & TVTTS_EXT_CLARITY) != 0;
     Engine_Construct(s->eng);
     s->eng->w_212e = 1;
     s->eng->w_212c = 0;
@@ -459,11 +460,74 @@ void TVTTS_CALL tvtts_set_extensions(uint32_t mask)
 {
     g_ext = mask & TVTTS_EXT_ALL;
     tv_ext_rate = (g_ext & TVTTS_EXT_RATE) != 0;
+    tv_ext_clarity = (g_ext & TVTTS_EXT_CLARITY) != 0;
 }
 
 uint32_t TVTTS_CALL tvtts_get_extensions(void)
 {
     return g_ext;
+}
+
+/* ---- output rate ---------------------------------------------------------- */
+
+static const uint32_t g_sr_hz[3] = { 8000u, 11025u, (uint32_t)TV_SR_HIFI };
+
+uint32_t TVTTS_CALL tvtts_sample_rate_hz(int which)
+{
+    return (which >= 0 && which < 3) ? g_sr_hz[which] : 0u;
+}
+
+int TVTTS_CALL tvtts_get_sample_rate(const tvtts_synth *s)
+{
+    int i;
+
+    if (s == NULL)
+        return -1;
+    for (i = 0; i < 3; i++)
+        if (g_sr_hz[i] == s->rate)
+            return i;
+    return -1;
+}
+
+int TVTTS_CALL tvtts_set_sample_rate(tvtts_synth *s, int which)
+{
+    uint32_t hz;
+
+    if (s == NULL || which < 0 || which >= 3)
+        return -1;
+    /* The filters and the output stage are rebuilt for the new rate, which
+     * cannot be done to an utterance already part way through. */
+    if (s->cb != NULL)
+        return -1;
+    hz = g_sr_hz[which];
+    if (hz == s->rate)
+        return 0;
+    s->rate = hz;
+    s->eng->sample_rate = (uint16_t)hz;
+    Engine_Init(s->eng);
+
+    /* Engine_Init puts the engine's own defaults back -- voice 0, pitch 85,
+     * 150 wpm, full volume -- but the cached copies the speak loop compares
+     * against still say the host's settings are applied, so it would leave
+     * them reset.  Wanda came back as Peter.  Re-apply them here and make
+     * the cache agree, rather than clearing the cache and hoping: a host
+     * volume that happens to equal the cleared value would be missed.
+     *
+     * textin, preformat, textin_on and out_buf all survive Engine_Init, so
+     * they are deliberately not redone -- Engine_CreateTextIn would leak the
+     * text-in object this one still owns. */
+    s->eng->cur_voice = (int16_t)s->host.voice;
+    Engine_SetVoice(s->eng, (uint32_t)(int32_t)s->host.voice);
+    s->eng->cur_pitch = (uint32_t)(uint16_t)s->host.pitch;
+    Engine_SetPitch(s->eng, (int32_t)s->eng->cur_pitch);
+    s->eng->cur_speed = (uint32_t)s->host.speed;
+    Engine_SetSpeed(s->eng, (int32_t)s->eng->cur_speed);
+    s->eng->cur_volume = (uint32_t)s->host.volume;
+    Engine_SetVolume(s->eng, s->eng->cur_volume);
+    s->eng->cur_bac = (uint32_t)s->host.ctx;
+
+    s->started = 0;
+    return 0;
 }
 
 void TVTTS_CALL tvtts_set_compat(tvtts_synth *s, int preformat, int textin,

@@ -178,6 +178,50 @@ def pause(switch: bool):
 	player.pause(switch)
 
 
+#: The three output rates the engine has, as (index, hertz, label).  They are
+#: not interchangeable with arbitrary rates: each needs its own resonator
+#: tables, and 16 kHz is OpenTV's own addition.
+SAMPLE_RATES = ((0, 8000, '8 kHz'), (1, 11025, '11 kHz'), (2, 16000, '16 kHz'))
+
+
+def sampleRateHz(which: int) -> int:
+	return dll.tvtts_sample_rate_hz(which)
+
+
+def getSampleRate() -> int:
+	return dll.tvtts_get_sample_rate(synth)
+
+
+def setSampleRate(which: int) -> bool:
+	"""Change the output rate, reopening the player to match.
+
+	The engine rebuilds its filters for the new rate, so this cannot be done
+	part way through an utterance; anything still speaking is stopped first.
+	"""
+	global player
+	if which == getSampleRate():
+		return True
+	stop()
+	bgQueue.join()
+	if dll.tvtts_set_sample_rate(synth, which) != 0:
+		log.error('TruVoice: could not change sample rate to %r' % (which,))
+		return False
+	hz = sampleRateHz(which)
+	import config
+	old = player
+	player = nvwave.WavePlayer(
+		channels=1,
+		samplesPerSec=hz,
+		bitsPerSample=16,
+		outputDevice=config.conf['audio']['outputDevice'],
+	)
+	try:
+		old.close()
+	except Exception:
+		log.debugWarning('TruVoice: closing the old player failed')
+	return True
+
+
 def setVoice(index: int):
 	_execWhenDone(dll.tvtts_set_voice, synth, index)
 
@@ -258,6 +302,12 @@ def _bind(lib: CDLL):
 	lib.tvtts_destroy.argtypes = [c_void_p]
 	lib.tvtts_speak_utf16.restype = c_int
 	lib.tvtts_speak_utf16.argtypes = [c_void_p, c_wchar_p, callbackType, c_void_p]
+	lib.tvtts_set_sample_rate.restype = c_int
+	lib.tvtts_set_sample_rate.argtypes = [c_void_p, c_int]
+	lib.tvtts_get_sample_rate.restype = c_int
+	lib.tvtts_get_sample_rate.argtypes = [c_void_p]
+	lib.tvtts_sample_rate_hz.restype = c_uint32
+	lib.tvtts_sample_rate_hz.argtypes = [c_int]
 	for name in ("tvtts_set_voice", "tvtts_set_rate", "tvtts_set_pitch"):
 		getattr(lib, name).restype = None
 		getattr(lib, name).argtypes = [c_void_p, c_int]

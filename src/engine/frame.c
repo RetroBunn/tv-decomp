@@ -87,6 +87,36 @@ static int32_t jitter(Engine *self)
     return nv & 0x3f;
 }
 
+int tv_ext_clarity = 0;
+
+/* Widen a formant's bandwidth at high speech rates.
+ *
+ * The byte offset into tables 6 and 7 is the bandwidth in hertz -- they hold
+ * exp(-4*pi*i/Fs) and its square for i = offset/4 -- so widening is a plain
+ * scale of the offset.  A wider bandwidth is a shorter impulse response, so
+ * the resonator settles inside the phoneme instead of ringing on into the
+ * next one, which is what fast speech otherwise sounds like.
+ *
+ * From TGSpeechBox by Tamas Geczy (MIT), which does the same thing to its
+ * cascade bandwidths above a speed threshold; see NOTICE.
+ */
+static int32_t bw_widen(const Engine *self, int32_t off)
+{
+    int32_t row = self->rate_index, ramp, scale;
+
+    if (!tv_ext_clarity || row <= TV_BW_ROW_START)
+        return off;
+    ramp = (row - TV_BW_ROW_START) * 256 / (TV_BW_ROW_FULL - TV_BW_ROW_START);
+    if (ramp > 256)
+        ramp = 256;
+    scale = 256 + ramp * (TV_BW_MAX_Q8 - 256) / 256;
+    off = (off * scale) >> 8;
+    /* Table 6 is 180 entries of four bytes; the last one is offset 716. */
+    if (off > 716)
+        off = 716;
+    return off & ~3;
+}
+
 /* The coefficient tables are indexed by byte offset. */
 #define SYN(i, off) (*(const int32_t *)((const uint8_t *)self->syn_tab[i] + (off)))
 
@@ -237,7 +267,7 @@ void TV_THISCALL Synth_Frame(Engine *self)
         self->filt_coef[4] = 0;
         self->filt_coef[5] = 0;
     } else {
-        int32_t o9 = adj[9] & ~3;
+        int32_t o9 = bw_widen(self, adj[9] & ~3);
 
         t20 = 0;
         v = SYN(7, o9);
@@ -253,7 +283,7 @@ void TV_THISCALL Synth_Frame(Engine *self)
 
     /* ---- F1: from adj[7] and p[12] ---------------------------------- */
     {
-        int32_t o7 = adj[7] & ~3;
+        int32_t o7 = bw_widen(self, adj[7] & ~3);
 
         c23 = SYN(7, o7);
         lo = Synth_MulShr12(SYN(6, o7), SYN(8, p[12] * 8), &t14);
@@ -265,7 +295,7 @@ void TV_THISCALL Synth_Frame(Engine *self)
 
     /* ---- F2: from p[15] and p[11] ----------------------------------- */
     {
-        int32_t off = (p[15] & ~1) * 2;
+        int32_t off = bw_widen(self, (p[15] & ~1) * 2);
         int32_t bwoff = flag ? (((p[11] * 10) & ~6) >> 1) : (p[11] * 8);
 
         c25 = SYN(7, off);
@@ -278,7 +308,7 @@ void TV_THISCALL Synth_Frame(Engine *self)
 
     /* ---- F3: from p[14] and p[10] ----------------------------------- */
     {
-        int32_t off = (p[14] & ~1) * 2;
+        int32_t off = bw_widen(self, (p[14] & ~1) * 2);
         int32_t bwoff = flag ? (((p[10] * 10) & ~6) >> 1) : (p[10] * 4 + 0xfc);
 
         c27 = SYN(7, off);
@@ -291,7 +321,7 @@ void TV_THISCALL Synth_Frame(Engine *self)
 
     /* ---- F4: from p[13] and p[9] ------------------------------------ */
     {
-        int32_t off = (p[13] & ~1) * 2;
+        int32_t off = bw_widen(self, (p[13] & ~1) * 2);
         int32_t bwoff = flag ? (((p[9] * 10) & ~6) >> 1) : ((p[9] & ~1) * 2);
         int32_t c36;
 

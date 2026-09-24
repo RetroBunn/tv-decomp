@@ -263,6 +263,66 @@ eight voices, and only two of its eight rows match any English row -- the
 all-zero baseline, and Henri, who is Alex unchanged.  Its speed table also
 differs (160 wpm against 150, and 150 for the elderly voice against 120).
 
+## 16 kHz, which the original never had
+
+`Synth_InitFilters` picks between two sets of resonator tables, one for 8
+kHz and one for 11.025, and there was no third.  They turn out to be
+computable.  Tables 6, 7 and 8 are a Klatt two-pole section in Q13:
+
+```
+t6[i] = round( 8192 * exp(-4*pi*i/Fs) )     pole radius r, i = bandwidth/4 Hz
+t7[i] = round( 8192 * exp(-8*pi*i/Fs) )     the r^2 term
+t8[i] = round(16384 * cos(2*pi*8*i/Fs) )    2*cos(theta), i = frequency/8 Hz
+```
+
+Those reproduce **all 2120 values of both of the original's sets exactly**,
+which is what makes evaluating them at a third rate trustworthy;
+`python tools/gen_synth_hifi.py --verify` checks it.  The zero crossing of
+table 8 lands on Fs/4 at both rates, which is what pins the 8 Hz step.
+
+Three things are not tables and were missed at first, with an instructive
+result.  `filt_coef[12]`, `[13]` and `[33]` are a fixed resonator, and
+unlike every other coefficient `Synth_Frame` never rewrites them -- they
+keep whatever the initial array gave them.  Left at the 11 kHz values a 22
+kHz render rolled off 12 dB too steeply by 3 kHz.  Solving them across both
+rates puts that resonator at 242 Hz with a 102 Hz bandwidth, and `syn_2038`
+independently implies the same 102 Hz, which is what says the model is the
+right shape rather than a curve fit.
+
+Tables 0 to 5 are *not* per-rate.  The 11 kHz set is uniform where the 8
+kHz one has substitutions in its first few entries -- table 2 entry 0 is
+11354 at 11 kHz, which is also entry 7 and also the initial
+`filt_coef[37]` at both rates, while 8 kHz uses 5000.  They are wideband
+versus narrowband values, so the extra rate shares the wideband ones.  Tables 3,
+4 and 5 and the constants `syn_203c`/`syn_2040` are set and never read at
+all.
+
+Table 9 is the one approximation: mildly rate-dependent, 0.25% across the
+octave from 8 kHz to 11.025, with no exact formula found, so the wideband
+values are used.
+
+### Does it work
+
+Measured rather than assumed.  Pitch tracks correctly (F0 within 2% of the
+11 kHz render at every point sampled) and duration is identical, so the
+source and timing are right.  Spectrally, against the long-term average
+spectrum of the same sentence at 11 kHz over 100 Hz to 3.5 kHz:
+
+| | rms difference |
+|---|---|
+| 8 kHz vs 11 kHz, both Centigram's own | 4.0 dB |
+| 16 kHz vs 11 kHz, ours | 3.7 dB |
+
+Ours agrees with 11 kHz more closely than the original's own two rates
+agree with each other.  That is not a fluke of tuning: what separates two
+rates is largely fold-up, the energy above the narrower one's Nyquist
+folding back into its top band, and 16 kHz is nearer 11.025 than 8 kHz is.
+An earlier version of this ran at 22.05 kHz and measured 6.1 dB for the
+same reason in reverse; the rate was brought down because the step from 11
+kHz was larger than wanted, not because anything was wrong with it.  The
+rate is one constant, `TV_SR_HIFI` in `src/engine.h`, plus a re-run of
+`tools/gen_synth_hifi.py --rate`.
+
 ## The other English builds
 
 Three builds of the English engine exist, and they are two product lines

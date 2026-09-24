@@ -361,8 +361,13 @@ static void test_rate_extension(void)
     say(s, TEXT, &fast);
     tvtts_destroy(s);
     check(fast.n < slow.n, "400 wpm is shorter than 253, not longer");
-    check(slow.n * 100 / fast.n >= 170,
-          "and appreciably so -- at least 1.7x");
+    /* 1.4x rather than the 1.8x uniform compression used to give.  The
+     * difference is deliberate: squeezing every phoneme alike went straight
+     * through the per-phoneme minimum durations and made fast speech
+     * mumble, so the minimums now keep most of their length and the time
+     * comes out of the steady parts instead. */
+    check(slow.n * 100 / fast.n >= 140,
+          "and appreciably so -- at least 1.4x");
 
     /* Which is precisely what the original got wrong. */
     tvtts_set_extensions(0);
@@ -385,6 +390,127 @@ static void test_rate_extension(void)
     tvtts_set_extensions(TVTTS_EXT_ALL);
 }
 
+/* Three output rates.  8 kHz and 11.025 are the original's; 22.05 is
+ * OpenTV's, built from resonator tables computed rather than lifted. */
+static void test_sample_rate(void)
+{
+    tvtts_synth *s = tvtts_create(11025);
+    sink a, b;
+
+    check(tvtts_sample_rate_hz(TVTTS_SR_8K) == 8000 &&
+          tvtts_sample_rate_hz(TVTTS_SR_11K) == 11025 &&
+          tvtts_sample_rate_hz(TVTTS_SR_16K) == 16000, "three rates");
+    check(tvtts_sample_rate_hz(-1) == 0 && tvtts_sample_rate_hz(3) == 0,
+          "and nothing else");
+    check(tvtts_get_sample_rate(s) == TVTTS_SR_11K, "11 kHz by default");
+
+    say(s, TEXT, &a);
+    check(tvtts_set_sample_rate(s, TVTTS_SR_16K) == 0, "16 kHz is accepted");
+    check(tvtts_get_sample_rate(s) == TVTTS_SR_16K, "and reported back");
+    say(s, TEXT, &b);
+    /* Twice the rate, same speech: about twice the samples and no more. */
+    /* 16000/11025 = 1.45, so the same words at the same speed. */
+    check(b.n > a.n * 14 / 10 && b.n < a.n * 15 / 10,
+          "16 kHz gives 1.45x the samples for the same words");
+
+    check(tvtts_set_sample_rate(s, TVTTS_SR_11K) == 0, "switching back works");
+    sink_free(&b);
+    say(s, TEXT, &b);
+    check(same(&a, &b), "and returns byte for byte to where it was");
+
+    check(tvtts_set_sample_rate(s, 3) < 0 && tvtts_set_sample_rate(s, -1) < 0,
+          "an unknown rate is refused");
+    check(tvtts_set_sample_rate(NULL, TVTTS_SR_8K) < 0, "so is a null synth");
+    tvtts_destroy(s);
+
+    /* Changing rate re-initialises the engine, which puts its own defaults
+     * back: voice 0, pitch 85, 150 wpm, full volume.  Everything the caller
+     * asked for has to survive that.  Wanda came back as Peter once. */
+    {
+        sink here, there, back;
+        tvtts_synth *t = tvtts_create(11025);
+
+        tvtts_set_voice(t, 8);            /* Wanda */
+        tvtts_set_pitch(t, 133);
+        tvtts_set_rate(t, 190);
+        say(t, TEXT, &here);
+
+        tvtts_set_sample_rate(t, TVTTS_SR_16K);
+        check(tvtts_get_voice(t) == 8, "the voice survives a rate change");
+        check(tvtts_get_pitch(t) == 133, "so does the pitch");
+        check(tvtts_get_rate(t) == 190, "and the rate");
+        say(t, TEXT, &there);
+
+        tvtts_set_sample_rate(t, TVTTS_SR_11K);
+        say(t, TEXT, &back);
+        check(same(&here, &back),
+              "and the audio is identical going out and back again");
+
+        /* The giveaway if the settings had silently reset: the engine's own
+         * defaults would make a different, shorter utterance at 16 kHz. */
+        check(there.n > here.n * 14 / 10 && there.n < here.n * 15 / 10,
+              "16 kHz of the same voice is 1.45x the samples, not a reset one");
+        tvtts_destroy(t);
+        sink_free(&here); sink_free(&there); sink_free(&back);
+    }
+
+    s = tvtts_create(16000);
+    check(s != NULL, "16000 can be asked for at creation too");
+    tvtts_destroy(s);
+    sink_free(&a); sink_free(&b);
+}
+
+/* Bandwidth widening at high rates, after TGSpeechBox.  It must be audible
+ * where it applies, silent everywhere the original could reach, and never
+ * change how long anything takes -- it is a timbre change, not a timing one. */
+static void test_clarity(void)
+{
+    tvtts_synth *s;
+    sink off, on;
+    int r;
+
+    check((tvtts_get_extensions() & TVTTS_EXT_CLARITY) != 0,
+          "clarity is on by default");
+
+    /* Nothing the original could reach may move.  The two halves of this
+     * extension start at different places -- the pitch range narrows from
+     * the first added row, the bandwidths widen from about 310 wpm -- but
+     * both leave everything up to 253 exactly as it was. */
+    for (r = 46; r <= TVTTS_RATE_MAX; r += 23) {
+        tvtts_set_extensions(TVTTS_EXT_RATE);
+        s = tvtts_create(11025); tvtts_set_rate(s, r); say(s, TEXT, &off);
+        tvtts_destroy(s);
+        tvtts_set_extensions(TVTTS_EXT_ALL);
+        s = tvtts_create(11025); tvtts_set_rate(s, r); say(s, TEXT, &on);
+        tvtts_destroy(s);
+        if (!same(&off, &on))
+            break;
+        sink_free(&off); sink_free(&on);
+    }
+    check(r > TVTTS_RATE_MAX,
+          "clarity leaves the whole of the original's range alone");
+    if (r <= TVTTS_RATE_MAX)
+        printf("     first difference at %d wpm\n", r);
+    sink_free(&off); sink_free(&on);
+
+    /* At the top of the range it must do something, without retiming. */
+    tvtts_set_extensions(TVTTS_EXT_RATE);
+    s = tvtts_create(11025); tvtts_set_rate(s, 400); say(s, TEXT, &off);
+    tvtts_destroy(s);
+    tvtts_set_extensions(TVTTS_EXT_ALL);
+    s = tvtts_create(11025); tvtts_set_rate(s, 400); say(s, TEXT, &on);
+    tvtts_destroy(s);
+    check(!same(&off, &on), "and does change the sound at 400 wpm");
+    check(off.n == on.n, "without altering the duration by a single sample");
+    sink_free(&off); sink_free(&on);
+
+    /* The flags are independent. */
+    tvtts_set_extensions(TVTTS_EXT_CLARITY);
+    check(tvtts_get_extensions() == TVTTS_EXT_CLARITY,
+          "clarity can be had without the rate rows");
+    tvtts_set_extensions(TVTTS_EXT_ALL);
+}
+
 int main(void)
 {
     test_reuse();
@@ -395,6 +521,8 @@ int main(void)
     test_edges();
     test_phonemes();
     test_rate_extension();
+    test_sample_rate();
+    test_clarity();
     printf("%s\n", failures ? "FAILED" : "all passed");
     return failures != 0;
 }

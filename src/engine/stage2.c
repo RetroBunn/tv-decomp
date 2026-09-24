@@ -34,13 +34,63 @@ static int32_t rate_pct(int32_t i)
     return 100 - (i - (TV_RATE_ROWS - 1)) * 60 / (TV_RATE_ROW_MAX - (TV_RATE_ROWS - 1));
 }
 
-/* Left exactly alone at 100, so the classic rows are bit-for-bit what they
+/* Shorten a duration for the added rate rows.
+ *
+ * Only the part above the phoneme's own minimum is compressed.  Stage 2
+ * works out every duration as minimum + a share of the range above it, and
+ * Stage2_MinDur clamps to that same minimum, because below it a consonant
+ * stops reading as one.  Scaling the whole figure walks straight through
+ * that floor and is what made fast speech mumble: the steady parts and the
+ * consonants were squeezed alike.  Real fast speech takes the time out of
+ * the steady parts.
+ *
+ * Left exactly alone at 100, so the classic rows are bit-for-bit what they
  * always were rather than a multiply and divide that happens to round back. */
-static int32_t rate_apply(int32_t i, int32_t v)
+/* How much of a phoneme's *minimum* survives.  By row 25 every duration is
+ * already sitting on its minimum -- that is why the original's fastest row
+ * only reached 1.86x -- so going faster means taking some of the minimum
+ * too.  Consonants are almost all minimum and vowels are mostly the part
+ * above it, so compressing the two at different rates takes the time out of
+ * the steady parts and leaves the consonants closer to intact. */
+static int32_t rate_floor_pct(int32_t i)
 {
-    int32_t pct = rate_pct(i);
+    if (!tv_ext_rate || i < TV_RATE_ROWS)
+        return 100;
+    if (i > TV_RATE_ROW_MAX)
+        i = TV_RATE_ROW_MAX;
+    return 100 - (i - (TV_RATE_ROWS - 1)) * 30 / (TV_RATE_ROW_MAX - (TV_RATE_ROWS - 1));
+}
 
-    return pct == 100 ? v : v * pct / 100;
+/* How much of the pitch excursion survives at high rates.
+ *
+ * Stage2_Contour lays its contour out across the phrase's *phoneme count*
+ * -- pitch -= (pos * v) / total -- so the shape is already rate-invariant:
+ * it completes whatever the speed.  That is the opposite of TGSpeechBox,
+ * whose declination is hertz per second and is multiplied by speed to make
+ * it finish in time.  Nothing is missing here, then; the problem is the
+ * other one.  The same excursions are traversed three times faster, and a
+ * pitch movement crammed into a third of the time does not read as the same
+ * intonation.  People flatten their pitch when they speak quickly rather
+ * than moving it faster, so this takes the range down as the rate climbs. */
+static int32_t rate_pitch_pct(int32_t i)
+{
+    if (!tv_ext_clarity || i < TV_RATE_ROWS)
+        return 100;
+    if (i > TV_RATE_ROW_MAX)
+        i = TV_RATE_ROW_MAX;
+    return 100 - (i - (TV_RATE_ROWS - 1)) * 30 / (TV_RATE_ROW_MAX - (TV_RATE_ROWS - 1));
+}
+
+static int32_t rate_apply(const Engine *self, int32_t i, int32_t v)
+{
+    int32_t pct = rate_pct(i), lo;
+
+    if (pct == 100)
+        return v;
+    lo = self->s2_1ddc / 10;
+    if (lo > v)
+        lo = v;
+    return lo * rate_floor_pct(i) / 100 + (v - lo) * pct / 100;
 }
 
 
@@ -290,7 +340,7 @@ void TV_THISCALL Stage2_Flush(Engine *self)
         st->ctl->arg = (uint32_t)Stage2_DurFast(self);
         return;
     }
-    st->ctl->arg = (uint32_t)rate_apply(st->rate_index,
+    st->ctl->arg = (uint32_t)rate_apply(self, st->rate_index,
                                         Stage2_DurRules(self));
     st->ctl->arg = (uint32_t)Stage2_DurAdjust(self);
 }
@@ -1244,7 +1294,7 @@ scale:
             v = (v * 123) / 100;
     }
     if (st->rate_index != 0xd)
-        v = rate_apply(st->rate_index, Stage2_MinDur(self, v));
+        v = rate_apply(self, st->rate_index, Stage2_MinDur(self, v));
     if (v > 0x37)
         return 0x37;
     if (v < 2)
@@ -1908,7 +1958,7 @@ void TV_THISCALL Stage2_Contour(Engine *self)
     Node *nx, *pv, *stressed, *w;
     int32_t follow = 0;         /* the phoneme that opens the next word */
     int32_t contour, pos, total, a, b;
-    int32_t pitch, v, step, span, quarter;
+    int32_t pitch, v, step, span, quarter, lift;
     int16_t ch, c2;
     uint8_t attr, c;
 
@@ -1954,13 +2004,24 @@ void TV_THISCALL Stage2_Contour(Engine *self)
 
     pos = self->s2_1d8c;
     v = Synth_MulQ15(st->pitch / 3, g_voice_pitch_scale[st->voice]);
+    /* Narrowing the range has to keep the voice where it was.  The contour
+     * runs from st->pitch + v down towards st->pitch, so a smaller v on its
+     * own drops the whole thing by half the difference; giving that half
+     * back as a lift keeps the centre and takes only the excursion. */
+    lift = 0;
+    if (rate_pitch_pct(st->rate_index) != 100) {
+        int32_t full = v;
+
+        v = v * rate_pitch_pct(st->rate_index) / 100;
+        lift = (full - v) / 2;
+    }
     contour = self->s2_1d74;
     if (contour == 0x13)
         v = (self->s2_1d7c < pos) ? (v << 2) : (v * 3) * 2;
     if (self->s2_1d60 == 0)
         self->s2_1d60 = 1;
     total = self->s2_1d60;
-    pitch = st->pitch + v;
+    pitch = st->pitch + v + lift;
 
     switch (contour) {
     case 0:

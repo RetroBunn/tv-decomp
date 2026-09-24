@@ -75,6 +75,35 @@ typedef int (TVTTS_CALL *tvtts_callback)(const tvtts_event *ev, void *user);
 
 /* rate is 11025 (the engine's native rate) or 8000.  NULL on failure. */
 TVTTS_API tvtts_synth *TVTTS_CALL tvtts_create(uint32_t sample_rate);
+
+/*
+ * Output rate, as an index rather than a number of hertz, because the
+ * engine has exactly three and they are not interchangeable with arbitrary
+ * rates: each needs its own resonator tables.
+ *
+ *   TVTTS_SR_8K    8000 Hz, the original's narrowband set, for telephony
+ *   TVTTS_SR_11K  11025 Hz, what TruVoice shipped as its desktop rate
+ *   TVTTS_SR_16K  16000 Hz, which the original never offered
+ *
+ * 11 kHz is the default and is what people know the voices to sound like;
+ * the other two are the same voices resampled by the synthesiser itself
+ * rather than afterwards, so 16 kHz is genuinely more bandwidth and not an
+ * upsample.  Its tables are OpenTV's own, computed from formulas that
+ * reproduce both of the original's sets exactly.
+ *
+ * Changing rate re-initialises the filters and the output stage, so it is
+ * refused part way through an utterance: call it between them.  Voice,
+ * pitch, rate and volume are preserved across it.  Returns 0, or -1 if the
+ * synth is null, the index is not one of the three, or an utterance is in
+ * progress.
+ */
+#define TVTTS_SR_8K   0
+#define TVTTS_SR_11K  1
+#define TVTTS_SR_16K  2
+
+TVTTS_API int TVTTS_CALL tvtts_set_sample_rate(tvtts_synth *s, int which);
+TVTTS_API int TVTTS_CALL tvtts_get_sample_rate(const tvtts_synth *s);
+TVTTS_API uint32_t TVTTS_CALL tvtts_sample_rate_hz(int which);
 TVTTS_API void TVTTS_CALL tvtts_destroy(tvtts_synth *s);
 
 /*
@@ -207,7 +236,22 @@ TVTTS_API int TVTTS_CALL tvtts_rate_sequence(char *buf, size_t cap, int wpm);
  * independent of another here.
  */
 #define TVTTS_EXT_RATE  0x1u   /* rate above 253 wpm actually speeds up */
-#define TVTTS_EXT_ALL   0x1u
+
+/*
+ * TVTTS_EXT_CLARITY widens the formant bandwidths as the rate climbs, which
+ * is what keeps fast speech from slurring: a narrow resonator rings for
+ * longer than a shortened phoneme lasts, so its energy smears into the next
+ * one.  A wider bandwidth settles sooner and each phoneme keeps its own
+ * identity.
+ *
+ * It does nothing at or below 253 wpm, so the voices are unchanged
+ * everywhere the original could reach; it only shapes the range OpenTV
+ * added.  The approach and its constants come from Tamas Geczy's
+ * TGSpeechBox (MIT) -- see NOTICE.
+ */
+#define TVTTS_EXT_CLARITY 0x2u
+
+#define TVTTS_EXT_ALL   0x3u
 
 TVTTS_API void TVTTS_CALL tvtts_set_extensions(uint32_t mask);
 TVTTS_API uint32_t TVTTS_CALL tvtts_get_extensions(void);

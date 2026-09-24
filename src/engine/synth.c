@@ -36,6 +36,17 @@ extern const uint8_t g_param_init[22];
 /* @0x10122238 */ extern const uint8_t g_syn11k_8[];
 /* @0x100b5b40 */ extern const uint8_t g_syn11k_9[];
 
+/* OpenTV's extra rate, which the original never had: computed rather than
+ * lifted, by tools/gen_synth_hifi.py.  Only the three rate-dependent
+ * resonator tables differ from the wideband set; see that generator.
+ * No address annotation, because there is nothing to annotate. */
+extern const int32_t g_synhifi_6[180];
+extern const int32_t g_synhifi_7[180];
+extern const int32_t g_synhifi_8[700];
+extern const int32_t g_synhifi_2038;
+extern const int32_t g_synhifi_c12;
+extern const int32_t g_synhifi_c13;
+
 /* Fixed Q15 filter coefficients, 8000 Hz and 11025 Hz output. */
 static const int16_t filt_coef_8k[40] = {
     0, 0, -24759, 20770, 0, 0, 0, 25889, 0, 0,
@@ -80,7 +91,7 @@ void TV_THISCALL Synth_ResetTracks(Engine *self)
 void TV_THISCALL Synth_InitFilters(Engine *self)
 {
     const int16_t *coef;
-    int i;
+    int i, hifi = 0;
     self->synth_19ad = 0;
     self->synth_19ae = 0;
     self->synth_hold = 0;
@@ -114,9 +125,29 @@ void TV_THISCALL Synth_InitFilters(Engine *self)
         self->syn_203c = 7521;
         self->syn_2040 = -6905;
         coef = filt_coef_11k;
+        /* OpenTV: the extra rate keeps the wideband tables above -- they are
+         * not 11.025-specific, they are what the engine uses whenever it
+         * is not at 8 kHz -- and swaps the three that really do depend on
+         * the sample rate. */
+        if (self->sample_rate == TV_SR_HIFI) {
+            self->syn_tab[6] = (const uint8_t *)g_synhifi_6;
+            self->syn_tab[7] = (const uint8_t *)g_synhifi_7;
+            self->syn_tab[8] = (const uint8_t *)g_synhifi_8;
+            self->syn_2038 = g_synhifi_2038;
+            hifi = 1;
+        }
     }
     for (i = 0; i < 40; i++)
         self->filt_coef[i] = coef[i];
+    /* Three entries of that array are a fixed 242 Hz resonator rather
+     * than a starting value, and frame.c never rewrites them, so at
+     * the extra rate they have to be replaced too or the filter keeps 11 kHz
+     * damping and the output rolls off far too steeply. */
+    if (hifi) {
+        self->filt_coef[12] = (int16_t)g_synhifi_c12;
+        self->filt_coef[13] = (int16_t)g_synhifi_c13;
+        self->filt_coef[33] = (int16_t)g_synhifi_c13;
+    }
 }
 
 /* Convert a raw 8-bit parameter value to its working scale. */

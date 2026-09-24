@@ -628,7 +628,29 @@ uint8_t TV_THISCALL Engine_MidPut(Engine *self, uint8_t c);
 #define TV_RATE_ROWS     26          /* rows the original table has */
 #define TV_RATE_ROW_MAX  44          /* (400 - 46) >> 3 */
 
+/* OpenTV's extra output rate, the one the original never offered.  Changing
+ * it means changing this and re-running tools/gen_synth_hifi.py --rate; the
+ * generated file static-asserts that the two agree. */
+#define TV_SR_HIFI 16000
+
 /* Non-zero enables the rate rows above the original's table. */
 extern int tv_ext_rate;
+
+/* Non-zero widens the formant bandwidths at high rates, which is what stops
+ * fast speech slurring: a narrow resonator rings for longer than a shortened
+ * phoneme lasts, so its energy smears into the next one.  The idea and the
+ * numbers are from Tamas Geczy's TGSpeechBox (MIT); see NOTICE.
+ *
+ * Row 33 is about 2.5 times the speed of 150 wpm, which is where he starts
+ * widening.  His ramp reaches full width at 4.5 times, but this engine tops
+ * out at about 3.4, so taking that number literally would leave it at 44%
+ * of the effect at the fastest rate there is.  The ramp is stretched to
+ * finish at the last row instead: same curve, same endpoints, fitted to the
+ * range this engine actually has. */
+#define TV_BW_ROW_START  33
+#define TV_BW_ROW_FULL   TV_RATE_ROW_MAX
+#define TV_BW_MAX_Q8    333          /* 1.3 in Q8 */
+
+extern int tv_ext_clarity;
 
 #endif

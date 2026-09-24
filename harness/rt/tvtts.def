@@ -6,15 +6,18 @@ EXPORTS
     tvtts_get_extensions
     tvtts_get_pitch
     tvtts_get_rate
+    tvtts_get_sample_rate
     tvtts_get_voice
     tvtts_mark_sequence
     tvtts_pitch_sequence
     tvtts_punctuation_sequence
     tvtts_rate_sequence
+    tvtts_sample_rate_hz
     tvtts_set_compat
     tvtts_set_extensions
     tvtts_set_pitch
     tvtts_set_rate
+    tvtts_set_sample_rate
     tvtts_set_voice
     tvtts_set_volume
     tvtts_speak_bytes

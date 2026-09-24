@@ -130,6 +130,27 @@ rather than faster.  46..253 reaches all 26 rows with none repeated more
 than the table's own 8-wpm granularity forces, so the slider is now
 monotonic end to end.
 
+**Sample rate** is a combo box rather than a slider, because the engine has
+exactly three and they are not interchangeable: each needs its own
+resonator tables.
+
+| | |
+|---|---|
+| 8 kHz | the original's narrowband set, for telephony |
+| 11 kHz | what TruVoice shipped, and the default -- this is the sound people know |
+| 16 kHz | OpenTV's addition; the original never offered it |
+
+16 kHz is genuinely more bandwidth out of the synthesiser rather than an
+upsample of the 11 kHz output: its resonator tables are computed at the new
+rate.  See docs/VOICES.md for how, and for the measurements.  Changing rate
+rebuilds the filters and reopens the audio player, so anything speaking is
+stopped first.
+
+Above about 310 wpm the driver also gets OpenTV's bandwidth widening, which
+keeps fast speech from slurring; it is on by default and described in
+docs/LIBRARY.md.  Nothing at or below the original's 253 wpm ceiling is
+affected by it.
+
 **Commands**: `IndexCommand`, `BreakCommand`, `PitchCommand` and
 `RateCommand`.  All of them go inline into the text as engine escapes,
 built by the `tvtts_*_sequence` helpers so the driver does not have to know

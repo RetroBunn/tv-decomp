@@ -126,6 +126,30 @@ for "hi" it matches in length and differs by at most 192 of a full-scale
 32,768, a small difference in the final fall.  docs/VOICES.md has the
 measurements and where the escape was found.
 
+## Output rate
+
+Three, as an index rather than hertz, because each needs its own resonator
+tables and nothing between them is available:
+
+```c
+tvtts_set_sample_rate(s, TVTTS_SR_22K);   /* 0 = 8k, 1 = 11k, 2 = 22k */
+```
+
+11 kHz is the default and is what the voices are known to sound like; 8 kHz
+is the original's narrowband set; 16 kHz is OpenTV's own, with tables
+computed from formulas that reproduce both of the original's sets exactly.
+
+Changing rate re-initialises the filters and the output stage, so it is
+refused part way through an utterance -- call it between them.  Going out to
+16 kHz and back returns byte for byte to where it was.
+
+Voice, pitch, rate and volume survive the change.  They have to be put back
+deliberately: the re-initialisation restores the engine's own defaults, and
+the values the library caches to avoid redundant work would otherwise say
+they were still applied.  Note that the getters report what was asked for
+rather than what the engine holds, so they cannot themselves detect the two
+drifting apart.
+
 ## Voices
 
 Ten, indexed 0..9, named from the engine's own table: Peter, Sidney, Eager
@@ -212,11 +236,22 @@ followed, which made speech *slower* and stranger rather than faster: the
 same sentence took 38,544 bytes at 253 wpm and 391,864 at 254.
 
 The extension clamps the index into the table and, for the rows past the
-original's, shortens durations instead.  That is the lever that works: the
-final duration is `(max - min) * acc/100 + min` from `g_phone_dur`, so the
-per-phoneme *minimum* is a floor the rate table can never get under -- which
-is why the original's fastest row only ever managed 1.86x.  Scaling the
-result gets to about 3.4x before those minimums bind again.
+original's, shortens durations instead.  The final duration is
+`(max - min) * acc/100 + min` from `g_phone_dur`, so the per-phoneme
+*minimum* is a floor the rate table can never get under, and by row 25 every
+duration is already sitting on it -- which is why the original's fastest row
+only ever managed 1.86x.
+
+Going faster therefore means taking some of the minimum too, and **how** that
+is taken is what decides whether fast speech is intelligible.  Scaling the
+whole duration uniformly reaches about 3.4x and mumbles, because a consonant
+squeezed below its minimum stops reading as a consonant.  The minimum and the
+part above it are scaled separately instead: the minimum keeps 70% of its
+length at the top row while the variable part goes to 40%.  Consonants are
+almost all minimum and vowels are mostly the part above it, so the time comes
+out of the steady parts.  That costs top speed -- about 2.9x rather than
+3.4x -- and measures 7% more spectral flux at identical duration, flux being
+a proxy for how distinct one segment is from the next.
 
 | wpm | extension on | original |
 |---|---|---|
@@ -230,6 +265,48 @@ Every row the original had is left alone, so 46..253 wpm is bit-for-bit what
 it always was -- verified against `CGRM_EN.DLL` itself, not just against the
 classic build.  The voices still sound the way people know them; only the
 range that used to be broken behaves differently.
+
+### TVTTS_EXT_CLARITY
+
+Fast speech slurs for a physical reason: a formant resonator with a narrow
+bandwidth has a long impulse response.  Shorten the phonemes enough and the
+resonator is still ringing from the last one when the next arrives, and the
+two smear together.
+
+The fix is to widen the bandwidths as the rate climbs, so each resonator
+settles inside its own phoneme.  That maps onto this engine directly: the
+byte offset into tables 6 and 7 *is* the bandwidth in hertz, so widening is
+a plain scale of the offset, applied to F1, the nasal branch and F2/F3/F4
+in `Synth_Frame`.
+
+The idea and its constants come from Tamas Geczy's TGSpeechBox, which does
+the same to its cascade bandwidths above a speed threshold -- see NOTICE.
+His ramp starts at 2.5x the base rate and reaches a 1.3x widening at 4.5x.
+This engine tops out near 3.4x, so taking 4.5 literally would deliver only
+44% of the effect at the fastest rate there is; the ramp is stretched to
+finish at the last rate row instead.  Same curve and endpoints, fitted to
+the range this engine has.
+
+There is a second half to it, aimed at intonation rather than clarity.
+`Stage2_Contour` lays its pitch contour across the phrase's *phoneme count*
+-- `pitch -= (pos * v) / total` -- so the shape is rate-invariant by
+construction and completes whatever the speed.  That is the opposite of
+TGSpeechBox, whose declination is hertz per second and gets multiplied by
+speed so that it finishes in time.  Nothing is missing here, then; the
+problem is the other one.  The same excursions are traversed three times
+faster, and a pitch movement crammed into a third of the time does not read
+as the same intonation.  People flatten their pitch when speaking quickly
+rather than moving it faster, so the range is narrowed as the rate climbs --
+with the lost half given back as a lift, so the voice keeps its centre
+instead of sinking.  Measured over two sentences at 400 wpm, the 10-90
+percentile spread of F0 goes from 50.9 Hz to 32.9 Hz while the median stays
+within 1.5 Hz.
+
+The bandwidth half starts at about 310 wpm and the pitch half at the first
+added row, so everything the original could reach is
+untouched, and it changes timbre and intonation only -- the duration of an utterance at a
+given rate is identical with it on or off, to the sample.  `TV_BW_ROW_START`
+and `TV_BW_MAX_Q8` in `src/engine.h` are where to tune it.
 
 ## How this is tested
 

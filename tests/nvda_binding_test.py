@@ -110,6 +110,11 @@ def install_driver_stubs():
 	work it out from the user's configured percentage, which is not something
 	speak() can see or cares about.
 	"""
+	# NVDA installs gettext's _ as a builtin before importing drivers.
+	import builtins
+	if not hasattr(builtins, "_"):
+		builtins._ = lambda text: text
+
 	speech = types.ModuleType("speech")
 	speech.__path__ = []
 	commands = types.ModuleType("speech.commands")
@@ -152,7 +157,32 @@ def install_driver_stubs():
 
 	handler = types.ModuleType("synthDriverHandler")
 
-	class SynthDriver:
+	# NVDA's SynthDriver is an AutoPropertyObject: _get_x and _set_x become
+	# the property x.  Without that the driver's settings do not exist as
+	# attributes, which is exactly how a broken one reaches a release --
+	# the settings dialog is what fails, and nothing here used to touch it.
+	class _AutoProperty(type):
+		def __new__(mcs, name, bases, ns):
+			cls = super().__new__(mcs, name, bases, ns)
+			names = set()
+			for key in ns:
+				if key.startswith("_get_") or key.startswith("_set_"):
+					names.add(key[5:])
+			for n in names:
+				setattr(cls, n, property(getattr(cls, "_get_" + n, None),
+					                         getattr(cls, "_set_" + n, None)))
+			return cls
+
+	class SynthDriver(metaclass=_AutoProperty):
+		# The real base bridges these two; a driver supplies _getAvailableX
+		# and the property comes from here.  Custom settings get no such
+		# bridge, which is the trap this whole section exists for.
+		def _get_availableVoices(self):
+			return self._getAvailableVoices()
+
+		def _get_availableVariants(self):
+			return self._getAvailableVariants()
+
 		@classmethod
 		def VoiceSetting(cls):
 			return "voice"
@@ -181,6 +211,28 @@ def install_driver_stubs():
 	handler.synthDoneSpeaking = _Notifier()
 	handler.synthIndexReached = _Notifier()
 
+	autoSettings = types.ModuleType("autoSettingsUtils")
+	autoSettings.__path__ = []
+	ds = types.ModuleType("autoSettingsUtils.driverSetting")
+
+	class DriverSetting:
+		def __init__(self, id, displayNameWithAccelerator, availableInSettingsRing=False,
+			defaultVal=None, displayName=None, useConfig=True):
+			self.id = id
+			self.defaultVal = defaultVal
+			self.displayName = displayName or displayNameWithAccelerator.replace("&", "")
+
+	ds.DriverSetting = DriverSetting
+	us = types.ModuleType("autoSettingsUtils.utils")
+
+	class StringParameterInfo:
+		def __init__(self, id, displayName):
+			self.id, self.displayName = id, displayName
+
+	us.StringParameterInfo = StringParameterInfo
+	sys.modules["autoSettingsUtils"] = autoSettings
+	sys.modules["autoSettingsUtils.driverSetting"] = ds
+	sys.modules["autoSettingsUtils.utils"] = us
 	sys.modules["speech"] = speech
 	sys.modules["speech.commands"] = commands
 	sys.modules["speech.types"] = speechTypes
@@ -297,6 +349,24 @@ def binding_tests(_truvoice):
 		_truvoice.bgQueue.join()
 		return player.data[start:]
 
+	# --- output rate ---
+	# The engine has three, each with its own resonator tables.  16 kHz is
+	# OpenTV's: the original only ever shipped 8 kHz and 11.025.
+	check(_truvoice.sampleRateHz(0) == 8000 and _truvoice.sampleRateHz(1) == 11025
+		and _truvoice.sampleRateHz(2) == 16000, "three output rates")
+	check(_truvoice.getSampleRate() == 1, "11 kHz is the default")
+	before = len(player.data)
+	check(_truvoice.setSampleRate(2), "switching to 16 kHz is accepted")
+	check(_truvoice.getSampleRate() == 2, "and takes effect")
+	check(_truvoice.player.kw.get("samplesPerSec") == 16000,
+		"the player is reopened at the new rate")
+	_truvoice.speak("Hello world.")
+	_truvoice.bgQueue.join()
+	check(len(_truvoice.player.data) > 0, "and it still speaks")
+	check(_truvoice.setSampleRate(1), "switching back is accepted")
+	check(_truvoice.player.kw.get("samplesPerSec") == 11025, "player follows back")
+	player = _truvoice.player
+
 	# --- the rate floor ---
 	# Engine_SetSpeed does (wpm - 46) >> 3 unsigned, so below 46 the index
 	# wraps to about 0x1fffffff and the engine reads wildly.  The original
@@ -401,6 +471,38 @@ def driver_tests(_truvoice, commands):
 		"the bottom of the slider is the engine's lowest pitch")
 	check(truvoice._pitchFromPercent(100) == 500,
 		"and the top is its highest")
+
+	# --- every declared setting must actually resolve --------------------
+	# The settings dialog walks supportedSettings and, for each string
+	# setting, reads available<Id>s off the synth -- note the capitalize(),
+	# which lowercases the rest of the id.  A setting whose accessors are
+	# named even slightly wrong raises there, and the whole dialog fails to
+	# open.  That shipped once; this is here so it cannot again.
+	real_init = _truvoice.initialize
+	_truvoice.initialize = lambda cb: None
+	try:
+		synth = truvoice.SynthDriver()
+	finally:
+		_truvoice.initialize = real_init
+	for setting in truvoice.SynthDriver.supportedSettings:
+		sid = getattr(setting, "id", setting)
+		if not isinstance(sid, str):
+			continue
+		check(hasattr(synth, sid),
+			"setting %r is readable as an attribute" % sid)
+		# Only the string settings carry a choice list.
+		if type(setting).__name__ == "DriverSetting":
+			attr = "available%ss" % sid.capitalize()
+			choices = getattr(synth, attr, None)
+			check(choices is not None, "%s exists for setting %r" % (attr, sid))
+			check(choices is not None and len(list(choices.values())) > 0,
+				"%s offers at least one choice" % attr)
+			# And the dialog round-trips the value through the property.
+			if choices:
+				first = list(choices.keys())[0]
+				setattr(synth, sid, first)
+				check(str(getattr(synth, sid)) == str(first),
+					"setting %r round-trips through its property" % sid)
 
 	# The rate slider used to reach 400 wpm, well past the 26th and last row
 	# of the engine's rate table, so its top third made speech slower and
