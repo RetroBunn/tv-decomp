@@ -152,6 +152,12 @@ typedef int32_t(TV_THISCALL * init_fn)(Engine *);
  * object is not good enough the way it is for the ring accessors. */
 static void fresh(Engine *g, uint8_t *shared)
 {
+    /* Zero first.  Engine_ResetNodes relinks the node pool but does not clear
+     * what the nodes hold, so without this a case that diverges leaves stale
+     * node contents behind and every later case reports a difference it did
+     * not cause.  Both engines get the same treatment, so the comparison is
+     * unaffected -- only the isolation between cases improves. */
+    memset(g, 0, sizeof *g);
     ORIG(ctor_fn, 0x1000ddc0)(g);
     ORIG(init_fn, 0x100086a0)(g);
     g->out_buf = shared;
@@ -258,6 +264,223 @@ static int unit_putchar(void)
     return bad != 0;
 }
 
+/* Engine_InputStage reads from mid_ring, so a case is just a byte string put
+ * there directly.  That reaches things no text can: the ten-character limit
+ * exactly, a control record of every length including one the jump table
+ * sends to the default arm, and the '[' and ']' forms under each combination
+ * of the two flag words that gate them. */
+struct in_case {
+    const char *what;
+    int32_t flags_a, flags_n;
+    int len;
+    unsigned char bytes[24];
+};
+
+static const struct in_case IN_CASES[] = {
+    {"empty",            0x20, 0,  0,  {0}},
+    {"one letter",       0x20, 0,  1,  {'a'}},
+    {"a word",           0x20, 0,  4,  {'h', 'o', 'l', 'a'}},
+    {"space first",      0x20, 0,  4,  {' ', 'h', 'o', 'l'}},
+    {"space then word",  0x20, 0,  6,  {'h', 'o', ' ', 'l', 'a', 's'}},
+    {"nine letters",     0x20, 0,  9,  {'a','b','c','d','e','f','g','h','i'}},
+    {"ten letters",      0x20, 0, 10,  {'a','b','c','d','e','f','g','h','i','j'}},
+    {"eleven letters",   0x20, 0, 11,  {'a','b','c','d','e','f','g','h','i','j','k'}},
+    {"fifteen letters",  0x20, 0, 15,  {'a','b','c','d','e','f','g','h','i','j','k','l','m','n','o'}},
+    /* control records: ESC, letter, length, then that many bytes */
+    {"ctl len 1",        0x20, 0,  4,  {0x1b, 'i', 1, 0x05}},
+    {"ctl len 2 A",      0x20, 0,  5,  {0x1b, 'A', 2, 0x12, 0x34}},
+    {"ctl len 2 N",      0x20, 0,  5,  {0x1b, 'N', 2, 0x56, 0x78}},
+    {"ctl len 3",        0x20, 0,  6,  {0x1b, 'p', 3, 0x0c, 0x11, 0x22}},
+    {"ctl len 3 bits",   0x20, 0,  6,  {0x1b, 'p', 3, 0x0f, 0x11, 0x22}},
+    {"ctl len 4",        0x20, 0,  7,  {0x1b, 'i', 4, 1, 2, 3, 4}},
+    {"ctl len 5",        0x20, 0,  8,  {0x1b, 'z', 5, 1, 2, 3, 4, 5}},
+    {"ctl len 0",        0x20, 0,  3,  {0x1b, 'q', 0}},
+    /* the bracket forms, under each gate */
+    {"[ gated on",       0x20, 0,  1,  {'['}},
+    {"[ gated on +40",   0x60, 0,  1,  {'['}},
+    {"[ gate A off",     0x00, 0,  1,  {'['}},
+    {"[ gate N set",     0x20, 1,  1,  {'['}},
+    {"[ gate N set 2",   0x20, 2,  1,  {'['}},
+    {"[ gate N set 4",   0x20, 4,  1,  {'['}},
+    {"] gated on",       0x20, 0,  1,  {']'}},
+    {"] gate A off",     0x00, 0,  1,  {']'}},
+    {"mixed",            0x60, 0,  9,  {'a', '[', 'b', ']', ' ', 'c', 0x1b, 'i', 1}},
+};
+
+static int unit_input(void)
+{
+    typedef uint8_t(TV_THISCALL * fn)(Engine *);
+    uint8_t *shared = (uint8_t *)VirtualAlloc(NULL, 0x4000, MEM_RESERVE | MEM_COMMIT,
+                                              PAGE_READWRITE);
+    int k, i, bad = 0, n = 0;
+
+    for (k = 0; k < (int)(sizeof IN_CASES / sizeof IN_CASES[0]); k++) {
+        const struct in_case *t = &IN_CASES[k];
+        uint8_t ra, rb;
+        int which;
+        for (which = 0; which < 2; which++) {
+            Engine *g = which ? g_b : g_a;
+            fresh(g, shared);
+            for (i = 0; i < t->len; i++)
+                g->mid_ring[i] = t->bytes[i];
+            g->mid_rd = 0;
+            g->mid_wr = t->len;
+            g->e_9180 = -1;
+            g->in_flags_A = t->flags_a;
+            g->in_flags_N = t->flags_n;
+            g->item_notify = 0xfeed;
+        }
+        ra = ORIG(fn, 0x1000e290)(g_a);
+        rb = Engine_InputStage(g_b);
+        normalize(g_a);
+        normalize(g_b);
+        n++;
+        if (ra != rb || memcmp(g_a, g_b, sizeof *g_a) != 0) {
+            bad++;
+            fprintf(stderr, "  Engine_InputStage[%s]: returned %d/%d, "
+                            "free_nodes=%d/%d mid_rd=%#x/%#x\n",
+                    t->what, ra, rb, (int)g_a->free_nodes, (int)g_b->free_nodes,
+                    (unsigned)g_a->mid_rd, (unsigned)g_b->mid_rd);
+        }
+    }
+    fprintf(stderr, "%-18s %d/%d identical\n", "Engine_InputStage", n - bad, n);
+    return bad != 0;
+}
+
+/* Engine_NodeAlloc's interesting behaviour is the tail of it: when the
+ * running stage's window starts or ends at the node being inserted next to,
+ * the window has to follow.  Engine_InputStage never reaches that, because
+ * self->stage is null while it runs, so it needs its own cases.
+ *
+ * Each case builds identical state on both engines with the *original*
+ * Engine_AppendNode, so the only thing under test is the one call that
+ * follows. */
+static int unit_nodealloc(void)
+{
+    typedef Node *(TV_THISCALL * alloc_t)(Engine *, Node *, int32_t, int32_t, uint8_t);
+    typedef Node *(TV_THISCALL * append_t)(Engine *, int32_t, int32_t);
+    uint8_t *shared = (uint8_t *)VirtualAlloc(NULL, 0x4000, MEM_RESERVE | MEM_COMMIT,
+                                              PAGE_READWRITE);
+    /* stage index (-1 for none), which window field to aim at ref, after, type */
+    static const struct { int stage, aim, after, type; } CASES[] = {
+        {-1, 0, 0, 1}, {-1, 0, 1, 1},
+        { 0, 0, 0, 1}, { 0, 0, 1, 1},
+        { 0, 1, 0, 1}, { 0, 1, 1, 1},   /* aim 1: st->first = ref */
+        { 0, 2, 0, 1}, { 0, 2, 1, 1},   /* aim 2: st->last  = ref */
+        { 1, 2, 1, 1}, { 2, 1, 0, 1}, { 3, 2, 1, 1}, { 4, 1, 0, 1},
+        { 0, 2, 1, 0}, { 0, 2, 1, 2}, { 0, 2, 1, 3}, { 0, 2, 1, 4},
+        { 0, 2, 1, 5}, { 0, 2, 1, 6}, { 0, 2, 1, 7},
+    };
+    int k, i, bad = 0, n = 0;
+
+    for (k = 0; k < (int)(sizeof CASES / sizeof CASES[0]); k++) {
+        Node *ref[2];
+        int which;
+        for (which = 0; which < 2; which++) {
+            Engine *g = which ? g_b : g_a;
+            StageCtx *st;
+            fresh(g, shared);
+            /* The reference node has to have a real neighbour on both sides:
+             * after == 1 inserts next to ref->next, and the tail sentinel's
+             * next is null, so passing work_tail there walks off the end.
+             * The middle of three appended nodes is safe either way. */
+            for (i = 0; i < 3; i++) {
+                Node *appended = ORIG(append_t, 0x10008b60)(g, 1, 'a' + i);
+                if (i == 1)
+                    ref[which] = appended;
+            }
+            /* Dirty the node that is about to be handed out.  A freshly
+             * reset one has the per-stage flag bits clear already, so
+             * without this the "flags &= ~0xf8" at the end of the function
+             * has nothing to clear and any mistake in that mask is
+             * invisible here -- as one was. */
+            g->free_head->next->flags = 0xffffffffu;
+            if (CASES[k].stage < 0) {
+                g->stage = NULL;
+            } else {
+                st = &g->stage_ctx[CASES[k].stage];
+                g->stage = st;
+                if (CASES[k].aim == 1)
+                    st->first = ref[which];
+                else if (CASES[k].aim == 2)
+                    st->last = ref[which];
+            }
+        }
+        ORIG(alloc_t, 0x10008bd0)(g_a, ref[0], CASES[k].after, CASES[k].type, 'Z');
+        Engine_NodeAlloc(g_b, ref[1], CASES[k].after, CASES[k].type, 'Z');
+        normalize(g_a);
+        normalize(g_b);
+        n++;
+        if (memcmp(g_a, g_b, sizeof *g_a) != 0) {
+            bad++;
+            fprintf(stderr, "  Engine_NodeAlloc[stage=%d aim=%d after=%d type=%d]: "
+                            "state differs (free_nodes=%d/%d)\n",
+                    CASES[k].stage, CASES[k].aim, CASES[k].after, CASES[k].type,
+                    (int)g_a->free_nodes, (int)g_b->free_nodes);
+        }
+    }
+    fprintf(stderr, "%-18s %d/%d identical\n", "Engine_NodeAlloc", n - bad, n);
+    return bad != 0;
+}
+
+/* Engine_Unlink and Engine_InsertBefore against a real five-node list, at
+ * every position including next to each sentinel.  They are reached through
+ * the allocator already; this pins the return value, which the allocator
+ * only uses for one of the two. */
+static int unit_list(void)
+{
+    typedef Node *(TV_THISCALL * unlink_t)(Engine *, Node *);
+    typedef Node *(TV_THISCALL * insert_t)(Engine *, Node *, Node *);
+    typedef Node *(TV_THISCALL * append_t)(Engine *, int32_t, int32_t);
+    uint8_t *shared = (uint8_t *)VirtualAlloc(NULL, 0x4000, MEM_RESERVE | MEM_COMMIT,
+                                              PAGE_READWRITE);
+    int op, k, i, bad = 0, n = 0;
+
+    for (op = 0; op < 2; op++)
+        for (k = 0; k < 5; k++) {
+            Node *chain[2][5], *spare[2], *ra = NULL, *rb = NULL;
+            int which;
+            for (which = 0; which < 2; which++) {
+                Engine *g = which ? g_b : g_a;
+                fresh(g, shared);
+                for (i = 0; i < 5; i++)
+                    chain[which][i] = ORIG(append_t, 0x10008b60)(g, 1, 'a' + i);
+                /* for the insert cases, take one out first with the original
+                 * on both sides so only the insert itself is under test */
+                spare[which] = NULL;
+                if (op == 1) {
+                    spare[which] = ORIG(append_t, 0x10008b60)(g, 1, 'z');
+                    ORIG(unlink_t, 0x10009110)(g, spare[which]);
+                }
+            }
+            if (op == 0) {
+                ra = ORIG(unlink_t, 0x10009110)(g_a, chain[0][k]);
+                rb = Engine_Unlink(g_b, chain[1][k]);
+            } else {
+                ra = ORIG(insert_t, 0x10008ed0)(g_a, spare[0], chain[0][k]);
+                rb = Engine_InsertBefore(g_b, spare[1], chain[1][k]);
+            }
+            /* the returned pointers are into different engines, so compare
+             * them as offsets the way normalize() compares everything else */
+            {
+                uintptr_t oa = (uintptr_t)ra - (uintptr_t)g_a;
+                uintptr_t ob = (uintptr_t)rb - (uintptr_t)g_b;
+                normalize(g_a);
+                normalize(g_b);
+                n++;
+                if (oa != ob || memcmp(g_a, g_b, sizeof *g_a) != 0) {
+                    bad++;
+                    fprintf(stderr, "  %s at %d: returned +%#x/+%#x%s\n",
+                            op ? "Engine_InsertBefore" : "Engine_Unlink", k,
+                            (unsigned)oa, (unsigned)ob,
+                            oa == ob ? " (state differs)" : "");
+                }
+            }
+        }
+    fprintf(stderr, "%-18s %d/%d identical\n", "list surgery", n - bad, n);
+    return bad != 0;
+}
+
 static int unit_rings(void)
 {
     int bad = 0;
@@ -281,7 +504,12 @@ int unit_run(const char *name)
     if (!strcmp(name, "rings")) return unit_rings();
     if (!strcmp(name, "flush")) return unit_flush();
     if (!strcmp(name, "putchar")) return unit_putchar();
-    if (!strcmp(name, "all")) return unit_rings() | unit_flush() | unit_putchar();
+    if (!strcmp(name, "input")) return unit_input();
+    if (!strcmp(name, "nodealloc")) return unit_nodealloc();
+    if (!strcmp(name, "list")) return unit_list();
+    if (!strcmp(name, "all"))
+        return unit_rings() | unit_flush() | unit_putchar() | unit_input()
+             | unit_nodealloc() | unit_list();
     fprintf(stderr, "unknown unit test %s\n", name);
     return 2;
 }

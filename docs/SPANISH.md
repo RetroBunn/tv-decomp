@@ -723,6 +723,110 @@ that reaches `Preformat_Run` walks live state and a poisoned object is not
 good enough the way it is for the ring accessors.  And `normalize()`
 rewrites self-pointers as offsets before comparing, without which no two
 engines ever match.
+## The input stage, and the node pool
+
+`Engine_InputStage` is `sub_1000e290`, the arm of the cascade that runs when
+everything else is idle.  It turns preformatted characters into work list
+nodes, stopping after ten or at the first non-space following a space so the
+stages below get a turn between words.  English keeps `read_control` as its
+own function and the 1995 compiler inlined it; the jump table at
+`0x1000e4d4` is that switch, selecting on the length byte the preformatter
+writes after each command letter.
+
+Writing it needed the `Node` struct, and `Engine_ResetNodes` gives it away
+completely.  It links `0x26a` nodes with `add esi, 0x1c`, and **618 times
+0x1c starting at 0x928 ends at 0x4cc0, which is exactly where `in_ring`
+begins** -- so the node size, the node count and the pool's extent all fall
+out of one loop.  618 is English's count too, but its node is 0x20 wide:
+`b15`, `value` and `notify` sit at 0x15, 0x16 and 0x1c there against 0x10,
+0x11 and 0x14 here, so 1997 added fields in the middle of the node as well
+as to the engine.
+
+The same function confirmed the work list around the pool -- two sentinel
+pairs at 0x8b0 and 0x8f0 with their head and tail pointers -- and,
+incidentally, `stage_ctx[0]`, since `Engine_AppendNode` writes 0x754, 0x758,
+0x75c, 0x760 and 0x764 in turn, which is `first`, `cur`, `ctl`, `scan`,
+`last` at the offsets the layout already claimed.
+
+The unit case puts byte strings straight into `mid_ring`, which reaches what
+no text can: the ten-character limit exactly, a control record of every
+length including one the jump table sends to its default arm, and the `[`
+and `]` forms under each combination of the two flag words that gate them.
+Twenty-six cases.  Changing the limit from ten to eleven passes all 200
+configurations of the corpus and fails two unit cases, the only two long
+enough to reach it.
+
+That last run also caught a fault in the test rather than the code.  With
+the limit broken, cases that had nothing to do with it were reported as
+differing too, because `Engine_ResetNodes` relinks the node pool without
+clearing what the nodes hold: once two engines diverged, the stale contents
+made every later case look wrong.  Zeroing the object before building it
+fixes the isolation, and with that the broken build fails exactly the two
+cases it should.  A test that reports more than it has found is only
+slightly better than one that reports nothing.
+## The allocator, and the test that was wrong in the other direction
+
+`Engine_NodeAlloc` and `Engine_AppendNode` are underneath the whole
+pipeline: every stage works the same list of 618 nodes, and nothing ever
+allocates.  Both are English's, with one addition -- the 1995 allocator
+checks its arguments, calling `sub_10008b50` with 0x1e when the pool is
+empty and 0x1f when the reference node is null.  That function is three
+bytes, `ret 4`, so the checks report nothing and change nothing.  They are
+in the instruction stream, so they are in the C.
+
+Reading the allocator corrected the layout.  `Engine_ResetNodes` writes
+`node(0x90c)->next` as the first pool node and `node(0x8f0)->prev` as the
+last, so 0x90c heads the free list and 0x8f0 ends it -- and
+`Engine_NodeAlloc` taking its node from `[0x8ec]->next` agrees.  The
+`free_head` and `free_tail` in `es/engine.fields` were the wrong way round,
+written from the order the pointers are assigned rather than from what they
+point at.  The four names now match English's, which has the same tail
+pointer, head pointer, tail node, head node in the same order.
+
+Then a control went the other way for the first time.  Changing the
+per-stage flag clear from `~0xf8` to `~0xf0` **failed the corpus** at
+194/200 and **passed every unit case**.  The reason is a flaw in the unit
+cases rather than a virtue of the corpus: they allocate from a freshly
+reset pool, where the per-stage bits are already clear, so the mask had
+nothing to clear and a mistake in it could not show.  Real runs recycle
+nodes that carry those bits.  Dirtying the node about to be handed out
+fixes it, and with that the same bug fails four unit cases as well.
+
+So the rule from the last three rounds needs its other half.  A unit case
+is only as good as the state it sets up: if the input that makes a line of
+code matter is never constructed, the case tests the lines around it and
+reports success.  The corpus is what noticed, because real text does
+construct that state -- which is the first time it has been ahead.
+## List surgery, and what the unit cases are actually enforcing
+
+`Engine_Unlink` and `Engine_InsertBefore` are twenty-two and twenty-four
+bytes of pointer shuffling, and they settle a small question of style.  In
+English they are free functions, `List_Unlink` and `List_InsertBefore`,
+taking cdecl arguments.  Here they are members that take `this` in ecx as
+thiscall requires and then ignore it completely, reading their real
+arguments off the stack and returning `ret 4` and `ret 8`.  The `self`
+parameter is kept in the C for exactly one reason: the callers inside the
+DLL pass it, so the convention has to match.  Both leave the node in eax,
+so both return it, even though the allocator only uses one of the two.
+
+Neither checks anything, which is safe because the lists always have
+sentinels at both ends -- and is also why handing `Engine_NodeAlloc` a
+sentinel with `after == 1` walks off the end.  That one was found by
+segfaulting the unit test, not by reading.
+
+A control here drew the line between the two kinds of test more sharply
+than anything so far.  Making `Engine_Unlink` also null the unlinked node's
+own links passes all 200 corpus configurations, because the allocator
+overwrites both fields before anyone reads them -- the change is genuinely
+inaudible.  The unit case rejects it anyway, on five cases, because it
+compares the whole object and the object is different.
+
+That is the right answer and worth being explicit about.  **The corpus asks
+whether the engine still sounds the same.  The unit cases ask whether a
+function is the same function.**  A decompilation that only satisfied the
+first would be a rewrite that happens to agree on the corpus; every input
+outside it would be a guess.  The second is the stronger claim, and it is
+the one worth making, so where the two disagree the unit case wins.
 ## What is next
 
 There are now three tests with different reach: `difftest --lang es` asks

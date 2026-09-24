@@ -59,6 +59,22 @@ struct StageCtx 0x44
 0x40 int32_t  voice
 end
 
+# The work-list node.  Engine_ResetNodes links 0x26a of them with a stride of
+# 0x1c, and 618 * 0x1c starting at 0x928 ends at 0x4cc0, exactly where in_ring
+# begins -- so both the size and the pool are pinned.  English uses the same
+# 618 nodes but a wider node (0x20), having added fields in the middle: its
+# b15, value and notify sit at 0x15, 0x16 and 0x1c against 0x10, 0x11 and 0x14
+# here.  The named fields are the ones Engine_InputStage writes.
+struct Node 0x1c
+0x00 Node    *next
+0x04 Node    *prev
+0x08 uint32_t flags            # bits 0-2 type, bits 3-6 per-stage flags
+0x0c uint32_t arg              # control nodes: the command argument
+0x10 uint8_t  b15
+0x11 uint8_t  value            # character, or the command letter
+0x14 uint32_t notify           # 'i' index marks: the TextData notify context
+end
+
 # The TextIn tokenizer object, allocated by Engine_CreateTextIn.  Its size is
 # the 0xac that function passes to operator new; the three fields named here
 # are the ones Engine_Flush reads and writes across the boundary.  The rest
@@ -263,6 +279,23 @@ struct Engine 0x8838
 # to set.  The five type_mask values are 0x17, 0x06, 0x1c, 0x28, 0x3f, the
 # same as English's and in the same order.
 0x0754 StageCtx stage_ctx[5]
+
+# --- the work list and the node pool, from sub_10008ef0 --------------------
+# Engine_ResetNodes builds two sentinel pairs and threads the whole pool onto
+# the free list.  Which sentinel is head and which is tail is settled by the
+# links it writes: node(0x90c)->next is the first pool node and node(0x8f0)
+# ->prev is the last, so 0x90c heads the free list and 0x8f0 ends it -- and
+# Engine_NodeAlloc taking its node from "[0x8ec]->next" agrees.  The four
+# names and their order are English's exactly.
+0x08a8 Node    *work_tail
+0x08ac Node    *work_head
+0x08b0 Node     work_tail_node
+0x08cc Node     work_head_node
+0x08e8 Node    *free_tail
+0x08ec Node    *free_head
+0x08f0 Node     free_tail_node
+0x090c Node     free_head_node
+0x0928 Node     node_pool[618]   # 0x26a nodes, ending exactly at in_ring
 
 # --- the three input rings, from sub_1000e240 ------------------------------
 # Each ring ends exactly where its own rd/wr pair begins, which is what fixes

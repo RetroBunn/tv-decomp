@@ -55,6 +55,30 @@ void TV_THISCALL Engine_Flush(Engine *self, int32_t new_item);
 /* @0x10008060 */
 void TV_THISCALL Preformat_PutChar(Engine *self, uint8_t c);
 
+/* ---- the input stage (input.c) ------------------------------------------ */
+
+/* Node types: the low three bits of Node.flags. */
+#define NODE_TYPE_MASK 7u
+#define NODE_CONTROL   0u
+
+/* @0x1000e290 */
+uint8_t TV_THISCALL Engine_InputStage(Engine *self);
+
+/* ---- the node pool (node.c) ---------------------------------------------- */
+
+/* @0x10008bd0 */
+Node *TV_THISCALL Engine_NodeAlloc(Engine *self, Node *ref, int32_t after,
+                                   int32_t type, uint8_t value);
+/* @0x10008b60 */
+Node *TV_THISCALL Engine_AppendNode(Engine *self, int32_t type, int32_t value);
+
+/* ---- list surgery (list.c) ----------------------------------------------- */
+
+/* @0x10009110 */
+Node *TV_THISCALL Engine_Unlink(Engine *self, Node *n);
+/* @0x10008ed0 */
+Node *TV_THISCALL Engine_InsertBefore(Engine *self, Node *n, Node *before);
+
 /* ---- not written yet ------------------------------------------------------
  * Declared with an address and nothing else.  tools/gen_hookmap.py emits a
  * --defsym for every annotated symbol it cannot find a definition of, so a
@@ -69,5 +93,7 @@ void TV_THISCALL Preformat_Run(Engine *self);
 void TV_THISCALL TextIn_Reset(TextIn *self);
 /* @0x1001c8a0 */
 void TV_THISCALL TextIn_Flush(TextIn *self, int32_t flag);
+/* @0x10008b50 */
+void TV_THISCALL Engine_Error(Engine *self, int32_t code);
 
 #endif /* TV_ES_ENGINE_H */
