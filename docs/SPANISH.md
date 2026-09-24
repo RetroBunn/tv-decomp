@@ -827,6 +827,380 @@ function is the same function.**  A decompilation that only satisfied the
 first would be a rewrite that happens to agree on the corpus; every input
 outside it would be a guess.  The second is the stronger claim, and it is
 the one worth making, so where the two disagree the unit case wins.
+## The escape parser, and a bug the corpus was never going to find
+
+`Preformat_Run` is 1968 bytes and twenty-three commands, by a distance the
+largest thing written so far.  It is a three-state machine: state 1 is
+ordinary text, folded and copied to `mid_ring`; ESC moves to state 2, which
+expects `[`; state 3 collects decimal parameters until a letter arrives.
+Commands the pipeline needs are re-emitted into `mid_ring` in the binary
+form `Engine_InputStage` reads back.
+
+Every handler matched English's shape, and the constants confirmed it one
+by one: the A/D mask limit of 7 against N/F's 16, `p` defaulting to 42 and
+clamping 25..200 before doubling, `r` flooring at 50 and computing
+`(wpm - 46) >> 3`, `v` at `p0 * 8 + 50`, `l` bounded at 22 against
+`g_param_max`.  Two things differ from 1997, and both were already known:
+`ESC[w` restores 0x1780 and 0x40 where English restores 0x17c0 and 0x41,
+and `mode_I` here has a companion flag that the text path consults, so that
+in index mode a byte goes through without accent folding.
+
+That companion flag is where the interesting part is.  The corpus gained a
+file for it -- index mode around accented Spanish, which is the case it
+exists for -- and passed at 204/204 with the function as first written.
+The unit case did not:
+
+    Preformat_Run[modeI=1 ESC[2I]: state differs
+
+`ESC[2I` is out of range and the command does nothing.  Except that it
+does: the jump that rejects a parameter above 1 lands **after** the store
+to `mode_I` and **before** the store to `mode_I_on`, so an out-of-range
+`ESC[2I` still turns index mode off.  Written from English's structure,
+where there is no such flag, the natural C breaks out of the case and skips
+both stores.
+
+The corpus could not have found it.  It has `ESC[2I` in it, but the file
+reaches that command with index mode already off, so setting it to off
+again changes nothing.  What found it was the unit case running every one
+of its 78 strings twice, once with the flag set and once clear -- a state
+the input cannot choose for itself.  A whole 1968-byte function came out
+right except for one fall-through, and the thing that caught the
+fall-through was two lines of loop in the test.
+## Choosing what to write next, by measurement
+
+The plan after the escape parser was `Stage3_Run` and the subtree beneath
+it, on the grounds that it had the most bytes executing.  Measuring first
+said otherwise.  `Stage3_Run` matches English at only 0.21, and its four
+children -- `sub_1001b880`, `sub_10010ba0`, `sub_10016460`, `sub_1001b440`,
+nearly 8 KB between them -- match **nothing**, in English or in any
+sibling.  Writing them means reading 9 KB of assembly with no reference at
+all.  Worth doing eventually; a poor place to go next.
+
+Ranking the executing, unwritten functions by how well they match English
+gives a much better queue: **32 functions and 4491 bytes at 0.45 or
+better**, ten of them at 1.00.  Those are the ones where the English source
+is a working draft rather than a hint.
+
+It also corrected the `--near` advice from two rounds ago.  The Stage 3
+region sits 0x3ba0 away in Italian, not the 0xa38 the median suggested --
+`sub_1001b810` matches `sub_10017c70` at 1.00 across that gap.  The
+displacement really is constant in blocks, but there are more blocks than
+the quartiles showed, so a window tight enough to be useful will miss whole
+regions.  Search without it first, then use it to cut false positives.
+
+## The leaf utilities
+
+Seven of the queue's easiest: the three-word bit sets the stages carry
+(`Bits_Test`, `Bits_Set`, `Bits_Clear`, `Bits_Next`), the two node walks
+that find word and phrase boundaries, the phoneme attribute test, and one
+piece of fixed-point arithmetic.  Two convention notes: `Phone_TestMask` is
+stdcall here and cdecl in English, and it reads the attribute table
+directly where English calls `Phone_Attr`.  `Bits_Clear` has no English
+counterpart at all under that name.
+
+The bit sets are indexed from the far end -- bit 0 lives in `bits[2]` --
+which is why all four compute `2 - bit / 32`.  A consequence worth writing
+down: `Bits_Next` returns 0 when it finds nothing, so a caller cannot tell
+that from finding bit 0, and the engine relies on bit 0 never being used.
+
+These take no engine, so they can be swept outright: every bit index from
+-33 to 127 against five bit patterns, all 256 phoneme values against eleven
+masks and three signs, a hundred multiplier pairs.  **8849 comparisons, all
+identical.**  Changing the attribute row shift from `>>1` to `>>2` fails
+680 of them -- and 192 of the 204 corpus configurations, which is the
+loudest a control has been yet.
+## The TextIn edges
+
+`TextIn` sits between `Engine_Feed` and the preformatter whenever the SAPI
+TextIn option is on, which is the default.  It pulls characters out of the
+input ring itself, splits them into tokens, rewrites some of them, and puts
+the result back through `Preformat_PutChar`.  Four of its parts are the
+ones that touch the engine, and all four match English exactly:
+`TextIn_GetChar`, `TextIn_Unget`, `TextIn_PutString` and the string
+allocator `AllocString`.
+
+They needed no new structure -- `engine` at 0 and `input_done` at 8 were
+already placed -- but they did need the C runtime.  The engine calls a
+statically linked MSVC 4.2, and the hook build binds `tv_malloc`,
+`tv_free` and `tv_new` to the DLL's own copies so that memory from its heap
+is always freed by its heap.  The addresses are Spanish ones; `src/crt.h`
+has the English set.
+
+The control was the loudest so far.  Returning -3 instead of -2 for end of
+input, and moving `TextIn_PutString`'s wake-up from `i > 0` to `i > 1`,
+drops the corpus to 50/204 and makes the engine spin: one case produces
+5.4 MB of audio where the original produces 483 KB.  These four are on the
+hot path for every character of every input, which is worth knowing before
+trusting a quiet result from them.
+
+Spanish's `TextIn` is 0xac bytes against English's 0x70 -- the one place so
+far where the 1995 object is the larger of the two.  What the extra 0x3c
+holds is not worked out; the tokenizer proper is next.
+## The tokenizer, and one constant that is read but not tested
+
+`TextIn_Flush`, `TextIn_Tokenize`, `TextIn_InsertAfter` and
+`TextIn_RemoveToken` bring the token list itself.  `TextIn_InsertAfter`
+allocates 0x3c bytes and then zeroes every field in turn, which lays the
+whole `Token` out in one function -- and it is **English's Token, field for
+field**, the first structure so far that did not move at all between 1995
+and 1997.  Only `w34` starts as something other than zero.
+
+`TextIn_Construct` then explains a difference.  It sets `head` to
+`this + 0x1c`, an **embedded Token sentinel** inside the object, and
+0x1c + 0x3c is exactly 0x58 where the head pointer lives.  That is why
+`TextIn_InsertAfter` and `TextIn_RemoveToken` treat a null neighbour as a
+caller error and give up, where English updates `self->head`: here the list
+always has that sentinel in front of it, so a null previous token cannot
+happen and is not worth handling.  The allocation on the failing path is
+leaked, and the C leaks it too.
+
+The mode the tokenizer runs in comes from the SAPI object at 0xbb0.  The
+1997 engine passes a literal 0 to the constructor and ignores the field
+entirely; the 1995 engines read it.  `tvh -M` now sets it, so mode 4 is
+reachable from the corpus, and `tests/corpus_es/25_modo4.opts` uses it.
+
+Which is where this round leaves something honestly unfinished.
+`TextIn_Tokenize`'s mode-4 branch tests **bit 0x53** where English tests
+0x45.  The number is read straight out of the disassembly and is not in
+doubt -- it is a literal `push 0x53` -- but it is **not covered by any
+test**: bit 83 is set by `TextIn_ReadToken` and `TextIn_Split`, neither of
+which is written, and nothing in the corpus produces a token carrying it.
+Substituting English's 0x45 passes all 205 configurations even with mode 4
+switched on.
+
+Building a unit case for it would mean constructing a token list by hand
+and comparing two heaps of malloc'd tokens at different addresses, which is
+a great deal of machinery for one constant that the disassembly already
+settles.  The proportionate thing is to leave it and say so, in the source
+as well as here, so that it is a known gap rather than an unexamined one.
+It closes by itself once the tokenizer proper is written and it becomes
+possible to say which tokens get the bit.
+## The engine's lifecycle
+
+`Engine_Construct`, `Engine_Init`, `Engine_Reset`, `Engine_ResetRings`,
+`Engine_ResetNodes` and `Engine_Step` -- the object's whole life.  Most of
+this was read in earlier rounds and written up before a line of it was
+compiled, so writing it was largely transcription: the cascade with its
+0x69, 0x37, 0x37 and 0xf thresholds, the ten defaults, the twelve-call
+reset chain, the pool loop.  With the rings and the node pool underneath it,
+the engine's skeleton is now OpenTV's code end to end, with the five stages
+and the synthesiser still running as the original inside it.
+
+One deviation from English had to be reproduced deliberately.
+`Engine_ResetNodes` hands each of the five stage contexts **eight** of the
+nine preformat fields; English hands over nine.  The one it leaves alone is
+`p_38`, which takes `flags_A`.  So in this engine a reset does not undo an
+`ESC[A` or `ESC[D`, and whatever the escape parser last put there survives.
+
+The corpus cannot see that.  Adding the copy English makes passes all 205
+configurations, because nothing in the corpus has a flag set by `ESC[A`
+still in force across a reset.  Unlike the 0x53 bit from the last round,
+though, this one is cheap to test: set the nine preformat fields and all
+five `p_38` slots to distinctive values, call the function, compare.  With
+the English copy added the unit case fails four of six cases and names the
+difference outright -- `p_38 0xbad/0x8888` -- the original leaving the
+planted value where a faithful English translation would write `flags_A`.
+
+That is the difference between the two gaps.  A constant that only a
+not-yet-written function can set has to wait; a field that any caller can
+set is testable now, and leaving it untested would have been laziness
+rather than proportion.
+## Stage windows
+
+Five functions that every stage sits on.  Each stage owns a window into the
+one work list -- `first` and `last` bound it, `cur` marks how far the stage
+has got, `ctl` is the next control node to execute, `scan` the next node of
+a type it cares about -- and brackets its work with `Engine_StageBegin` and
+`Engine_StageEnd`, between which `self->stage` points at it.
+
+`Engine_StageEnd` is where work moves down the pipeline: whatever a stage
+finished becomes the next stage's window.  It recognises the last stage by
+comparing the window pointer against `self + 0x864`, which is
+`stage_ctx[4]` at base 0x754 and stride 0x44 -- the third independent
+confirmation of that base and stride.  Stage 4 has nowhere to pass work to,
+so it frees instead.
+
+Three differences from English, all small.  `Engine_StagePrev` and
+`Engine_StageNext` check their argument and call the stubbed error reporter
+with 0x2b and 0x2a, which English does not.  And the mask test that English
+writes inline at three places is a function here, `sub_10009020`, which
+takes a null node rather than making its callers check -- so
+`Engine_StageBegin` tests the type before testing for null, the opposite of
+English's order.  The two come to the same thing, since the function
+returns 0 for null, but the C is written the way the assembly runs.
+
+The control was loud, as it should be for code every stage executes:
+moving the last-stage test from `stage_ctx[4]` to `stage_ctx[3]` drops the
+corpus to 137/205.
+## Control nodes
+
+`Engine_RunControl` is 1296 bytes and the second largest thing written so
+far.  It is where an escape command takes effect: the node carries the
+letter and its arguments through the pipeline, and each stage executes it
+as its cursor passes, so a pitch change lands at the point in the audio
+where it was written rather than when it was parsed.  Most commands act in
+exactly one stage, and which stage is running is worked out by subtracting
+the engine pointer from the window pointer -- 0x754, 0x798, 0x7dc, 0x820
+and 0x864 for stages 0 to 4.
+
+Seventeen handlers behind a jump table, and the command set is English's.
+`g`, `s` and `t` have three separate handlers here that are identical to
+the byte, where English groups them into one case -- the same code the
+1995 compiler did not fold.  Three differences that are not cosmetic:
+
+* The index-mark queue record is **two words** -- the notify context and
+  the argument -- where English queues three and clears the node's notify
+  when the argument is zero.  This one does not clear it.
+* There is no lock around the queue push.  English brackets it with
+  `Sapi_Lock` and `Sapi_Unlock`.
+* `ESC[..a` computes its volume as `pow(10, a * -0.1) * 65535` in x87
+  floating point.  1997 replaced that with a lookup table.
+
+The volume conversion is worth dwelling on, because `src/engine/volume.c`
+already explains why a table is the right answer: the result is truncated
+to an integer, so it is a step function, and a libm that rounds the last
+bit differently moves a step boundary and changes the audio in a way that
+looks like a decompilation bug.  Computing the 256 values here gives
+**exactly the English table** -- unsurprising, since it is the same
+expression -- so the same table is used, and `unit_es` checks every one of
+the 256 against the engine itself.  That is better evidence than the
+English table has, which was checked against the expression rather than
+against the code.
+
+The SAPI object also came out of this.  It is English's as far as volume
+and then diverges: `ctx` sits at 0xba8 where English has its format field,
+and the window handle at 0xbdc against English's 0xbe0.  So the earlier
+note that the two engines share the SAPI layout outright was too strong --
+they share the first three quarters of it.  Every notification is a plain
+`PostMessageA` to that handle.
+
+The unit case runs all seventeen letters at all five stages and all 256
+attenuation values: 1176 comparisons.  Two deliberate faults -- one step of
+the volume table off by one, and `ESC[V` acting at stage 2 instead of 3 --
+fail ten of them and pass all 205 corpus configurations.
+
+Writing the test found one thing too.  Feeding `ESC[V` an argument of 255
+segfaults both engines: the handler indexes a 2800-byte-per-voice table
+with it and walks off the end of the image.  The escape parser clamps the
+argument to 0..9 before a node is ever made, so nothing real reaches it --
+but it is a reminder that a unit case can construct states the engine is
+built never to see, and that a crash there is the test being wrong rather
+than the code.
+## Stage 0 helpers, and the accent marks
+
+Stage 0 is the letter-to-sound pass: a bytecode interpreter over the rule
+table with a twenty-frame call stack, matching its window against word
+lists and character classes.  The interpreter is 3074 bytes and matches
+nothing in any other engine; these are the four pieces around it, and all
+four had English to work from.
+
+`Stage0_Reset` settled four fields that were the wrong way round.  It makes
+the same seven assignments the English one does, and two of them are a
+buffer and a pointer into it.  The arithmetic names them: 0x2e4 - 0x244 is
+0xa0, which is twenty `S0Frame`s, so those are `s0_stack` and `s0_sp`; and
+0x310 - 0x2f4 is 0x1c, which is **one Spanish Node**, so those are
+`s0_pending` and `s0_pending_ptr`.  The English pair measure 0xa0 and
+**0x20** -- twenty frames and one English Node.  The same two structures,
+each sized in its own engine's node, which is a pleasing way to have the
+Node size confirmed a third time.
+
+`Stage0_CharClass` is where the interesting difference is.  Sixteen class
+numbers map onto six tests through an index table, and that table is byte
+for byte the English one.  The tests are not: **the letter class here also
+accepts `~` and `` ` `` alongside the apostrophe**.  Those are what
+`FoldAccent` leaves behind -- it splits an accented character into a base
+letter and a mark -- so in this engine the mark is part of the word as far
+as the rules are concerned.  It is the clearest thing found so far that
+exists because the language has accents.
+
+It is also load-bearing, and both tests say so loudly.  Reducing the class
+to English's letters-and-apostrophe fails **exactly two** of the 12288 new
+unit comparisons -- `CharClass(4, 0x60)` and `CharClass(4, 0x7e)`, the two
+characters and no others -- and drops the corpus from 205 to 92.  A sweep
+that fails in exactly the two places it should is worth more than one that
+merely fails.
+
+Two smaller differences: `Stage0_MatchWord` does not raise `s0_1c1c` for
+lists 1, 0xd and 0xe the way English's does, and every range test in
+`Stage0_CharClass` is compiled signed, which comes to the same answer for
+every byte -- a byte of 0x80 or more fails the lower bound signed and the
+upper bound unsigned.
+## Stage 4 and the parameter tracks
+
+Stage 4 is the last stage and the only one the host drives directly:
+`Engine_Step` calls it before and after the synthesis loop.  It walks its
+window executing control nodes and counting off the phonemes the
+synthesiser has already taken, and whatever it finishes goes back to the
+pool, because there is nowhere below it to pass work to.
+
+The three track writers came with it.  Each of the 22 parameter tracks is
+a 256-byte ring, which is why every write is masked with 0xff.
+`Track_Fill` writes a constant; the two blends walk a shape curve, easing
+the track from where it is towards a target, forwards from a position or
+backwards from one.  A shape is a run of weights terminated by a zero, so
+the curve decides its own length and the count is only a cap.  All three
+are English's, and so is `Synth_MulQ15`, the `(a * b) / 0x7fff` both blends
+run every sample through.
+
+`Stage4_Run` differs from English in one line and it took a purpose-built
+test to hold it.  English's loop is
+
+    while (st->ctl != NULL && st->last != st->ctl)
+
+and this engine's is just the first half: it **processes the last node of
+the window** and leaves on the null `Engine_StageNext` returns afterwards.
+Substituting English's condition passes all 205 corpus configurations.
+
+So the window was built by hand instead -- a few nodes appended with the
+original allocator, `last` pointed at a chosen one, and the phoneme count
+set -- and the difference is immediate and legible:
+
+    Stage4_Run[4 nodes, last=3, type=4, trk34=9]: returned 2/2 trk34 5/6
+
+One phoneme not consumed, in every case whose window reaches its last node.
+The return value is the same either way, which is presumably why the audio
+is: the count catches up somewhere downstream.  That makes it invisible to
+a differential test and obvious to a direct one, which is the fourth time
+that has happened and the first where the state that diverges is a plain
+integer rather than a pointer or a flag.
+## Stages 2 and 3, and a difference you can hear
+
+Three functions, one in stage 2 and two in stage 3, which puts OpenTV code
+in all five stages for the first time.
+
+`Stage2_Scan` is how stage 2 asks about context: walk a number of words
+forwards or boundaries backwards and say whether the first mask matched
+before the second stopped the search.  The masks are signed and the sign is
+not part of the value -- a negative mask is the same test inverted -- and
+modes 1 and 2 swap the phoneme-attribute test for a look at the node's own
+stress bits, which is how one function answers both "is there a vowel
+before the next boundary" and "is the next word stressed".  It is English's
+exactly, and it is the first thing written that rests on four functions
+already decompiled rather than on the original.
+
+`Stage3_Reset` is English's minus its first two assignments, to fields the
+1995 engine does not have, and every field it touches lands on an English
+`s3_*` at exactly +0x19e4.
+
+`Stage3_Insert` puts a pause into the stream as two silence nodes, and it
+carries **the first difference in a while that is plainly audible**.  Where
+English gives the first node a length of 4, this engine gives it 15.
+Substituting English's 4 drops the corpus to **8 of 205** -- pauses are
+duration, and duration is the one thing a differential test cannot miss.
+Everything else about the function matches, down to the order of the two
+stores at the end.
+
+Worth putting beside that: relaxing `Stage2_Scan`'s mode-1 test from
+`mask1 > 0` to `>= 0` passes all 205 configurations and fails the unit
+sweep only where `mask1` is zero, which is the single value that
+distinguishes them.  Two controls in the same round, one that the corpus
+catches outright and one it cannot see at all, is a fair picture of why
+both tests are kept.
+
+The sweep is 2304 cases -- both directions, six counts, eight masks each
+way, three modes -- over a window of eight nodes with assorted types and
+stress bits.  A five-parameter function is where a corpus stops being
+enough.
 ## What is next
 
 There are now three tests with different reach: `difftest --lang es` asks

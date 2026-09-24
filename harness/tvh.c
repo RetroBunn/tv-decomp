@@ -190,7 +190,7 @@ int main(int argc, char **argv)
     const char *cov_blocks = NULL, *cov_out = NULL, *hook_spec = "all", *unit = NULL;
     const char *lex_add[16];
     int n_lex = 0;
-    long opt_pitch = -1, opt_speed = -1, opt_volume = -1;
+    long opt_pitch = -1, opt_speed = -1, opt_volume = -1, opt_textin_mode = 0;
     int opt_preformat = 1, opt_textin = 1;
     const char *dll, *textarg, *out, *eng = NULL;
     uint8_t *E, *S;
@@ -208,6 +208,8 @@ int main(int argc, char **argv)
         if (!strcmp(argv[i], "-v") && i + 1 < argc) voice = atoi(argv[++i]);
         else if (!strcmp(argv[i], "-8")) phone = 1;
         else if (!strcmp(argv[i], "-i")) split = 1;
+        else if (!strcmp(argv[i], "-M") && i + 1 < argc)
+            opt_textin_mode = strtol(argv[++i], NULL, 0);
         else if (!strcmp(argv[i], "-t")) trace = 1;
         else if (!strcmp(argv[i], "-e") && i + 1 < argc) eng = argv[++i];
         else if (!strcmp(argv[i], "-z") && i + 1 < argc) nuls = atoi(argv[++i]);
@@ -226,7 +228,7 @@ int main(int argc, char **argv)
     }
     if (argc - i != 3 || voice < 0 || voice > 9) {
         fprintf(stderr, "usage: tvh [-v voice0-9] [-8] [-t] [-i] [-z nuls]"
-                        " [-e en|es] [-L word=phonemes]"
+                        " [-e en|es] [-M textin-mode] [-L word=phonemes]"
                         " <dll> <text|@file> <out.wav>\n");
         return 2;
     }
@@ -314,6 +316,10 @@ int main(int argc, char **argv)
     U32(S, 0xb94) = U32(S, 0xb98) = *(uint32_t *)pe_va(&g_img, A->speed_table + 4 * voice);
     U32(S, 0xbd4) = (uint32_t)opt_preformat; /* registry "PreFormat" (default on) */
     U32(S, 0xbd8) = (uint32_t)opt_textin;    /* registry "TextIn" (default on) */
+    /* The tokenizer mode TextIn_Construct is handed.  The 1997 engine passes
+     * a literal 0 and ignores this; the 1995 engines read it, and mode 4 is
+     * a branch of TextIn_Tokenize that no input can otherwise reach. */
+    U32(S, 0xbb0) = (uint32_t)opt_textin_mode;
     /* as if the application had called ITTSAttributes::Pitch/Speed/VolumeSet */
     if (opt_pitch >= 0) U16(S, 0xb90) = (uint16_t)opt_pitch;
     if (opt_speed >= 0) U32(S, 0xb94) = (uint32_t)opt_speed;

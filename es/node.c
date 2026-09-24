@@ -63,3 +63,51 @@ Node *TV_THISCALL Engine_AppendNode(Engine *self, int32_t type, int32_t value)
         s0->first = n;
     return n;
 }
+
+/* Put a node back on the free list and report the neighbour the caller
+ * should carry on from -- next when forward is 1, previous otherwise, and
+ * NULL when that neighbour was outside the stage's window. */
+/* @0x10008dc0 */
+Node *TV_THISCALL Engine_NodeFree(Engine *self, Node *n, int32_t forward)
+{
+    Node *ret;
+    StageCtx *st;
+
+    if (n == NULL) {
+        Engine_Error(self, 0x20);
+        return NULL;
+    }
+    ret = forward == 1 ? n->next : n->prev;
+    st = self->stage;
+    if (st != NULL) {
+        if (n == st->last) {
+            if (st->first == st->last) {
+                st->last = NULL;
+                self->stage->first = NULL;
+            } else {
+                st->last = st->last->prev;
+            }
+            if (forward == 1)
+                ret = NULL;
+        }
+        st = self->stage;
+        if (n == st->first) {
+            st->first = st->first->next;
+            if (forward == 0)
+                ret = NULL;
+        }
+        /* Two fix-ups English does not make: the cursor and the control
+         * pointer are also moved off the node being freed. */
+        st = self->stage;
+        if (n == st->cur)
+            st->cur = st->cur->next;
+        st = self->stage;
+        if (n == st->ctl)
+            st->ctl = st->ctl->next;
+    }
+    Engine_Unlink(self, n);
+    Engine_InsertBefore(self, n, self->free_tail);
+    self->free_nodes++;
+    n->flags = (n->flags & ~1u) | NODE_FREE;
+    return ret;
+}

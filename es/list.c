@@ -38,3 +38,16 @@ Node *TV_THISCALL Engine_InsertBefore(Engine *self, Node *n, Node *before)
     before->prev = n;
     return n;
 }
+
+/* Not a function of the original: the escape parser's digit handler tests
+ * param[n] for -1 before it checks whether n is inside the array, so with
+ * more than sixteen parameters it writes into whatever engine field follows.
+ * Doing that by offset keeps the behaviour without indexing out of bounds,
+ * which is how the English decompilation handles the same line. */
+void Engine_ZeroDwordIfMinus1(Engine *self, uint32_t off32)
+{
+    int32_t *p = (int32_t *)((uint8_t *)self + off32);
+
+    if (off32 + 4 <= sizeof(Engine) && *p == -1)
+        *p = 0;
+}

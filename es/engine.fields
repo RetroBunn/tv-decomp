@@ -36,15 +36,23 @@
 # 0x19ec, another 8.  Each deviation is a place English grew.
 # ---------------------------------------------------------------------------
 
+# One entry of the stage 0 rule interpreter's call stack.  English's, and the
+# 0xa0 bytes between s0_stack and s0_sp divide by it exactly twenty times.
+struct S0Frame 0x8
+0x00 const uint8_t *ip
+0x04 uint8_t   nactions
+0x05 uint8_t   skip
+end
+
 # Identical to the English StageCtx, field for field -- see the note at
 # stage_ctx below for what establishes that.  The node pointers are typed
 # void* here because the Spanish Node struct has not been worked out yet.
 struct StageCtx 0x44
-0x00 void    *first            # start of this stage's window
-0x04 void    *cur              # nodes before cur are done by this stage
-0x08 void    *ctl              # next control node to execute
-0x0c void    *scan
-0x10 void    *last             # end of this stage's window
+0x00 Node    *first            # start of this stage's window
+0x04 Node    *cur              # nodes before cur are done by this stage
+0x08 Node    *ctl              # next control node to execute
+0x0c Node    *scan
+0x10 Node    *last             # end of this stage's window
 0x14 void    *d14
 0x18 void    *d18
 0x1c int32_t  p_1c             # <- mode_I
@@ -75,6 +83,47 @@ struct Node 0x1c
 0x14 uint32_t notify           # 'i' index marks: the TextData notify context
 end
 
+# The SAPI central object.  Not part of the engine -- the host owns it -- but
+# Engine_RunControl writes half of it, so the offsets matter.  It is English's
+# layout as far as volume and then diverges: ctx is at 0xba8 where English has
+# the format field, and the window handle is at 0xbdc where English has 0xbe0.
+# The size is English's and is not established here; the harness allocates
+# 0x1000 either way.
+struct SapiCentral 0xc10
+0x0064 int32_t  voice
+0x0068 uint8_t  mode_info[0xaf0]  # 2800 bytes copied in per voice by ESC[V
+0x0b60 void    *audio_queue
+0x0b90 int16_t  pitch
+0x0b94 int32_t  speed
+0x0b9c int32_t  volume
+0x0ba8 int32_t  ctx               # ESC[c, the application's context value
+0x0bb0 int32_t  textin_mode       # handed to TextIn_Construct; English passes 0
+0x0bdc void    *hwnd              # PostMessageA target for every notification
+end
+
+# A tokenizer token.  TextIn_InsertAfter allocates 0x3c bytes and then zeroes
+# every field in turn, which lays the whole thing out in one function -- and
+# it comes out as English's Token field for field, the one structure so far
+# that did not move at all between 1995 and 1997.  w34 is the only field
+# initialised to something other than zero.
+struct Token 0x3c
+0x00 Token   *prev
+0x04 Token   *next
+0x08 int16_t  w08
+0x0a int16_t  w0a
+0x0c uint32_t bits[3]          # the 96-bit flag set Bits_Test indexes
+0x18 void    *d18
+0x1c uint32_t d1c
+0x20 char    *text             # freed by TextIn_RemoveToken
+0x24 int16_t  len
+0x28 char    *text2            # replacement text emitted instead of text
+0x2c char    *types            # per-character split marks
+0x30 uint8_t  trail            # the character that ended the token
+0x34 int16_t  w34              # set to 1, not 0, when a token is made
+0x36 int16_t  is_number
+0x38 int32_t  num
+end
+
 # The TextIn tokenizer object, allocated by Engine_CreateTextIn.  Its size is
 # the 0xac that function passes to operator new; the three fields named here
 # are the ones Engine_Flush reads and writes across the boundary.  The rest
@@ -83,6 +132,16 @@ struct TextIn 0xac
 0x00 Engine  *engine          # Engine_CreateTextIn stores self here
 0x08 int32_t  input_done      # <- Engine.st_input_empty, every flush
 0x0c int32_t  item_done       # <- Engine.item_done, every flush
+0x10 int32_t  mode             # TextIn_Tokenize compares it against 4
+0x18 int32_t  d18
+0x1c Token    head_node       # the list always starts here, which is why
+                              # InsertAfter and RemoveToken treat a null
+                              # neighbour as a caller error rather than
+                              # updating head the way English does
+0x58 Token   *head            # TextIn_Construct: = &head_node
+0x5c Token   *tail             # TextIn_InsertAfter retargets it
+0x60 Token   *cur              # tokens up to here are expanded
+0x64 int32_t  count            # tokens held; Tokenize stops at 210
 end
 
 struct Engine 0x8838
@@ -113,6 +172,10 @@ struct Engine 0x8838
 # flag defaults.  Those differ between the generations -- English writes
 # 0x17c0 and 0x41 where this writes 0x1780 and 0x40, one bit more in each --
 # so English added an escape flag.
+# Engine_Construct sets this to 1 -- the field English keeps at 0x2104 in
+# the host block and calls fmt_2104, which the 1995 host block does not have.
+0x01dc int32_t  e_1ae4          # ESC[f stows the rate index here
+0x01d8 int32_t  fmt
 0x01e0 int32_t  in_flags_N       # 0x1780 here, 0x17c0 in English
 0x01e4 int32_t  in_flags_A       # 0x40 here, 0x41 in English
 # sub_10007790 is Preformat_Reset: exactly these two, 1 and 0, as English.
@@ -120,23 +183,28 @@ struct Engine 0x8838
 0x01ec uint8_t  pre_busy
 # The CSI parser's own state, from sub_10007810: a parameter stack of 16
 # with a depth byte, a "saw a digit" flag, and two scratch values.
-0x01ed uint8_t  esc_depth
-0x01ee uint8_t  esc_seen_digit
+0x01ed uint8_t  esc_nparam        # index into esc_param; 16 means past the end
+0x01ee uint8_t  esc_overflow      # a parameter went over 255
 0x01f0 int32_t  esc_param[16]
 0x0230 int32_t  mode_I_on        # set when mode_I is 1
 
 # --- stage 0 ---------------------------------------------------------------
-# sub_10013310 is Stage0_Reset.  It does what the English one does and more:
-# English sets s0_ip, s0_need_test and s0_pending_ptr; this also sets up a
-# second buffer descriptor at 0x310 and a flag at 0x314.
+# sub_10013310 is Stage0_Reset, and it makes the same seven assignments the
+# English one does.  Two of them are a buffer and a pointer into it, which is
+# what fixes the four fields here: 0x2e4 - 0x244 is 0xa0, twenty S0Frames,
+# and 0x310 - 0x2f4 is 0x1c, one Node.  The English pair are 0xa0 and 0x20 --
+# twenty S0Frames and one Node of its own, wider size and all.
 0x0234 const uint8_t *s0_ip      # -> the rule bytecode at 0x1005fb88
 0x0238 uint8_t  s0_need_test     # set to 1
-0x0239 uint8_t  s0_239
-0x0244 uint8_t  s0_pending[0xa0] # s0_pending_ptr is set to point here
-0x02e4 void    *s0_pending_ptr
-0x02f4 uint8_t  s0_2f4[0x1c]     # a second buffer, pointed at by s0_310
-0x0310 void    *s0_310
-0x0314 uint8_t  s0_314
+0x0239 uint8_t  s0_1b3d
+0x023c const uint8_t *s0_word_data # replacement text after a matched word
+0x0244 S0Frame  s0_stack[20]    # 0xa0 bytes, and s0_sp points into it
+0x02e4 S0Frame *s0_sp
+0x02f4 Node     s0_pending       # accent or stress carried to the next node;
+                                 # 0x1c bytes, which is one Spanish Node --
+                                 # English's is 0x20, which is one of its own
+0x0310 Node    *s0_pending_ptr
+0x0314 uint8_t  s0_1c1c
 
 # --- stage 2, from sub_1001a8b0 --------------------------------------------
 0x0378 int32_t  s2_378
@@ -151,7 +219,7 @@ struct Engine 0x8838
 # --- stage 3, from sub_1001b810 --------------------------------------------
 # Every one of these lands on an English s3_* field at exactly +0x19e4,
 # which is what confirmed the function.
-0x05b4 uint8_t  s3_1f98[22]      # seeded from a 22-byte table at +0x7c
+0x05b4 uint8_t  s3_param_raw[22] # seeded from cfg_bytes; ESC[l writes it
 0x05ca uint8_t  s3_1fae          # set to 1
 0x05cc int32_t  s3_1fb0
 0x05d0 int32_t  s3_1fb4          # set to 1
@@ -178,7 +246,7 @@ struct Engine 0x8838
 # Zeroed 32 bytes by sub_10017850; English calls its equivalent s3_1fbd[32].
 0x05d9 uint8_t  s3_1fbd[32]
 0x05f9 uint8_t  s3_1fdd
-0x05fc int32_t  s3_1fe0          # set to 2
+0x05fc int32_t  s3_1fe0          # set to 2; Stage3_Insert adds it to s3_1fe4
 0x0600 int32_t  s3_1fe4          # set to 3
 0x0604 int32_t  s3_1fe8          # set to 4
 
@@ -203,6 +271,7 @@ struct Engine 0x8838
 0x0688 int32_t  e_206c           # set to 85, the default pitch
 0x068c int32_t  e_2070
 0x0690 uint8_t  e_2074
+0x0691 uint8_t  mute            # set when the host asks for volume < 0x50
 
 # --- the output stage ------------------------------------------------------
 # sub_1000ad50 is Output_Reset: it clears this whole run of int16 state, sets

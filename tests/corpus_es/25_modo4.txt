@@ -1,0 +1,3 @@
+Hola. Esta es una prueba del modo cuatro del tokenizador.
+Con numeros 123 y 45,67 y abreviaturas como Sr. y Dr.
+Y acentos: cancion, manana, pinguino, senor.

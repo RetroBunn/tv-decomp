@@ -1,0 +1,5 @@
+Texto normal con acentos: canción, mañana, pingüino.
+[1IAhora en modo indice: canción, mañana, pingüino.
+[0IY otra vez normal: canción, mañana, pingüino.
+[IPor defecto: éxito, úrsula, ñandú.
+[2I Fuera de rango. [1;2I Dos parametros.

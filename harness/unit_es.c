@@ -481,6 +481,577 @@ static int unit_list(void)
     return bad != 0;
 }
 
+/* Preformat_Run, driven by putting a byte string straight into pre_ring and
+ * draining it.  The parameter parser is where the boundaries are: sixteen
+ * slots, an overflow flag at 255, and a digit handler that tests a slot for
+ * -1 before it checks whether the slot exists, so past sixteen parameters it
+ * writes into the engine field that follows the array. */
+static const char *const ESC_CASES[] = {
+    "hola",
+    "\033[0i",
+    "\033[1A", "\033[1;2;3A", "\033[8A", "\033[0A",
+    "\033[1D", "\033[1;2;3;4;5;6;7D",
+    "\033[1N", "\033[16N", "\033[17N", "\033[1;16F",
+    "\033[C", "\033[H", "\033[S", "\033[w", "\033[x",
+    "\033[0I", "\033[1I", "\033[2I", "\033[I",
+    "\033[0P", "\033[1P", "\033[2P",
+    "\033[0V", "\033[9V", "\033[10V", "\033[V",
+    "\033[0a", "\033[16a", "\033[17a",
+    "\033[0c", "\033[2c", "\033[3c",
+    "\033[0f", "\033[9f", "\033[10f",
+    "\033[1g", "\033[255g", "\033[256g", "\033[g",
+    "\033[0i", "\033[1;2;3;4i", "\033[1;2;3;4;5i",
+    "\033[0;1l", "\033[21;99l", "\033[22;1l", "\033[l",
+    "\033[25p", "\033[200p", "\033[201p", "\033[24p", "\033[p",
+    "\033[50r", "\033[49r", "\033[150r", "\033[0r", "\033[r",
+    "\033[0v", "\033[25v", "\033[26v", "\033[v",
+    "\033[0;1;2t", "\033[9;255;243t", "\033[10;0;0t", "\033[t",
+    "\033[1s", "\033[255s",
+    /* parameter parser boundaries */
+    "\033[999r",
+    "\033[1;2;3;4;5;6;7;8;9;10;11;12;13;14;15;16r",
+    "\033[1;2;3;4;5;6;7;8;9;10;11;12;13;14;15;16;17r",
+    "\033[;;;;;;;;;;;;;;;;;;;;;;;;5r",
+    "\033[;;;;5r",
+    /* malformed */
+    "\033X", "\033\033[5V", "\033[12;34", "\033[5Z", "\033[",
+};
+
+static int unit_escape(void)
+{
+    typedef void(TV_THISCALL * fn)(Engine *);
+    uint8_t *shared = (uint8_t *)VirtualAlloc(NULL, 0x4000, MEM_RESERVE | MEM_COMMIT,
+                                              PAGE_READWRITE);
+    int k, i, m, bad = 0, n = 0;
+
+    for (m = 0; m < 2; m++)   /* once with index mode off, once with it on */
+        for (k = 0; k < (int)(sizeof ESC_CASES / sizeof ESC_CASES[0]); k++) {
+            const char *t = ESC_CASES[k];
+            int len = (int)strlen(t);
+            int which, guard;
+            if (len > 0xff)
+                continue;
+            for (which = 0; which < 2; which++) {
+                Engine *g = which ? g_b : g_a;
+                fresh(g, shared);
+                for (i = 0; i < len; i++)
+                    g->pre_ring[i] = (uint8_t)t[i];
+                g->pre_rd = 0;
+                g->pre_wr = len;
+                g->esc_state = 1;
+                g->mode_I_on = m;
+            }
+            for (guard = 0; guard < 0x200 && g_a->pre_rd != g_a->pre_wr; guard++) {
+                ORIG(fn, 0x10007810)(g_a);
+                Preformat_Run(g_b);
+            }
+            normalize(g_a);
+            normalize(g_b);
+            n++;
+            if (memcmp(g_a, g_b, sizeof *g_a) != 0) {
+                if (bad++ < 8)
+                    fprintf(stderr, "  Preformat_Run[modeI=%d %s]: state differs "
+                                    "(mid_wr=%#x/%#x esc_state=%d/%d)\n",
+                            m, t, (unsigned)g_a->mid_wr, (unsigned)g_b->mid_wr,
+                            (int)g_a->esc_state, (int)g_b->esc_state);
+            }
+        }
+    fprintf(stderr, "%-18s %d/%d identical\n", "Preformat_Run", n - bad, n);
+    return bad != 0;
+}
+
+/* The leaf utilities take no engine, so they can be swept outright.  The bit
+ * sets are indexed from the far end -- bit 0 is in bits[2] -- so a bit past
+ * 95 indexes before the array; the buffer is padded on both sides and the
+ * pointer handed in points into the middle, which keeps a faithful test from
+ * being an out-of-bounds one. */
+static int unit_util(void)
+{
+    typedef int32_t(TV_CDECL * test_t)(int32_t, const uint32_t *);
+    typedef uint32_t(TV_CDECL * set_t)(int32_t, uint32_t *);
+    typedef int32_t(TV_CDECL * next_t)(int32_t, const uint32_t *);
+    typedef uint8_t(TV_STDCALL * mask_t)(Node *, int32_t, int32_t);
+    typedef int32_t(TV_STDCALL * mul_t)(int32_t, int32_t, int32_t *);
+    static const int32_t BITS[] = {-33, -32, -1, 0, 1, 31, 32, 33, 63, 64, 65, 94, 95, 96, 127};
+    static const uint32_t PAT[] = {0u, 0xffffffffu, 1u, 0x80000000u, 0xa5a5a5a5u};
+    static const int32_t MASKS[] = {0, 1, 2, 0x7f, 0xff, 0x100, 0x1ff, 0x8001, -1, -0xff, -0x8001};
+    static const int32_t MULS[] = {0, 1, -1, 2, 4095, 4096, -4096, 0x10000, -0x10000, 0x7fff};
+    uint32_t a[16], b[16];
+    int i, j, k, bad = 0, n = 0;
+
+    for (i = 0; i < (int)(sizeof BITS / sizeof BITS[0]); i++)
+        for (j = 0; j < (int)(sizeof PAT / sizeof PAT[0]); j++) {
+            int32_t ra, rb;
+            uint32_t sa, sb;
+            for (k = 0; k < 16; k++)
+                a[k] = b[k] = PAT[j] ^ (uint32_t)k;
+            ra = ORIG(test_t, 0x1001da50)(BITS[i], a + 8);
+            rb = Bits_Test(BITS[i], b + 8);
+            n++;
+            if (ra != rb || memcmp(a, b, sizeof a)) { bad++;
+                fprintf(stderr, "  Bits_Test(%d, %#x): %d/%d\n", BITS[i], PAT[j], ra, rb); }
+
+            ra = ORIG(next_t, 0x1001daf0)(BITS[i], a + 8);
+            rb = Bits_Next(BITS[i], b + 8);
+            n++;
+            if (ra != rb) { bad++;
+                fprintf(stderr, "  Bits_Next(%d, %#x): %d/%d\n", BITS[i], PAT[j], ra, rb); }
+
+            sa = ORIG(set_t, 0x1001da90)(BITS[i], a + 8);
+            sb = Bits_Set(BITS[i], b + 8);
+            n++;
+            if (sa != sb || memcmp(a, b, sizeof a)) { bad++;
+                fprintf(stderr, "  Bits_Set(%d, %#x): %#x/%#x\n", BITS[i], PAT[j], sa, sb); }
+
+            sa = ORIG(set_t, 0x1001dac0)(BITS[i], a + 8);
+            sb = Bits_Clear(BITS[i], b + 8);
+            n++;
+            if (sa != sb || memcmp(a, b, sizeof a)) { bad++;
+                fprintf(stderr, "  Bits_Clear(%d, %#x): %#x/%#x\n", BITS[i], PAT[j], sa, sb); }
+        }
+
+    for (i = 0; i < 256; i++)
+        for (j = 0; j < (int)(sizeof MASKS / sizeof MASKS[0]); j++)
+            for (k = -1; k <= 1; k++) {
+                Node node;
+                uint8_t ra, rb;
+                memset(&node, 0, sizeof node);
+                node.value = (uint8_t)i;
+                ra = ORIG(mask_t, 0x1001a960)(&node, MASKS[j], k);
+                rb = Phone_TestMask(&node, MASKS[j], k);
+                n++;
+                if (ra != rb) { if (bad++ < 8)
+                    fprintf(stderr, "  Phone_TestMask(value=%#x, mask=%#x, neg=%d): %d/%d\n",
+                            i, MASKS[j], k, ra, rb); }
+            }
+    /* and the null node, which is the first thing it checks */
+    { uint8_t ra = ORIG(mask_t, 0x1001a960)(NULL, 1, 0), rb = Phone_TestMask(NULL, 1, 0);
+      n++; if (ra != rb) { bad++; fprintf(stderr, "  Phone_TestMask(NULL): %d/%d\n", ra, rb); } }
+
+    for (i = 0; i < (int)(sizeof MULS / sizeof MULS[0]); i++)
+        for (j = 0; j < (int)(sizeof MULS / sizeof MULS[0]); j++) {
+            int32_t ha = 0x5a5a5a5a, hb = 0x5a5a5a5a, ra, rb;
+            ra = ORIG(mul_t, 0x1000aee0)(MULS[i], MULS[j], &ha);
+            rb = Synth_MulShr12(MULS[i], MULS[j], &hb);
+            n++;
+            if (ra != rb || ha != hb) { bad++;
+                fprintf(stderr, "  Synth_MulShr12(%d, %d): %d/%d hi %d/%d\n",
+                        MULS[i], MULS[j], ra, rb, ha, hb); }
+        }
+
+    /* Stage0_CharClass: every class number the interpreter could hand it,
+     * including out-of-range ones, against every byte value. */
+    {
+        typedef uint8_t(TV_CDECL * cls_t)(int32_t, uint8_t);
+        int cls;
+        for (cls = -8; cls < 40; cls++)
+            for (j = 0; j < 256; j++) {
+                uint8_t ra = ORIG(cls_t, 0x100141d0)(cls, (uint8_t)j);
+                uint8_t rb = Stage0_CharClass(cls, (uint8_t)j);
+                n++;
+                if (ra != rb) {
+                    if (bad++ < 8)
+                        fprintf(stderr, "  Stage0_CharClass(%d, %#04x): %d/%d\n",
+                                cls, (unsigned)j, ra, rb);
+                }
+            }
+    }
+
+    fprintf(stderr, "%-18s %d/%d identical\n", "leaf utilities", n - bad, n);
+    return bad != 0;
+}
+
+/* The engine's own lifecycle.  Engine_Step runs thousands of times per
+ * utterance so the corpus covers it heavily, but the reset chain has state
+ * no input reaches: Engine_ResetNodes hands eight of the nine preformat
+ * fields to each stage context and leaves p_38 alone, which is invisible in
+ * the audio because nothing in the corpus has an ESC[A or ESC[D in force
+ * across a reset.  Setting the fields to distinctive values makes it
+ * visible immediately. */
+static int unit_lifecycle(void)
+{
+    typedef Engine *(TV_THISCALL * ctor2_t)(Engine *);
+    typedef int32_t(TV_THISCALL * i_t)(Engine *);
+    typedef void(TV_THISCALL * v_t)(Engine *);
+    uint8_t *shared = (uint8_t *)VirtualAlloc(NULL, 0x4000, MEM_RESERVE | MEM_COMMIT,
+                                              PAGE_READWRITE);
+    int k, bad = 0, n = 0;
+    int32_t ra, rb;
+
+    /* Engine_Construct over a poisoned object */
+    memset(g_a, 0x5a, sizeof *g_a);
+    memset(g_b, 0x5a, sizeof *g_b);
+    ORIG(ctor2_t, 0x1000ddc0)(g_a);
+    Engine_Construct(g_b);
+    normalize(g_a); normalize(g_b);
+    n++;
+    if (memcmp(g_a, g_b, sizeof *g_a)) { bad++;
+        fprintf(stderr, "  Engine_Construct: state differs\n"); }
+
+    /* Engine_Init, and Engine_Reset with and without a stop mark pending */
+    for (k = 0; k < 3; k++) {
+        int which;
+        for (which = 0; which < 2; which++) {
+            Engine *g = which ? g_b : g_a;
+            memset(g, 0x5a, sizeof *g);
+            ORIG(ctor2_t, 0x1000ddc0)(g);
+            g->out_buf = shared;
+            g->out_count = 0;
+            if (k != 0) {
+                ORIG(i_t, 0x100086a0)(g);       /* a real engine to reset */
+                g->stop_mark = (uint8_t)(k == 2);
+                g->reset_value = 0x1234;
+            }
+        }
+        if (k == 0) {
+            ra = ORIG(i_t, 0x100086a0)(g_a);
+            rb = Engine_Init(g_b);
+        } else {
+            ra = ORIG(i_t, 0x10008700)(g_a);
+            rb = Engine_Reset(g_b);
+        }
+        normalize(g_a); normalize(g_b);
+        n++;
+        if (ra != rb || memcmp(g_a, g_b, sizeof *g_a)) { bad++;
+            fprintf(stderr, "  %s[%d]: returned %d/%d%s\n",
+                    k == 0 ? "Engine_Init" : "Engine_Reset", k, ra, rb,
+                    ra == rb ? " (state differs)" : ""); }
+    }
+
+    /* Engine_ResetNodes and Engine_ResetRings, with every field they copy
+     * from set to something distinctive first */
+    for (k = 0; k < 2; k++) {
+        int which;
+        for (which = 0; which < 2; which++) {
+            Engine *g = which ? g_b : g_a;
+            int j;
+            fresh(g, shared);
+            g->mode_I = 0x11; g->mode_P = 0x22; g->rate_index = 0x33;
+            g->pitch = 0x44; g->volume_atten = 0x55; g->rate_class = 0x66;
+            g->flags_N = 0x7777; g->flags_A = 0x8888; g->voice = 0x99;
+            for (j = 0; j < 5; j++) {
+                g->stage_ctx[j].p_34 = 0x0bad;
+                g->stage_ctx[j].p_38 = 0x0bad;   /* must survive ResetNodes */
+                g->stage_ctx[j].type_mask = 0x5eed;
+            }
+            g->in_rd = 0x111; g->in_wr = 0x222;
+            g->pre_rd = 0x33; g->pre_wr = 0x44;
+            g->mid_rd = 0x555; g->mid_wr = 0x666;
+            g->e_9180 = 0x777;
+            g->in_flags_N = 0x0bad; g->in_flags_A = 0x0bad;
+        }
+        if (k == 0) {
+            ORIG(v_t, 0x10008ef0)(g_a);
+            Engine_ResetNodes(g_b);
+        } else {
+            ORIG(v_t, 0x1000e240)(g_a);
+            Engine_ResetRings(g_b);
+        }
+        normalize(g_a); normalize(g_b);
+        n++;
+        if (memcmp(g_a, g_b, sizeof *g_a)) { bad++;
+            fprintf(stderr, "  %s: state differs (p_38 %#x/%#x free_nodes %d/%d)\n",
+                    k == 0 ? "Engine_ResetNodes" : "Engine_ResetRings",
+                    (unsigned)g_a->stage_ctx[0].p_38, (unsigned)g_b->stage_ctx[0].p_38,
+                    (int)g_a->free_nodes, (int)g_b->free_nodes); }
+    }
+
+    fprintf(stderr, "%-18s %d/%d identical\n", "engine lifecycle", n - bad, n);
+    return bad != 0;
+}
+
+/* Engine_RunControl, over every command letter at every stage.
+ *
+ * Two things here the corpus cannot reach.  The attenuation table is a step
+ * function of 256 values and the corpus uses three of them, so all 256 are
+ * swept against the engine itself -- which is better evidence than the
+ * English decompilation had for the same table, since that one was checked
+ * against the expression rather than against the code.  And most commands
+ * act in exactly one of the five stages, so running each letter at all five
+ * says the stage test is right and not just present.
+ *
+ * Each side gets its own SAPI object, compared separately: it holds no
+ * pointers into itself, so a plain memcmp does for it. */
+static int unit_control(void)
+{
+    typedef uint8_t(TV_THISCALL * run_t)(Engine *);
+    typedef Node *(TV_THISCALL * append_t)(Engine *, int32_t, int32_t);
+    static const char LETTERS[] = "ACINPVacfgilprstvxZ";
+    static const int32_t ARGS[] = {0, 1, 2, 9, 15, 16, 21, 22, 100, 255};
+    uint8_t *shared = (uint8_t *)VirtualAlloc(NULL, 0x4000, MEM_RESERVE | MEM_COMMIT,
+                                              PAGE_READWRITE);
+    uint8_t *sap[2];
+    int li, si, ai, which, bad = 0, n = 0;
+
+    for (which = 0; which < 2; which++)
+        sap[which] = (uint8_t *)VirtualAlloc(NULL, 0x1000, MEM_RESERVE | MEM_COMMIT,
+                                             PAGE_READWRITE);
+
+    for (li = 0; li < (int)(sizeof LETTERS) - 1; li++)
+        for (si = 0; si < 5; si++)
+            for (ai = 0; ai < (int)(sizeof ARGS / sizeof ARGS[0]); ai++) {
+                uint8_t ra, rb;
+                /* ESC[V is clamped to 0..9 by the escape parser, and the
+                 * handler indexes a 2800-byte-per-voice table with it --
+                 * feeding it 255 walks off the end of the image in both
+                 * engines, which crashes rather than tests. */
+                if (LETTERS[li] == 'V' && ARGS[ai] > 9)
+                    continue;
+                /* 'i' reaches the audio queue only when notify is set, and
+                 * the queue is the host's; leave notify zero and it stays
+                 * inside the engine. */
+                for (which = 0; which < 2; which++) {
+                    Engine *g = which ? g_b : g_a;
+                    Node *node;
+                    fresh(g, shared);
+                    memset(sap[which], 0, 0x1000);
+                    g->sapi = (SapiCentral *)sap[which];
+                    g->stage = &g->stage_ctx[si];
+                    node = ORIG(append_t, 0x10008b60)(g, 0, LETTERS[li]);
+                    node->arg = (uint32_t)ARGS[ai];
+                    node->b15 = (uint8_t)(ARGS[ai] ^ 0x5a);
+                    node->notify = 0;
+                    g->stage->ctl = node;
+                }
+                ra = ORIG(run_t, 0x1000ead0)(g_a);
+                rb = Engine_RunControl(g_b);
+                /* the two SAPI objects are at different addresses and
+                 * normalize only rewrites pointers into the engine */
+                g_a->sapi = g_b->sapi = NULL;
+                normalize(g_a);
+                normalize(g_b);
+                n++;
+                if (ra != rb || memcmp(g_a, g_b, sizeof *g_a) ||
+                    memcmp(sap[0], sap[1], 0x1000)) {
+                    if (bad++ < 10)
+                        fprintf(stderr, "  RunControl['%c' stage=%d arg=%d]: "
+                                        "returned %d/%d, vol %u/%u\n",
+                                LETTERS[li], si, (int)ARGS[ai], ra, rb,
+                                (unsigned)g_a->cur_volume, (unsigned)g_b->cur_volume);
+                }
+            }
+
+    /* every step of the attenuation table */
+    for (ai = 0; ai < 256; ai++) {
+        uint8_t ra, rb;
+        for (which = 0; which < 2; which++) {
+            Engine *g = which ? g_b : g_a;
+            Node *node;
+            fresh(g, shared);
+            memset(sap[which], 0, 0x1000);
+            g->sapi = (SapiCentral *)sap[which];
+            g->stage = &g->stage_ctx[3];
+            node = ORIG(append_t, 0x10008b60)(g, 0, 'a');
+            node->arg = (uint32_t)ai;
+            node->b15 = 0;
+            g->stage->ctl = node;
+        }
+        ra = ORIG(run_t, 0x1000ead0)(g_a);
+        rb = Engine_RunControl(g_b);
+        g_a->sapi = g_b->sapi = NULL;
+        normalize(g_a);
+        normalize(g_b);
+        n++;
+        if (ra != rb || g_a->cur_volume != g_b->cur_volume ||
+            memcmp(g_a, g_b, sizeof *g_a) || memcmp(sap[0], sap[1], 0x1000)) {
+            if (bad++ < 10)
+                fprintf(stderr, "  RunControl['a' atten=%d]: volume %u/%u mute %d/%d\n",
+                        ai, (unsigned)g_a->cur_volume, (unsigned)g_b->cur_volume,
+                        g_a->mute, g_b->mute);
+        }
+    }
+
+    fprintf(stderr, "%-18s %d/%d identical\n", "Engine_RunControl", n - bad, n);
+    return bad != 0;
+}
+
+/* Stage4_Run over a window built by hand.
+ *
+ * The loop condition is the point.  English stops before the last node of
+ * the window; this engine processes it and leaves on the null that
+ * Engine_StageNext returns afterwards.  Substituting English's condition
+ * passes the whole corpus, so the only way to hold that line is to set the
+ * window's last pointer directly and see what each version does with it.
+ *
+ * The parameter tracks come along for the ride: a 256-byte ring, a shape
+ * curve and a fill, which are pure enough to compare buffer against buffer. */
+static int unit_stage4(void)
+{
+    typedef int32_t(TV_THISCALL * run_t)(Engine *);
+    typedef Node *(TV_THISCALL * append_t)(Engine *, int32_t, int32_t);
+    typedef void(TV_STDCALL * fill_t)(uint8_t *, int32_t, int32_t, uint8_t);
+    typedef void(TV_THISCALL * blend_t)(Engine *, uint8_t *, int32_t, int32_t,
+                                        int32_t, uint8_t);
+    typedef int32_t(TV_STDCALL * q15_t)(int32_t, int32_t);
+    uint8_t *shared = (uint8_t *)VirtualAlloc(NULL, 0x4000, MEM_RESERVE | MEM_COMMIT,
+                                              PAGE_READWRITE);
+    /* how many nodes in the window, which one `last` points at, node type,
+     * and how many phonemes the synthesiser has left to take */
+    static const struct { int count, last_at, type, trk34; } CASES[] = {
+        {1, 0, 4, 9}, {2, 1, 4, 9}, {4, 3, 4, 9}, {4, 2, 4, 9}, {4, 0, 4, 9},
+        {4, 3, 4, 0}, {4, 3, 4, 2}, {3, 2, 0, 9}, {3, 1, 0, 9},
+        {5, 4, 1, 9}, {5, 2, 1, 9},
+    };
+    int k, i, bad = 0, n = 0;
+
+    for (k = 0; k < (int)(sizeof CASES / sizeof CASES[0]); k++) {
+        int32_t ra, rb;
+        int which;
+        for (which = 0; which < 2; which++) {
+            Engine *g = which ? g_b : g_a;
+            Node *first = NULL, *node = NULL, *lastn = NULL;
+            StageCtx *st;
+            fresh(g, shared);
+            for (i = 0; i < CASES[k].count; i++) {
+                node = ORIG(append_t, 0x10008b60)(g, CASES[k].type, 'a' + i);
+                if (i == 0)
+                    first = node;
+                if (i == CASES[k].last_at)
+                    lastn = node;
+            }
+            st = &g->stage_ctx[4];
+            st->first = first;
+            st->cur = first;
+            st->ctl = first;
+            st->scan = first;
+            st->last = lastn;
+            st->type_mask = 0x3f;
+            g->trk_34 = CASES[k].trk34;
+            g->stage = NULL;
+        }
+        ra = ORIG(run_t, 0x10004820)(g_a);
+        rb = Stage4_Run(g_b);
+        normalize(g_a);
+        normalize(g_b);
+        n++;
+        if (ra != rb || memcmp(g_a, g_b, sizeof *g_a)) {
+            bad++;
+            fprintf(stderr, "  Stage4_Run[%d nodes, last=%d, type=%d, trk34=%d]: "
+                            "returned %d/%d trk34 %d/%d\n",
+                    CASES[k].count, CASES[k].last_at, CASES[k].type, CASES[k].trk34,
+                    ra, rb, (int)g_a->trk_34, (int)g_b->trk_34);
+        }
+    }
+
+    /* the track writers, buffer against buffer */
+    {
+        uint8_t ba[256], bb[256];
+        int pos, cnt, shape;
+        for (i = 0; i < 256; i++)
+            ba[i] = bb[i] = (uint8_t)(i * 7 + 3);
+        for (pos = -3; pos < 300; pos += 37)
+            for (cnt = 0; cnt < 40; cnt += 7) {
+                ORIG(fill_t, 0x10017d90)(ba, pos, cnt, 0xa5);
+                Track_Fill(bb, pos, cnt, 0xa5);
+                n++;
+                if (memcmp(ba, bb, 256)) { bad++;
+                    fprintf(stderr, "  Track_Fill(pos=%d, n=%d)\n", pos, cnt); }
+                for (shape = 0; shape < 8; shape++) {
+                    ORIG(blend_t, 0x1000b060)(g_a, ba, pos, shape, cnt, 0x40);
+                    Track_BlendFwd(g_b, bb, pos, shape, cnt, 0x40);
+                    n++;
+                    if (memcmp(ba, bb, 256)) { bad++;
+                        fprintf(stderr, "  Track_BlendFwd(pos=%d, shape=%d, n=%d)\n",
+                                pos, shape, cnt); }
+                    ORIG(blend_t, 0x1000afe0)(g_a, ba, pos, shape, cnt, 0xc0);
+                    Track_BlendBack(g_b, bb, pos, shape, cnt, 0xc0);
+                    n++;
+                    if (memcmp(ba, bb, 256)) { bad++;
+                        fprintf(stderr, "  Track_BlendBack(pos=%d, shape=%d, n=%d)\n",
+                                pos, shape, cnt); }
+                }
+            }
+    }
+
+    /* and the Q15 multiply both blends run through */
+    {
+        static const int32_t V[] = {-0x8000, -0x7fff, -256, -1, 0, 1, 255, 0x7ffe,
+                                    0x7fff, 0x8000, 0x10000};
+        int x, y;
+        for (x = 0; x < (int)(sizeof V / sizeof V[0]); x++)
+            for (y = 0; y < (int)(sizeof V / sizeof V[0]); y++) {
+                int32_t ra = ORIG(q15_t, 0x1000af00)(V[x], V[y]);
+                int32_t rb = Synth_MulQ15(V[x], V[y]);
+                n++;
+                if (ra != rb) { bad++;
+                    fprintf(stderr, "  Synth_MulQ15(%d, %d): %d/%d\n",
+                            V[x], V[y], ra, rb); }
+            }
+    }
+
+    fprintf(stderr, "%-18s %d/%d identical\n", "stage 4 and tracks", n - bad, n);
+    return bad != 0;
+}
+
+/* Stage2_Scan takes five parameters and the corpus can only graze them.
+ * Build a window of nodes with assorted types and stress bits, point stage 2
+ * at it, and sweep: both directions, several counts, positive and negative
+ * masks, and all three modes. */
+static int unit_scan(void)
+{
+    typedef uint8_t(TV_THISCALL * scan_t)(Engine *, int32_t, int32_t, int32_t,
+                                          int32_t, int32_t);
+    typedef Node *(TV_THISCALL * append_t)(Engine *, int32_t, int32_t);
+    static const int32_t MASKS[] = {-2, -1, 0, 1, 2, 0x101, -0x101, 0x8001};
+    static const int32_t COUNTS[] = {-1, 0, 1, 2, 5, 20};
+    /* node type and the two stress bits at 0x08 and 0x10 */
+    static const struct { int type; uint32_t stress; } SHAPE[] = {
+        {1, 0}, {3, 0x18}, {1, 0x10}, {4, 8}, {3, 0}, {1, 0x18}, {2, 0x10}, {3, 0x08},
+    };
+    uint8_t *shared = (uint8_t *)VirtualAlloc(NULL, 0x4000, MEM_RESERVE | MEM_COMMIT,
+                                              PAGE_READWRITE);
+    int dir, ci, m1, m2, mode, i, bad = 0, n = 0;
+
+    for (dir = 0; dir < 2; dir++)
+        for (ci = 0; ci < (int)(sizeof COUNTS / sizeof COUNTS[0]); ci++)
+            for (m1 = 0; m1 < (int)(sizeof MASKS / sizeof MASKS[0]); m1++)
+                for (m2 = 0; m2 < (int)(sizeof MASKS / sizeof MASKS[0]); m2++)
+                    for (mode = 0; mode < 3; mode++) {
+                        uint8_t ra, rb;
+                        int which;
+                        for (which = 0; which < 2; which++) {
+                            Engine *g = which ? g_b : g_a;
+                            Node *first = NULL, *node = NULL, *mid = NULL;
+                            StageCtx *st;
+                            fresh(g, shared);
+                            for (i = 0; i < 8; i++) {
+                                node = ORIG(append_t, 0x10008b60)(
+                                    g, SHAPE[i].type, 'a' + i);
+                                node->flags |= SHAPE[i].stress;
+                                if (i == 0)
+                                    first = node;
+                                if (i == 4)
+                                    mid = node;
+                            }
+                            st = &g->stage_ctx[2];
+                            st->first = first;
+                            st->cur = first;
+                            st->ctl = mid;      /* start in the middle */
+                            st->scan = first;
+                            st->last = node;
+                            st->type_mask = 0x1c;
+                            g->stage = st;
+                        }
+                        ra = ORIG(scan_t, 0x1001aa60)(g_a, dir, COUNTS[ci],
+                                                      MASKS[m1], MASKS[m2], mode);
+                        rb = Stage2_Scan(g_b, dir, COUNTS[ci], MASKS[m1],
+                                         MASKS[m2], mode);
+                        normalize(g_a);
+                        normalize(g_b);
+                        n++;
+                        if (ra != rb || memcmp(g_a, g_b, sizeof *g_a)) {
+                            if (bad++ < 8)
+                                fprintf(stderr, "  Stage2_Scan(dir=%d n=%d m1=%d "
+                                                "m2=%d mode=%d): %d/%d\n",
+                                        dir, (int)COUNTS[ci], (int)MASKS[m1],
+                                        (int)MASKS[m2], mode, ra, rb);
+                        }
+                    }
+
+    fprintf(stderr, "%-18s %d/%d identical\n", "Stage2_Scan", n - bad, n);
+    return bad != 0;
+}
+
 static int unit_rings(void)
 {
     int bad = 0;
@@ -507,9 +1078,16 @@ int unit_run(const char *name)
     if (!strcmp(name, "input")) return unit_input();
     if (!strcmp(name, "nodealloc")) return unit_nodealloc();
     if (!strcmp(name, "list")) return unit_list();
+    if (!strcmp(name, "escape")) return unit_escape();
+    if (!strcmp(name, "util")) return unit_util();
+    if (!strcmp(name, "lifecycle")) return unit_lifecycle();
+    if (!strcmp(name, "control")) return unit_control();
+    if (!strcmp(name, "stage4")) return unit_stage4();
+    if (!strcmp(name, "scan")) return unit_scan();
     if (!strcmp(name, "all"))
         return unit_rings() | unit_flush() | unit_putchar() | unit_input()
-             | unit_nodealloc() | unit_list();
+             | unit_nodealloc() | unit_list() | unit_escape() | unit_util()
+             | unit_lifecycle() | unit_control() | unit_stage4() | unit_scan();
     fprintf(stderr, "unknown unit test %s\n", name);
     return 2;
 }
