@@ -1,0 +1,4 @@
+Hola. Me llamo Pedro y soy un sintetizador de voz.
+Esta es una prueba del motor TruVoice en castellano.
+Buenos días. ¿Cómo está usted?
+Hasta luego.

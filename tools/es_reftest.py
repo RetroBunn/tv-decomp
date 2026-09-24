@@ -28,6 +28,7 @@ import wave
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TVH = os.path.join(ROOT, "build", "harness", "tvh.exe")
+TVH_HOOK = os.path.join(ROOT, "build", "harness", "tvh_hook_es.exe")
 
 
 def split_items(text):
@@ -78,33 +79,47 @@ def main():
     for it in items:
         print("    %r" % it)
 
-    out = b""
     tmp = tempfile.mkdtemp(prefix="es_reftest")
-    for i, it in enumerate(items):
-        # the engine is a 1995 Windows DLL: it wants the text in cp1252
-        tin = os.path.join(tmp, "item%d.txt" % i)
-        twav = os.path.join(tmp, "item%d.wav" % i)
-        with open(tin, "wb") as f:
-            f.write(it.encode("cp1252"))
-        cmd = [TVH, "-v", str(args.voice), args.dll, "@" + tin, twav]
-        r = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        if r.returncode != 0:
-            print("tvh failed on item %d:\n%s" % (i, r.stderr.decode("latin1")))
-            return 1
-        d, sr = pcm(twav)
-        print("    item %d: %d frames" % (i, len(d) // 2))
-        out += d
-
     ref, sr = pcm(args.ref)
-    if out == ref:
-        print("identical: %d frames (%.2f s @ %d Hz)" % (len(ref) // 2, len(ref) / 2.0 / sr, sr))
-        return 0
-    print("DIFFERS: produced %d frames, reference %d" % (len(out) // 2, len(ref) // 2))
-    k = 0
-    while k < min(len(out), len(ref)) and out[k] == ref[k]:
-        k += 1
-    print("  identical prefix %d frames (%.3f s)" % (k // 2, (k // 2) / float(sr)))
-    return 1
+
+    # The oracle drives the original DLL; the hook build patches every
+    # function written in es/ over it first.  Both have to produce the
+    # recording, so the second run is what tests the decompilation.
+    runs = [("original engine", TVH)]
+    if os.path.exists(TVH_HOOK):
+        runs.append(("with es/ hooked in", TVH_HOOK))
+    else:
+        print("note: no tvh_hook_es.exe, skipping the decompiled-C check")
+
+    bad = 0
+    for label, exe in runs:
+        out = b""
+        for i, it in enumerate(items):
+            # the engine is a 1995 Windows DLL: it wants the text in cp1252
+            tin = os.path.join(tmp, "item%d.txt" % i)
+            twav = os.path.join(tmp, "%s_item%d.wav" % (os.path.basename(exe), i))
+            with open(tin, "wb") as f:
+                f.write(it.encode("cp1252"))
+            cmd = [exe, "-v", str(args.voice), args.dll, "@" + tin, twav]
+            r = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            if r.returncode != 0:
+                print("%s failed on item %d:\n%s" % (exe, i, r.stderr.decode("latin1")))
+                return 1
+            d, _ = pcm(twav)
+            out += d
+        if out == ref:
+            print("  %-20s identical: %d frames (%.2f s @ %d Hz)"
+                  % (label, len(ref) // 2, len(ref) / 2.0 / sr, sr))
+            continue
+        bad = 1
+        print("  %-20s DIFFERS: produced %d frames, reference %d"
+              % (label, len(out) // 2, len(ref) // 2))
+        k = 0
+        while k < min(len(out), len(ref)) and out[k] == ref[k]:
+            k += 1
+        print("  %-20s identical prefix %d frames (%.3f s)"
+              % ("", k // 2, (k // 2) / float(sr)))
+    return bad
 
 
 if __name__ == "__main__":

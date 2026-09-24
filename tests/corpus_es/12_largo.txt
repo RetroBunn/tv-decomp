@@ -1,0 +1,95 @@
+La síntesis de voz es el proceso de producción artificial del habla humana.
+Un sistema que convierte texto en voz se denomina sintetizador de texto a voz,
+y puede construirse tanto en programas como en aparatos dedicados. Los primeros
+sistemas electrónicos aparecieron a mediados del siglo pasado y sonaban muy
+distintos de una persona hablando, pero ya permitían entender palabras sueltas.
+
+Un sintetizador de formantes no guarda grabaciones de voz. En su lugar modela
+el tracto vocal con un conjunto de filtros resonantes, y va cambiando sus
+frecuencias y anchos de banda a lo largo del tiempo. El resultado nunca suena
+exactamente como una persona, pero es muy pequeño, funciona en cualquier
+ordenador por modesto que sea, y sigue siendo perfectamente inteligible a
+velocidades muy altas, que es justamente lo que necesita quien usa un lector
+de pantalla durante horas cada día.
+
+El motor recibe el texto carácter a carácter y lo va pasando por una serie de
+etapas. La primera limpia el texto y decide dónde terminan las frases. La
+segunda convierte las palabras en fonemas, consultando primero un diccionario
+de excepciones y aplicando después reglas de letra a sonido. La tercera asigna
+duraciones y una curva de entonación. La cuarta convierte todo eso en
+parámetros de los filtros, y la última genera las muestras de audio.
+
+Cada una de esas etapas trabaja sobre una lista enlazada de nodos, y cada etapa
+avanza por la lista a su propio ritmo. Cuando una etapa se queda sin trabajo,
+cede el paso a la anterior para que produzca más nodos. Así el sistema entero
+funciona sin necesidad de hilos ni de esperas, dentro de un solo bucle que el
+programa que lo usa llama una y otra vez hasta que no queda nada por decir.
+
+Este texto es deliberadamente largo. El anillo de entrada del motor tiene
+cuatro mil noventa y seis bytes, y hasta que no se llena no se ejercitan los
+caminos que comprueban si queda sitio. Un corpus que solo contiene frases
+cortas no prueba nunca esa parte del código, y una prueba que no llega a
+tocar el código no dice nada sobre si el código es correcto.
+
+Por eso conviene repetir. La síntesis de voz es el proceso de producción
+artificial del habla humana. Un sistema que convierte texto en voz se denomina
+sintetizador de texto a voz, y puede construirse tanto en programas como en
+aparatos dedicados. Un sintetizador de formantes no guarda grabaciones de voz:
+modela el tracto vocal con filtros resonantes y cambia sus frecuencias y sus
+anchos de banda a lo largo del tiempo.
+
+El motor recibe el texto carácter a carácter y lo va pasando por una serie de
+etapas, y cada una de ellas trabaja sobre una lista enlazada de nodos. Cuando
+una etapa se queda sin trabajo, cede el paso a la anterior. El anillo de
+entrada tiene cuatro mil noventa y seis bytes y el de salida otros tantos.
+Con un texto de este tamaño ambos se llenan y se vacían varias veces, que es
+exactamente lo que queríamos comprobar.
+
+Por eso este texto se repite entero una vez mas. El anillo de entrada tiene cuatro mil noventa y seis bytes, y un fichero mas corto que eso no llega a llenarlo nunca.
+
+La síntesis de voz es el proceso de producción artificial del habla humana.
+Un sistema que convierte texto en voz se denomina sintetizador de texto a voz,
+y puede construirse tanto en programas como en aparatos dedicados. Los primeros
+sistemas electrónicos aparecieron a mediados del siglo pasado y sonaban muy
+distintos de una persona hablando, pero ya permitían entender palabras sueltas.
+
+Un sintetizador de formantes no guarda grabaciones de voz. En su lugar modela
+el tracto vocal con un conjunto de filtros resonantes, y va cambiando sus
+frecuencias y anchos de banda a lo largo del tiempo. El resultado nunca suena
+exactamente como una persona, pero es muy pequeño, funciona en cualquier
+ordenador por modesto que sea, y sigue siendo perfectamente inteligible a
+velocidades muy altas, que es justamente lo que necesita quien usa un lector
+de pantalla durante horas cada día.
+
+El motor recibe el texto carácter a carácter y lo va pasando por una serie de
+etapas. La primera limpia el texto y decide dónde terminan las frases. La
+segunda convierte las palabras en fonemas, consultando primero un diccionario
+de excepciones y aplicando después reglas de letra a sonido. La tercera asigna
+duraciones y una curva de entonación. La cuarta convierte todo eso en
+parámetros de los filtros, y la última genera las muestras de audio.
+
+Cada una de esas etapas trabaja sobre una lista enlazada de nodos, y cada etapa
+avanza por la lista a su propio ritmo. Cuando una etapa se queda sin trabajo,
+cede el paso a la anterior para que produzca más nodos. Así el sistema entero
+funciona sin necesidad de hilos ni de esperas, dentro de un solo bucle que el
+programa que lo usa llama una y otra vez hasta que no queda nada por decir.
+
+Este texto es deliberadamente largo. El anillo de entrada del motor tiene
+cuatro mil noventa y seis bytes, y hasta que no se llena no se ejercitan los
+caminos que comprueban si queda sitio. Un corpus que solo contiene frases
+cortas no prueba nunca esa parte del código, y una prueba que no llega a
+tocar el código no dice nada sobre si el código es correcto.
+
+Por eso conviene repetir. La síntesis de voz es el proceso de producción
+artificial del habla humana. Un sistema que convierte texto en voz se denomina
+sintetizador de texto a voz, y puede construirse tanto en programas como en
+aparatos dedicados. Un sintetizador de formantes no guarda grabaciones de voz:
+modela el tracto vocal con filtros resonantes y cambia sus frecuencias y sus
+anchos de banda a lo largo del tiempo.
+
+El motor recibe el texto carácter a carácter y lo va pasando por una serie de
+etapas, y cada una de ellas trabaja sobre una lista enlazada de nodos. Cuando
+una etapa se queda sin trabajo, cede el paso a la anterior. El anillo de
+entrada tiene cuatro mil noventa y seis bytes y el de salida otros tantos.
+Con un texto de este tamaño ambos se llenan y se vacían varias veces, que es
+exactamente lo que queríamos comprobar.

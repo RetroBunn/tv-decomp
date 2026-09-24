@@ -59,6 +59,16 @@ struct StageCtx 0x44
 0x40 int32_t  voice
 end
 
+# The TextIn tokenizer object, allocated by Engine_CreateTextIn.  Its size is
+# the 0xac that function passes to operator new; the three fields named here
+# are the ones Engine_Flush reads and writes across the boundary.  The rest
+# is not worked out yet, and the trailing gap keeps the size honest.
+struct TextIn 0xac
+0x00 Engine  *engine          # Engine_CreateTextIn stores self here
+0x08 int32_t  input_done      # <- Engine.st_input_empty, every flush
+0x0c int32_t  item_done       # <- Engine.item_done, every flush
+end
+
 struct Engine 0x8838
 # --- what the preformat pass keeps -----------------------------------------
 # All of this comes from sub_10007810, the ESC [ parser, and above all from
@@ -116,6 +126,12 @@ struct Engine 0x8838
 0x0378 int32_t  s2_378
 0x037c int32_t  s2_37c
 
+# Preformat_PutChar raises s2_1d54 once there is room for a lot more nodes:
+# "cmp byte [ecx+0x385],0" then "cmp dword [esi+0x750],0x260" then
+# "mov byte [esi+0x384],1" -- English's !s2_1d55 && free_nodes > 0x260.
+0x0384 uint8_t  s2_1d54
+0x0385 uint8_t  s2_1d55
+
 # --- stage 3, from sub_1001b810 --------------------------------------------
 # Every one of these lands on an English s3_* field at exactly +0x19e4,
 # which is what confirmed the function.
@@ -129,9 +145,12 @@ struct Engine 0x8838
 # --- synthesiser state, which English keeps at 0x19ac onwards ---------------
 # sub_1000e6f0 (Synth_InitFilters) zeroes two bytes here before anything else,
 # exactly as the English one clears synth_19ad/synth_19ae/synth_hold.  Which
-# of the three these two are is not yet established.
-0x0000 uint8_t  synth_00
-0x0002 uint8_t  synth_02
+# two they are is settled by Synth_Step (sub_100077b0), whose guard reads
+# "cmp byte [ecx],0", "cmp byte [esi+0x6ddc],0", "cmp byte [esi+1],0" -- the
+# English !synth_hold && !synth_busy && synth_19ad, in that order.
+0x0000 uint8_t  synth_hold       # ESC[H / ESC[C
+0x0001 uint8_t  synth_19ad
+0x0002 uint8_t  synth_19ae
 
 # sub_1000e6f0 builds two 40-entry coefficient arrays on the stack as int32
 # and copies the chosen one out with "mov word ptr [ecx], si", so this is
@@ -246,10 +265,16 @@ struct Engine 0x8838
 0x0754 StageCtx stage_ctx[5]
 
 # --- the three input rings, from sub_1000e240 ------------------------------
+# Each ring ends exactly where its own rd/wr pair begins, which is what fixes
+# the sizes.  pre_ring is 0x100 rather than 0x1000 because Preformat_Run
+# masks its index with 0xff.
+0x4cc0 uint8_t  in_ring[0x1000]  # raw text from Engine_Feed
 0x5cc0 int32_t  in_rd
 0x5cc4 int32_t  in_wr
+0x5cc8 uint8_t  pre_ring[0x100]
 0x5dc8 int32_t  pre_rd
 0x5dcc int32_t  pre_wr
+0x5dd0 uint8_t  mid_ring[0x1000] # preformat output, read by stage 0
 
 # --- the 22 parameter tracks, which English keeps at 0x0000 -----------------
 # All of the following come from sub_10017850, the counterpart of the English

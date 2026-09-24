@@ -1,0 +1,5 @@
+Caracteres de control: entre palabras.
+Un DEL aqui: y sigue el texto.
+Tabulador	verticaly saltode pagina.
+Escape suelto  sin corchete, y [ sin letra.
+Fin de la prueba.

@@ -22,7 +22,9 @@
 #include "coverage.h"
 #ifdef TV_WITH_HOOKS
 #include "hooks.h"
+#ifndef TV_NO_UNIT
 #include "unit.h"
+#endif
 #endif
 
 #define THISCALL __attribute__((thiscall))
@@ -253,11 +255,13 @@ int main(int argc, char **argv)
         fprintf(stderr, "hook build requires the DLL at its preferred base\n");
         return 1;
     }
+#ifndef TV_NO_UNIT
     if (unit) {
         /* unit comparisons call the originals directly: no hooks */
         InitializeCriticalSection((CRITICAL_SECTION *)pe_va(&g_img, A->lexicon_cs));
         return unit_run(unit);
     }
+#endif
     hooks_install(hook_spec, trace);
 #else
     (void)hook_spec;

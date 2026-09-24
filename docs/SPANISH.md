@@ -110,7 +110,25 @@ straight onto the English one:
 | `sub_1001a070` | `Stage2_Run` | called by `Engine_Step` in stage order |
 | `sub_1001ad30` | `Stage3_Run` | called by `Engine_Step` in stage order |
 | `sub_10004820` | `Stage4_Run` | 0x10 past `Stage4_Reset` |
-| `sub_10017900` | `Synth_Step` | 0xb0 past `Synth_ResetTracks` |
+| `sub_10017900` | `Tracks_Op` | `Engine_Step` passes it 1 and `trk_38` |
+| `sub_100077b0` | `Synth_Step` | English's guard and body, instruction for instruction |
+| `sub_10009bf0` | `Synth_Generate` | called with `sample_rate` and `&filt_coef` |
+| `sub_1000e290` | `Engine_InputStage` | the last arm of the stage cascade |
+| `sub_1001dc70` | `TextIn_PutString` | `xmatch` 1.00 |
+| `sub_1001dc50` | `TextIn_Unget` | `xmatch` 1.00 |
+| `sub_1001dbc0` | `AllocString` | `xmatch` 1.00 |
+| `sub_1001da50` | `Bits_Test` | `xmatch` 1.00 |
+| `sub_1001da90` | `Bits_Set` | `xmatch` 1.00 |
+| `sub_1001daf0` | `Bits_Next` | `xmatch` 0.82 |
+| `sub_1001a930` | `Node_PrevBoundary` | `xmatch` 1.00 |
+| `sub_1001a9b0` | `Node_NextWord` | `xmatch` 1.00 |
+| `sub_1000aee0` | `Synth_MulShr12` | `xmatch` 1.00 |
+| `sub_10008b60` | `Engine_AppendNode` | `xmatch` 1.00 |
+| `sub_100141d0` | `Stage0_CharClass` | `xmatch` 0.85 |
+| `sub_10014010` | `Stage0_Finish` | `xmatch` 0.79 |
+| `sub_1001aa60` | `Stage2_Scan` | `xmatch` 0.76 |
+| `sub_1001c950` | `TextIn_Tokenize` | `xmatch` 0.74 |
+| `sub_1001a960` | `Phone_TestMask` | `xmatch` 0.69 |
 | `sub_1000ddc0` | `Engine_Construct` | sets 8000, 85, 150, 0xffff in English's own order |
 | `sub_1000e600` | `Engine_InUnget` | backs `in_rd` up one, wrapping at 0x1000 |
 | `sub_1000e630` | `Engine_InPut` | needs 10 free, folds 0x92 to an apostrophe |
@@ -127,11 +145,17 @@ straight onto the English one:
 | `sub_10008a70` | `Engine_SetSpeed` | `idx = (wpm - 46) >> 3`, exactly English's |
 | `sub_10008aa0` | `Engine_SetVolume` | `-10 * log10(vol / 65535)`, capped at 15 |
 | `sub_10008b10` | `Engine_SetVoice` | rejects >= 10, then the same five writes |
-| `sub_1000ead0` | `Stage_Emit` | reads `stage`, compares it against `stage_ctx[2]` |
+| `sub_1000ead0` | `Engine_RunControl` | English's body line for line; reads `stage`, `stage_ctx[2]` |
+| `sub_1000e510` | `Engine_MidGet` | `Engine_InGet` on the mid ring, instruction for instruction |
 | `sub_10001370` | `Lexicon_Add` | caps at 5000 entries, stores both strings at `0x1002e000` |
 | `sub_100014f0` | `Lexicon_Remove` | frees the pair and decrements the count |
 
-All twelve are now confirmed by their contents, not by their position.
+The twelve resets are confirmed by their contents rather than their
+position, and so are the five `*_Run` functions: `Engine_Step`'s cascade
+calls each of them in English's own order, each gated on `free_nodes`
+(though not on the same thresholds).  One entry that rested on position
+turned out to be wrong -- see the coverage section below.
+
 What settled the five stage resets was the `type_mask` each one writes:
 **0x17, 0x06, 0x1c, 0x28, 0x3f -- identical to English's, in the same
 order** -- and `StageCtx` measures 0x44 in both engines, so the struct
@@ -371,34 +395,360 @@ which a control run on the English engine confirmed before it could be
 mistaken for a bad field mapping.
 ## Where the Spanish work lives
 
-Under `es/`, deliberately **not** under `src/`. `tools/gen_hookmap.py` and
-`tools/gen_data.py` are handed `src` and walk it recursively, so a Spanish
-file carrying `@0x...` annotations inside `src/` would have its addresses
-bound into the English build. When there is Spanish C to compile, the tools
-will need a directory argument rather than a fixed tree; until then keeping
-it outside costs nothing.
+Under `es/`, deliberately **not** under `src/`.  `tools/gen_hookmap.py` and
+`tools/gen_data.py` walk a directory recursively, so a Spanish file carrying
+`@0x...` annotations inside `src/` would have its addresses bound into the
+English build -- and the two engines use overlapping address ranges, so that
+would not even fail loudly.  `gen_hookmap.py` already takes the directory as
+an argument, so pointing it at `es/` was all that was needed.
 
-`data/es/` is empty on purpose. `tools/extract_data.py` decides what to pull
-from a DLL partly from the address annotations in the source, and those are
-English; pointing it at `CGRM_ES.DLL` today would produce that binary's data
-sections plus meaningless fragments from English `.text` addresses. It
-becomes useful once there are Spanish annotations to drive it.
+`es/engine.fields` feeds `tools/gen_struct.py` exactly as the English one
+does, producing `build/gen/es_engine_struct.h` with a layout assertion per
+field.  Two types it refers to, `TextIn` and `SapiCentral`, are forward
+declared in `es/es_engine.h` and not laid out yet; declaring them keeps the
+fields that hold them, and every offset after them, honest.
 
+`data/es/` is empty on purpose.  `tools/extract_data.py` decides what to
+pull from a DLL partly from the address annotations in the source, and there
+are not yet enough Spanish ones to drive it.
+
+## The first Spanish C, and proving it
+
+`harness/build.sh` now produces `build/harness/tvh_hook_es.exe`: the same
+trick the English decompilation is built on, aimed at `CGRM_ES.DLL`.  Every
+function written in `es/` is patched over the original with a five-byte
+jump, the engine runs, and the audio has to come out identical.  It is
+skipped when `es/` has no C in it, so the build works either way.
+
+The first eight are the character rings -- `Engine_InFree`, `InGet`,
+`InUnget`, `InPut`, `InPutEnd`, `MidFree`, `MidGet`, `MidPut` -- chosen
+because they are small and completely understood, which makes them a test
+of the plumbing rather than of the reading.  All eight install, and the
+recording still comes out sample for sample.  `tools/es_reftest.py` now
+runs both the oracle and the hook build, so one command checks that the
+harness still drives the original correctly *and* that the C is right.
+
+That claim is only worth as much as its control, and the first control I
+tried was worthless.  Changing `Engine_MidPut`'s guard from `< 1` to `< 2`
+is a real off-by-one, and the test passed anyway: the mid ring is 0x1000
+bytes and the preformatter drains it, so it never comes near full and the
+two conditions never differ on this input.  A bug that cannot be reached is
+not evidence about anything.  Flipping the low bit of the character
+`Engine_MidGet` returns does reach: the hooked run produces 202950 frames
+against the recording's 73920, and `es_reftest.py` exits 1.  The hooks are
+installed, they are executed, and the test can tell.
+## What the coverage says, and a correction
+
+With the harness working, `tools/blocklist.py` and the harness's own `-c`
+and `-C` gave the first real measurement: of 13488 basic blocks in 766
+functions, **3314 blocks in 178 functions** run for `spanish_test.txt`.
+The speech path is a quarter of the binary, and 140 of those 178 functions
+are still unnamed.  That is the work queue, and it is a much better one
+than the function list, because it is ordered by what actually matters.
+
+It also caught an error.  `sub_10017900` was in the table as `Synth_Step`
+on the strength of sitting 0xb0 past `Synth_ResetTracks` -- position, not
+content.  `Engine_Step` calls it with **two** pushed arguments, 1 and
+`[esi+0x6ec4]`, which is English's `Tracks_Op(self, 1, self->trk_38)`.
+The real `Synth_Step` is `sub_100077b0`, and it is unmistakable once read:
+
+    if (!synth_hold && !synth_busy && synth_19ad) {
+        if (w_212e) Synth_Generate(self, sample_rate, filt_coef);
+        synth_19ad = 0;
+        if (trk_04 == trk_08) synth_busy = 1;
+    }
+
+Every term of that guard is a Spanish offset: `synth_hold` at 0, `synth_busy`
+at 0x6ddc, `synth_19ad` at 1, `w_212e` at 0x742, `filt_coef` at 4, `trk_04`
+and `trk_08` at 0x6de0 and 0x6de4.  `w_212e` had only been placed by
+extrapolation from the host block; this confirms it.  The lesson is the one
+the `E9` tail call taught earlier: a function named by where it sits is a
+guess, and this time the guess was wrong.
+
+Reading the rest of `Engine_Step` closed the cascade, and it is English's
+exactly -- `Stage2_Run` above `Stage1_Run` above `Stage0_Run` above
+`Engine_InputStage`, each gated on `free_nodes` -- with one real
+difference.  The thresholds are **0x69, 0x37, 0x37, 0xf** where English
+uses **0x69, 0x25, 0x25, 0xf**: the 1995 engine demands half again as many
+free nodes before it will run stage 0 or stage 1.
+
+One more thing fell out.  The constructor's `rep stosd` of 0x66b dwords is
+0x19ac bytes, starting at 0x6ddc and stopping at 0x8788 -- and English's
+constructor does `memset(self, 0, offsetof(Engine, synth_hold))`, which is
+0x19ac bytes starting at 0.  The same block, the same size, zeroed the same
+way, moved from the front of the object to the back.  That is what the
+constant offsets between the two layouts have been measuring all along.
+## Matching the two engines by shape
+
+`tools/xmatch.py` scores a function in one engine against every function in
+another.  It normalises away what a different build changes -- every
+immediate or displacement of 0x100 or more becomes `N`, so struct offsets
+and absolute addresses stop mattering while small shared constants like a
+0x44 stride or a loop count of 5 still carry signal -- and then compares
+4-gram token sets.  Pointed at what the coverage says runs:
+
+    python tools/xmatch.py TruVoice/CGRM_ES.DLL work/cgrm_es \
+                           CGRM_EN.DLL work/cgrm_en \
+                           --only cov_es.txt --blocks work/cgrm_es/blocks.txt
+
+It is a ranking and not a proof, so the first thing to ask is whether it
+agrees with what was already known the slow way.  It does: **eleven
+functions identified earlier by reading come back correct**, among them
+`Engine_Flush`, `Engine_InPut`, `Engine_InPutEnd`, `Stage0_Reset`,
+`TextIn_Flush`, `TextIn_GetChar`, `Preformat_PutChar` and `Engine_Step`.
+None of those names was fed to it.  That is the reason to trust the ones
+it produced on its own.
+
+It also corrected a name, and the name was mine.  `sub_1000ead0` was in the
+table as `Stage_Emit`, which is not an English name at all -- I coined it
+from what the function appeared to do.  It is `Engine_RunControl`, and
+reading the two side by side they are the same function line for line, down
+to the compiler folding `st - self->stage_ctx == 2` into a comparison of
+`st - self` against 0x7dc.  Inventing a name rather than finding one is how
+that got past me.  It brought two struct facts with it: `StageCtx.ctl` is
+at +8, and a node's type is the low three bits of its flags at +8.
+
+One pair it could not separate, for a good reason.  `sub_1000e510` and
+`sub_1000e5c0` both score 1.00 against both `Engine_InGet` and
+`Engine_MidGet`, because those four functions are the same code over
+different rings and the ring offset is exactly what the normalisation
+throws away.  The displacements settle it: `0x4cbf` is the input ring, so
+`sub_1000e5c0` is `Engine_InGet`, and `0x5dcf` is the mid ring, so
+`sub_1000e510` is `Engine_MidGet`.
+
+The negative result is worth as much as the positive one.  **Only 51 of the
+178 functions that run have an English counterpart at all.**  The other 127
+are the part with no shared ancestry -- the letter-to-sound rules, the
+dictionary, the front end.
+
+## The sibling engines, in place of a second Spanish build
+
+There is only one Spanish DLL; whatever the installer wrote is all there is.
+The usual way to corroborate a reading -- diff two versions of the same
+binary -- is therefore not available.  German, French and Italian stand in
+for it: they are the same generation, built within four weeks of Spanish
+(ES and IT on the same day, 1995-11-29), and they turn out to be far closer
+to it than English is.
+
+Running `xmatch` from Spanish into each of them, and counting only matches
+at 0.80 or better:
+
+| | matches | median offset | within 0x2000 |
+|---|---|---|---|
+| Italian | 279 | +0xa38 | 97% |
+| German | 253 | -0x378 | 94% |
+| French | 263 | +0x5644 | -- |
+| English | 65 | +0x511b0 | 0% |
+
+**The four 1995 engines are laid out almost identically.**  A function sits
+at very nearly the same address in all of them, and where it does not, the
+displacement is one of a small number of constants rather than a spread --
+the quartiles are +0x20 and +0xa38 for Italian, +0x20 and +0x5644 for
+French.  That is what a shared source tree looks like when one module is
+swapped for a larger one: everything before the swap keeps its address and
+everything after it shifts by a fixed amount.  The 1997 English build
+shares none of this, which is its own small piece of evidence that it was
+relinked from the ground up rather than patched.
+
+`xmatch --near` exploits this.  Restricting candidates to a window around
+the source address makes a far lower `--min` safe between the 1995 engines,
+because a coincidental match at the same address is much less likely than a
+coincidental match anywhere.  The window has to be wide enough to cover the
+shift, so 0x2000 serves for Italian and German and French needs 0x8000; it
+is useless against English, which shares no layout at all.
+
+## What is shared, and what is Spanish
+
+Classifying the 165 covered functions large enough to fingerprint, by
+whether they appear in English, only in the 1995 siblings, or nowhere else:
+
+| | functions | bytes |
+|---|---|---|
+| shared with English | 38 | 4758 |
+| 1995 core, siblings only | 53 | 19551 |
+| Spanish only | 74 | 53784 |
+
+The thresholds behind that table are crude -- `sub_1000f090` scores 0.59
+against Italian's `sub_1000f0b0`, which is plainly the same function at
+nearly the same address, and a 0.60 cut files it under "Spanish only".
+Read the shape of it rather than the numbers: **most of the bytes that run
+are Spanish's own**, the shared engine core is a fifth of the executing
+code, and the part that survived from 1995 into the 1997 English engine is
+smaller still.
+
+The 1995 core is where the leverage is, because decompiling one of those
+functions serves four languages at once.  The largest of them are
+`Synth_Generate`, `Preformat_Run`, `Engine_RunControl`, `Engine_Feed`,
+`Synth_InitFilters` and `Engine_InputStage` -- several of which are already
+named, which is a good sign that the classification is sound.
+
+The Spanish-only list is the front end, and it is blunt about the size of
+the job: `sub_1001e5d0` at 4384 bytes, `Stage0_Run` at 3074, `sub_10016460`
+at 2900, `sub_10018aa0` at 2540, with nothing to compare any of them
+against.  Some genuinely share no 4-gram with any sibling function.
+## A corpus, and the limit of differential testing
+
+One recording is one input, so `tests/corpus_es/` now holds fifteen Spanish
+inputs and `tools/difftest.py` takes `--lang es`.  Everything the English
+run touches keeps its value, so its 335 configurations are unchanged by
+construction; the Spanish side gets its own corpus directory, its own work
+directory and `tvh_hook_es.exe`.  `--lang es --full` is 172 configurations
+and they are all identical.
+
+The corpus is aimed at what Spanish has and English does not -- the
+inverted marks, the accents and the tilde, guillemets, ordinals like 1º and
+1ª -- and at things the recording never reaches: a file of 6024 bytes
+because the input ring is 4096 and a shorter one never fills it, and a file
+built around the curly apostrophe because cp1252 0x92 is the one byte
+`Engine_InPut` rewrites.
+
+Then the corpus failed to do the job, which is the useful part.  The
+off-by-one from the last round -- `Engine_MidPut`'s guard changed from
+`< 1` to `< 2` -- still passes all 172 configurations.  It is not that the
+corpus is too small.  The preformatter moves at most 400 characters per
+flush and the input stage drains the mid ring every step, so the ring never
+comes within one slot of full and the two conditions never differ.  **No
+amount of text can reach that branch**, because the interface cannot put
+the engine in the state where it matters.
+
+So `harness/unit_es.c` sets the ring indices directly and calls the
+function, the way `harness/unit.c` already does for English:
+
+    tvh_hook_es.exe -H none -U all TruVoice/CGRM_ES.DLL
+
+Seventeen ring positions -- both ends, the wrap, the ten-slot reserve
+`Engine_InPut` keeps, the middle -- crossed against each other and, for the
+two that take a character, against eight bytes including 0x92.  That is
+6378 comparisons across the eight functions, each one checking the return
+value *and* the whole engine object afterwards, so a write to the wrong
+field is caught as well as a wrong answer.  All 6378 match.
+
+And it catches the off-by-one on the first boundary it reaches:
+
+    Engine_MidPut(rd=0, wr=0xffe): orig returned 1, ours 0
+
+rd 0 against wr 0xffe is exactly `mid_rd - mid_wr - 1 == -0xfff`, which
+wraps to a free count of 1 -- the one value where `< 1` and `< 2` disagree.
+The two tests answer different questions and neither substitutes for the
+other: the differential test asks whether the engine still sounds the same,
+and the unit test asks whether a function is the same function.
+## Escape sequences, and the second function
+
+The `ESC [` command set turned out to be worth checking before writing
+inputs for it.  `Preformat_Run` dispatches through a 56-byte index table at
+`0x10008020` and a jump table at `0x10007fc0`, on `letter - 'A'` bounded at
+0x37, so the supported letters can be read straight out of the binary:
+
+    A C D F H I N P S V a c f g i l p r s t v w x
+
+That is **the same twenty-three letters English has**, exactly.  The two
+engines differ in the flag defaults -- 0x1780 and 0x40 here against 0x17c0
+and 0x41 there, so 1997 added a flag bit -- but not in the vocabulary.
+`tests/corpus_es` gained six files covering them: the parameter commands,
+the flag commands, hold and continue, reset, malformed sequences, and
+escapes in the middle of a word.  196 configurations, all identical.
+
+`Engine_Flush` is the second function decompiled, and it brought the
+`TextIn` struct with it -- 0xac bytes, of which three fields are named
+because they are the ones the function moves across the boundary.  The
+three things it calls that are not written yet, `Preformat_PutChar`,
+`TextIn_Reset` and `TextIn_Flush`, are declared with their addresses and
+nothing else; `gen_hookmap.py` emits a `--defsym` for every annotated
+symbol it cannot find a definition of, so the calls land in the original
+DLL.  That is what makes it possible to decompile one function at a time
+instead of a whole subsystem.
+
+And the corpus went blind again, for a better reason than last time.
+Changing the flush limit from 400 characters to 401 passes all 196
+configurations -- not because the branch is unreachable, but because the
+limit only decides how the work is **split across calls**.  The sequence of
+characters reaching the preformatter is the same either way, so the audio
+is the same.  There is nothing wrong with the corpus; the property simply
+is not audible.
+
+`unit_es` can see it, and getting it to took one more idea.  A whole-object
+comparison between two engines fails immediately, because the engine holds
+pointers into itself -- the node pool, the stage cursor, the per-track
+buffers -- and two engines at different addresses never match byte for
+byte.  The fix is to rewrite every aligned word that points inside the
+object as its offset before comparing.  A non-pointer that happens to land
+in the address range gets normalised on both sides, so it cannot turn a
+difference into a match.
+
+With that, ten cases either side of the limit, and the answer is exact:
+
+    Engine_Flush(401 waiting): in_rd=0x190/0x191 mid_wr=0x190/0x191
+
+The original moved 400 and ours moved 401.  Two rounds, two deviations the
+differential test could not see, and both of them caught the moment the
+function was called directly.  The pattern is worth stating plainly: the
+corpus tests the engine, the unit cases test the functions, and a function
+is not finished until something has actually looked at it.
+## The third function, and a rule of thumb
+
+`Preformat_PutChar` is `sub_10008060`, and it is English's line for line:
+tidy the character, drop the ones that cannot be spoken, queue it in the
+0x100-byte `pre_ring`, and then -- unless `Preformat_Run` is already on the
+stack -- drain the queue.  It named two more fields, `s2_1d54` and
+`s2_1d55` at 0x384 and 0x385, from the guard it opens with.
+
+It also went in with its holes plugged in advance, because by now the
+pattern was obvious.  The corpus had no control characters at all, and two
+of this function's branches exist only for them, so `23_control.txt` now
+carries 0x01, 0x0b, 0x0c, 0x0e, 0x1f and 0x7f along with a bare escape.
+That is 200 configurations.  And `unit_es` covers the function completely:
+all 256 character values against five values of `free_nodes` either side of
+the 0x260 it tests, 1280 comparisons of the whole engine object.
+
+Which was worth doing, because the differential test is blind here too.
+Moving the threshold from `free_nodes > 0x260` to `> 0x261` passes all 200
+configurations and fails the unit test on the first case that reaches it:
+
+    Preformat_PutChar(0x00, free_nodes=0x261): s2_1d54=1/0
+
+Three functions written, three deviations the corpus could not see, each
+one caught immediately by calling the function directly.  They failed for
+three different reasons -- a state the interface cannot produce, a property
+that is real but inaudible, and a threshold no ordinary input lands on --
+which is the point.  There is no single reason differential testing misses
+things, so there is no shortcut for the unit case.
+
+The working rule: **write the function, add it to the corpus if it has an
+input class the corpus lacks, and add a unit case if it has a boundary or a
+constant.**  Both, or the hooks are decoration.
+
+Two things make the unit cases possible at all.  `fresh()` builds a real
+engine with the original constructor and `Engine_Init`, because anything
+that reaches `Preformat_Run` walks live state and a poisoned object is not
+good enough the way it is for the ring accessors.  And `normalize()`
+rewrites self-pointers as offsets before comparing, without which no two
+engines ever match.
 ## What is next
 
-1. Follow the rule bytecode at `0x1005fb88`, which `Stage0_Reset` points
-   `s0_ip` at.  Stage 0 is the rule interpreter, and its opcodes are the
-   doorway to the front end -- the part none of which is shared.
-2. Place the rest of the output block, 0x692..0x700 of int16 state that
-   `Output_Reset` clears without naming, using the 0x19e4 relationship.
-3. Build a Spanish corpus.  `tvh` can render now, so single-utterance
-   cases can be recorded and kept the way `tests/corpus/` is for English.
-   That needs `ref/` to carry a per-file language first.
-4. The `.bss` question. Spanish has 103 KB of it and English none, so some
-   of what English keeps per-engine is global here. Working out which
-   changes how much of the English source can be reused in shape.
-5. Find the live SAPI object count, the last of the fifteen harness
-   addresses.  Nothing needs it -- the engine renders without it -- so
-   it is the least urgent thing on this list.
-6. Only then the front end: letter-to-sound rules, the dictionary, and
-   stages 0 to 2, which is the bulk of the work and none of which is shared.
+There are now three tests with different reach: `difftest --lang es` asks
+whether the engine still sounds the same, `unit_es` asks whether a function
+is the same function, and `es_reftest` asks whether the harness still
+reproduces a recording made through SAPI.  Work that is not covered by one
+of them is work that is not finished.
+
+1. Keep going outward along the call graph, hooking as you go, and add a
+   unit case whenever a function has a boundary the corpus cannot reach.
+   `Engine_InputStage`, `Engine_Flush`, `Preformat_PutChar` and
+   `Engine_Feed` all sit one step from the rings and are already named.
+2. Take the 1995 core before the Spanish-only code: `xmatch --near`
+   against Italian and German makes those cheap to read, and each one
+   decompiled serves four languages.  The two subtrees with the most bytes
+   executing are `Stage3_Run` -> `sub_1001b880` -> `sub_10010ba0`,
+   `sub_10016460`, `sub_1001b440`, and `Synth_Step` -> `Synth_Generate`.
+3. Escape sequences are missing from the corpus.  `Preformat_Run` is the
+   whole `ESC [` command set and nothing currently exercises it; the
+   English corpus has several such inputs to copy the shape from.
+4. Follow the rule bytecode at `0x1005fb88`, which `Stage0_Reset` points
+   `s0_ip` at.  Stage 0 is the rule interpreter and the doorway to the
+   front end, which is the bulk of the work and shares nothing.
+5. Place the rest of the output block, 0x692..0x700 of int16 state that
+   `Output_Reset` clears without naming.
+6. The `.bss` question.  Spanish has 103 KB of it and English none, so some
+   of what English keeps per-engine is global here.
+7. Find the live SAPI object count, the last of the fifteen harness
+   addresses.  Nothing needs it, so it is the least urgent thing here.

@@ -72,6 +72,31 @@ link "$OUT/tvh_hook.exe" @"$HOOK/defsyms.txt" "$HOOK/tvh_hook.o" "$HOOK/hooks.o"
   "$HOOK/unit.o" "$HOOK/hooks_gen.o" $HOOK_OBJS
 echo "built $OUT/tvh_hook.exe"
 
+# --- Spanish hook build -------------------------------------------------------
+# The same trick against CGRM_ES.DLL: every function written in es/ is patched
+# over the original and the audio has to come out identical.  Spanish is a
+# separate decompilation with its own struct layout, so it gets its own struct
+# header, its own hook map and its own executable; nothing is shared with src/
+# but tv_common.h.  Skipped when there is no Spanish C yet.
+if [ -n "$(find es -name '*.c' 2>/dev/null)" ]; then
+  HOOKES=build/hook_es
+  mkdir -p "$HOOKES/obj"
+  python tools/gen_struct.py es/engine.fields "$GEN/es_engine_struct.h"
+  ES_OBJS=""
+  for src in $(find es -name '*.c' | sort); do
+    obj="$HOOKES/obj/$(echo "$src" | sed 's|^es/||; s|/|_|g; s|\.c$|.o|')"
+    gcc $CFLAGS -DTV_HOOK_BUILD -Ies -Isrc -I"$GEN" -c "$src" -o "$obj"
+    ES_OBJS="$ES_OBJS $obj"
+  done
+  python tools/gen_hookmap.py es "$HOOKES/hooks_gen.c" "$HOOKES/defsyms.txt" $ES_OBJS
+  gcc $CFLAGS -c "$HOOKES/hooks_gen.c" -o "$HOOKES/hooks_gen.o"
+  gcc $CFLAGS -DTV_WITH_HOOKS -c harness/tvh.c -o "$HOOKES/tvh_hook.o"
+  gcc $CFLAGS -DTV_HOOK_BUILD -Ies -Isrc -I"$GEN" -c harness/unit_es.c -o "$HOOKES/unit_es.o"
+  link "$OUT/tvh_hook_es.exe" @"$HOOKES/defsyms.txt" "$HOOKES/tvh_hook.o" \
+    "$HOOK/hooks.o" "$HOOKES/unit_es.o" "$HOOKES/hooks_gen.o" $ES_OBJS
+  echo "built $OUT/tvh_hook_es.exe"
+fi
+
 # --- standalone build ---------------------------------------------------------
 # No Centigram binary anywhere in here.  The engine is the C in src/, and the
 # constant tables it reads are committed under data/ -- see NOTICE for whose

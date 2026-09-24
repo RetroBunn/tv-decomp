@@ -1,0 +1,8 @@
+Uno, dos, tres, cuatro, cinco, seis, siete, ocho, nueve, diez.
+El número de serie es 1234567890.
+Tengo 25 años y vivo en el piso 3.
+La temperatura es de menos 15 grados.
+El 50 por ciento de 200 es 100.
+Costó 1.234,56 euros.
+Llegaron 1.000.000 de visitantes.
+Es el 1º, el 2º y el 3º de la lista.

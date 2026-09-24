@@ -1,0 +1,6 @@
+Dos  espacios  entre  palabras.
+	Una tabulación al principio.
+Espacios al final.   
+
+Una línea en blanco encima.
+Fin.

@@ -1,0 +1,4 @@
+Velocidad normal. [220rAhora más rápido. [90rY ahora despacio. [150r
+[140pTono agudo. [30pTono grave. [p Tono normal.
+[3VHabla Paco. [7VAhora Carlos. [0V Otra vez Pedro.
+[8aMás bajo. [16aMucho más bajo. [0a Volumen normal.

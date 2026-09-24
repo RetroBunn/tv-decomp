@@ -1,0 +1,4 @@
+[1;2;3ABanderas activadas. [2DUna desactivada. [3;4;5NMás banderas. [4;16FBorra algunas.
+Marca uno [1i y dos [1;2;3;4i y tres [7i hecho.
+[9;120lParámetro cambiado. [13l Restaurado. [21;999l Al máximo.
+[2;120;60tTimbre. [12tMalo.

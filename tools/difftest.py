@@ -40,6 +40,15 @@ TV_PORT64 = os.path.join(ROOT, "build", "harness", "tv64.exe")
 CLASSIC = ["-C"]
 WORK = os.path.join(ROOT, "work", "difftest")
 REFDIR = os.path.join(ROOT, "ref")
+CORPUS = os.path.join(ROOT, "tests", "corpus")
+
+#: Extra inputs beyond the corpus: the sample texts the installer ships,
+#: which are English.
+EXTRA_GLOB = os.path.join(ROOT, "TruVoice", "*.TXT")
+
+#: The inputs --full runs under all ten voices and both rates.  Naming
+#: them keeps the configuration count stable as the corpus grows.
+SUBSET = ("01_basic", "03_dates_times", "10_punct", "12_long")
 
 
 def md5(path):
@@ -50,14 +59,14 @@ def prepare_inputs():
     indir = os.path.join(WORK, "in")
     os.makedirs(indir, exist_ok=True)
     inputs = []
-    for p in sorted(glob.glob(os.path.join(ROOT, "tests", "corpus", "*.txt"))):
+    for p in sorted(glob.glob(os.path.join(CORPUS, "*.txt"))):
         data = open(p, encoding="utf-8").read().encode("cp1252")
         name = os.path.splitext(os.path.basename(p))[0]
         dst = os.path.join(indir, name + ".txt")
         if not os.path.exists(dst) or open(dst, "rb").read() != data:
             open(dst, "wb").write(data)
         inputs.append((name, dst))
-    for p in sorted(glob.glob(os.path.join(ROOT, "TruVoice", "*.TXT"))):
+    for p in sorted(glob.glob(EXTRA_GLOB)) if EXTRA_GLOB else []:
         name = "tv_" + os.path.splitext(os.path.basename(p))[0].lower()
         inputs.append((name, p))
     return inputs
@@ -83,7 +92,7 @@ OPTION_VARIANTS = [
 def fixed_opts(name):
     """tests/corpus/NAME.opts pins the harness options for an input (and
     excludes it from the variant matrix)."""
-    p = os.path.join(ROOT, "tests", "corpus", name + ".opts")
+    p = os.path.join(CORPUS, name + ".opts")
     return open(p).read().split() if os.path.exists(p) else None
 
 
@@ -97,7 +106,7 @@ def configs(full, inputs):
         for name, path in inputs:
             for suffix, args in OPTION_VARIANTS:
                 runs.append((name, path, 0, False, suffix, args))
-        subset = [x for x in inputs if x[0] in ("01_basic", "03_dates_times", "10_punct", "12_long")]
+        subset = [x for x in inputs if x[0] in SUBSET]
         for name, path in subset:
             for v in range(10):
                 for phone in (False, True):
@@ -260,11 +269,34 @@ def main():
     ap.add_argument("--port64", action="store_true",
                     help="test build/harness/tv64.exe, the 64-bit standalone "
                          "build")
+    ap.add_argument("--lang", default="en", choices=("en", "es"),
+                    help="which engine to test.  es uses the Spanish DLL, "
+                         "tests/corpus_es and build/harness/tvh_hook_es.exe; "
+                         "see docs/SPANISH.md")
     ap.add_argument("--ref", action="store_true",
                     help="instead of the corpus, check every build against "
                          "the recordings in ref/, made with the real "
                          "installed engine")
     a = ap.parse_args()
+
+    if a.lang == "es":
+        global DLL, TVH_HOOK, CORPUS, WORK, EXTRA_GLOB, SUBSET
+        DLL = os.path.join(ROOT, "TruVoice", "CGRM_ES.DLL")
+        TVH_HOOK = os.path.join(ROOT, "build", "harness", "tvh_hook_es.exe")
+        CORPUS = os.path.join(ROOT, "tests", "corpus_es")
+        WORK = os.path.join(ROOT, "work", "difftest_es")
+        EXTRA_GLOB = None  # the shipped sample texts are English
+        SUBSET = ("01_basico", "02_numeros", "03_acentos", "04_punt")
+        if a.port or a.port64:
+            print("there is no standalone Spanish build yet")
+            return 2
+        if a.ref:
+            print("ref/ holds English recordings; use tools/es_reftest.py")
+            return 2
+        if not os.path.exists(TVH_HOOK):
+            print("no %s: build it first (harness/build.sh builds it when "
+                  "es/ has C in it)" % os.path.relpath(TVH_HOOK, ROOT))
+            return 2
 
     # This test exists to compare against the original, so it is the one
     # thing in the project that genuinely needs a copy of it.  Building and

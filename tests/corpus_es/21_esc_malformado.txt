@@ -1,0 +1,3 @@
+Escape sin corchete X aquí. Corchete sin final [12;34 y texto.
+Longitud máxima [1;2;3;4;5;6;7;8i ahí. Doble [5V escape. [;;;;5r raro.
+Letra desconocida [5Z y otra [9Q más.
