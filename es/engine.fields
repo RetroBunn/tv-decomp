@@ -1,0 +1,94 @@
+# The 1995 Spanish engine's object layout (CGRM_ES.DLL).
+#
+# This is NOT the English Engine.  CGRM_ES is a different generation -- two
+# years older, a third the code, with a .bss section English does not have --
+# and only 12-16% of the English functions appear in it at all.  See
+# docs/SPANISH.md for how these offsets were established and docs/VOICES.md
+# for why the languages split into two families.
+#
+# Every offset below is read off the disassembly, and the comment says from
+# where.  Names follow the English field they correspond to, so that the two
+# can be compared; where the correspondence is a guess it says so.
+#
+# Nothing here is built yet.  This file is analysis, kept in the shape
+# tools/gen_struct.py reads so that it can become a header when there is
+# something to compile against.
+
+# ---------------------------------------------------------------------------
+# What the layout looks like so far
+#
+# English and Spanish have the same field *set* in a different order:
+#
+#   English   tracks 0x0000..0x19ac, then synth, syn_tab 0x2044, sr 0x210c
+#   Spanish   synth 0x0000..0x0730,  then tracks at 0x6ddc
+#
+# Within the track block the two agree in places and not others -- trk_data
+# sits at block+0x3ac in both -- which is what one expects of two builds of
+# a common ancestor rather than a rewrite.
+# ---------------------------------------------------------------------------
+
+struct Engine 0x8788
+# --- synthesiser state, which English keeps at 0x19ac onwards ---------------
+# sub_1000e6f0 (Synth_InitFilters) zeroes two bytes here before anything else,
+# exactly as the English one clears synth_19ad/synth_19ae/synth_hold.  Which
+# of the three these two are is not yet established.
+0x0000 uint8_t  synth_00
+0x0002 uint8_t  synth_02
+
+# sub_1000e6f0 builds two 40-entry coefficient arrays on the stack as int32
+# and copies the chosen one out with "mov word ptr [ecx], si", so this is
+# int16 here as it is in English.  The immediates it writes are the English
+# filt_coef_11k values exactly: -24759, 20770, -24550, 28898, -19553, 27618,
+# 31521, 30905, 17368, 8192, 27691, 25148, 11354.
+0x0004 int16_t  filt_coef[40]
+
+# Zeroed 32 bytes by sub_10017850; English calls its equivalent s3_1fbd[32].
+0x05d9 uint8_t  s3_1fbd[32]
+
+# The three fixed resonator constants, written per sample rate by
+# sub_1000e6f0 with the same values the English engine uses:
+#   8 kHz  -7870, 7281, -6472
+#   11 kHz -7956, 7521, -6905
+# syn_203c and syn_2040 are set and never read in the English engine; whether
+# that is also true here has not been checked.
+0x0654 int32_t  syn_2038
+0x0658 int32_t  syn_203c
+0x065c int32_t  syn_2040
+
+# Assigned in the order 9, 6, 7, 8, 0, 1, 2, 3, 4, 5 -- the same order as the
+# English Synth_InitFilters, which is what identified the function.  Entries
+# 6, 7 and 8 take g_syn8k_* or g_syn11k_*, tables byte-identical to English's.
+0x0660 const void *syn_tab[10]
+
+# "cmp word ptr [ecx + 0x720], 0x1f40" is the 8000 Hz test.
+0x0720 uint16_t sample_rate
+
+# Set to 2 by the caller of Synth_InitFilters, which is Engine_Reset by
+# shape: it clears a run of flags, sets this to 2, then calls a chain of
+# reset routines ending in Synth_InitFilters.  English does the same.
+0x072c int32_t  out_state
+0x0731 uint8_t  reset_0731
+0x0732 uint8_t  reset_0732
+
+# --- the 22 parameter tracks, which English keeps at 0x0000 -----------------
+# All of the following come from sub_10017850, the counterpart of the English
+# Synth_ResetTracks: it loops 22 times seeding each track's first 12 frames
+# from a byte table at 0x100613b0 (g_param_init), with the tracks 0x100 bytes
+# apart.  Offsets are given absolutely; the block starts at 0x6ddc.
+0x6ddc uint8_t  synth_busy
+0x6de0 int32_t  trk_04
+0x6de4 int32_t  trk_08           # set to trk_0c - 2 and then to -1; unclear
+0x6de8 int32_t  trk_0c
+0x6dec int32_t  trk_10
+0x6df0 int32_t  trk_rd[22]       # seeded to 10, as English's trk_rd is
+0x6e48 int32_t  trk_wr[22]       # seeded to 12; English orders these the
+                                 # other way round, wr before rd
+0x6ea0 uint8_t  trk_14[32]
+0x6ec0 int32_t  trk_34
+0x6ec4 int32_t  trk_38
+# 0x6ec8..0x7130 is unexamined.  English has s3_param[22] in the equivalent
+# gap, 0x1b8 bytes of it against the 0x268 here, so it is not the same
+# structure.
+0x7130 uint8_t *trk_buf[22]      # -> trk_data[i]
+0x7188 uint8_t  trk_data[22][256]
+end

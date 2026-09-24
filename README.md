@@ -161,6 +161,7 @@ underneath is right while callers get the better behaviour by default.
 | [docs/LIBRARY.md](docs/LIBRARY.md) | the C API, its contract and its sharp edges |
 | [docs/NVDA.md](docs/NVDA.md) | the add-on, and the engine quirks a driver has to handle |
 | [docs/VOICES.md](docs/VOICES.md) | voices, the 22 parameter tracks, phoneme input |
+| [docs/SPANISH.md](docs/SPANISH.md) | the second engine, and how far it has got |
 
 ## Licence
 
