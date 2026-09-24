@@ -118,7 +118,7 @@ class SynthDriver(SynthDriver):
 	def __init__(self):
 		super().__init__()
 		_truvoice.initialize(self._onIndexReached)
-		self._voice = "0"
+		self._voice = "%s:0" % _truvoice.LANGUAGE
 		self._rate = 50
 		self._volume = 100
 		# The engine's own units, kept so a PitchCommand or RateCommand can
@@ -233,19 +233,42 @@ class SynthDriver(SynthDriver):
 			_truvoice.setSampleRate(which)
 
 	def _getAvailableVoices(self) -> OrderedDict[str, VoiceInfo]:
+		"""Voices keyed "<language>:<index>", each tagged with its language.
+
+		The tag is what lets NVDA pick a voice by language when automatic
+		language switching is on, and the prefix means a second language can
+		be added without renumbering the first one's voices.
+		"""
 		voices = OrderedDict()
 		for i in range(_truvoice.voiceCount()):
-			voices[str(i)] = VoiceInfo(str(i), _truvoice.voiceName(i), "en")
+			vid = "%s:%d" % (_truvoice.LANGUAGE, i)
+			voices[vid] = VoiceInfo(vid, _truvoice.voiceName(i), _truvoice.LANGUAGE)
 		return voices
+
+	@staticmethod
+	def _voiceId(value: str) -> str:
+		"""Canonical id for a saved setting.
+
+		Versions before the languages existed saved a bare index, so a value
+		with no colon is one of those and means English.  Migrating it here
+		rather than resetting keeps everyone on the voice they chose.
+		"""
+		value = str(value)
+		return value if ":" in value else "%s:%s" % (_truvoice.LANGUAGE, value)
+
+	@staticmethod
+	def _voiceIndex(value: str) -> int:
+		return int(str(value).split(":")[-1])
 
 	def _get_voice(self) -> str:
 		return self._voice
 
 	def _set_voice(self, value: str):
+		value = self._voiceId(value)
 		if value not in self.availableVoices:
-			value = "0"
+			value = "%s:0" % _truvoice.LANGUAGE
 		self._voice = value
-		_truvoice.setVoice(int(value))
+		_truvoice.setVoice(self._voiceIndex(value))
 		# Rate is relative to the voice's own default, so re-apply the
 		# percentage against the new default rather than the old one.
 		self.rate = self._rate
@@ -253,13 +276,13 @@ class SynthDriver(SynthDriver):
 		# follows it.  The engine value is taken from the table rather
 		# than back through the percentage, which would round it: a voice
 		# picked and left alone sounds exactly as it should.
-		self._enginePitch = _truvoice.voicePitch(int(value))
+		self._enginePitch = _truvoice.voicePitch(self._voiceIndex(value))
 		self._pitch = _pitchToPercent(self._enginePitch)
 		_truvoice.setPitch(self._enginePitch)
 
 	def _voiceRate(self) -> int:
 		"""The current voice's own words per minute, which 50% maps to."""
-		return _truvoice.voiceRate(int(self._voice))
+		return _truvoice.voiceRate(self._voiceIndex(self._voice))
 
 	# ---- rate, pitch, volume ---------------------------------------------
 

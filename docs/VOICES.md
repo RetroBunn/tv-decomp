@@ -238,8 +238,55 @@ index.
 
 ## The other language DLLs
 
-Out of scope for the decompilation, which targets American English only,
-but they share the layout, and `tools/voicedump.py` reads them too.  Each
+Out of scope for the decompilation, which targets American English only.
+They share the *voice* layout, and `tools/voicedump.py` reads them all, but
+they are not the same engine and this is worth knowing before assuming a
+language can be added by swapping data.
+
+### English is a different generation
+
+| dll | linked | .text | .data | .bss |
+|---|---|---|---|---|
+| CGRM_DE | 1995-11-04 | 0x2bed0 | 0x1ef60 | 0x18398 |
+| CGRM_FR | 1995-11-10 | 0x3188c | 0x198c0 | 0x19758 |
+| CGRM_ES | 1995-11-29 | 0x2c248 | 0x24920 | 0x19628 |
+| CGRM_IT | 1995-11-29 | 0x2cc80 | 0x25550 | 0x19948 |
+| **CGRM_EN** | **1997-10-16** | **0x8a3f6** | **0xbbf50** | none |
+
+The other four are all November 1995, within a month of each other, around
+180 KB of code, and carry `.bss` and `.edata` sections.  English is two
+years later, three times the code, and has neither.  English got a rewrite
+the others never received.
+
+They confirm it by what they share.  Of the functions this project
+annotates in `CGRM_EN.DLL`, only 12-16% appear verbatim in `CGRM_ES.DLL`,
+and by module the figure is zero for every stage -- stage 0 through 3,
+`synth.c`, `generate.c`, `engine.c`, `preformat.c` all score 0/n.  The four
+1995 engines, on the other hand, share 40-47% of their code *with each
+other*, which is the same signature as two builds of one source: they are
+one family, compiled separately per language.
+
+### What is shared is the synthesiser
+
+The back end is common ground.  These are byte-identical between the 1997
+English engine and the 1995 Spanish one:
+
+* `g_syn8k_*` and `g_syn11k_*`, the resonator tables
+* `g_param_max` and `g_default_params`, the 22 tracks' ceilings and defaults
+* `g_hold_atten`
+
+while `g_dur_rate`, `g_pause_rate` and the voice adjustment table are not.
+So the Klatt cascade and its parameter model are the same design across
+both generations -- the formulas in "16 kHz, which the original never had"
+describe either -- and what differs is the language front end and the
+prosody and timing tables on top of it.
+
+Adding Spanish therefore means decompiling the 1995 engine, not feeding
+Spanish data to this one.  It is a smaller engine than the English 1997
+build by about two thirds, and the synthesiser understanding carries over,
+but the `Engine` struct layout, every address annotation and the whole
+front end would be new work.  One decompilation would cover all four, since
+they are one family.  Each
 has its own speaker names, and the roles line up by index: 0 is the
 baseline adult male, 5 is the one that is slowed (Grandpa Amos in English,
 "Opa" in German), and the last two are the female voices -- Wanda and

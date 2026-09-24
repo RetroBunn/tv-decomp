@@ -130,6 +130,19 @@ rather than faster.  46..253 reaches all 26 rows with none repeated more
 than the table's own 8-wpm granularity forces, so the slider is now
 monotonic end to end.
 
+**Voices** are keyed `<language>:<index>` -- `en:0` is Peter, `en:8` Wanda
+-- and each `VoiceInfo` carries its language code.  Only American English
+is decompiled, so today that is `en` throughout, but TruVoice shipped five
+languages and the other four are a different, older engine (see
+docs/VOICES.md).  The prefix is there so that adding one does not renumber
+anybody's saved voice, and so that NVDA can pick a voice by language when
+automatic language switching is on -- which is the whole reason for a
+single flat voice list rather than a language combo beside the voice one.
+
+Versions before the prefix saved a bare index.  A saved value with no colon
+is read as English, so an existing `3` still selects Deep Douglas and
+nobody's settings break on upgrade.
+
 **Sample rate** is a combo box rather than a slider, because the engine has
 exactly three and they are not interchangeable: each needs its own
 resonator tables.

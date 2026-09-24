@@ -178,6 +178,13 @@ def pause(switch: bool):
 	player.pause(switch)
 
 
+#: The language this build speaks.  TruVoice shipped five, but only
+#: American English has been decompiled: the other four are a different,
+#: older engine -- see docs/VOICES.md.  Voice ids carry the language so
+#: that adding one later does not renumber anybody's saved voice.
+LANGUAGE = 'en'
+
+
 #: The three output rates the engine has, as (index, hertz, label).  They are
 #: not interchangeable with arbitrary rates: each needs its own resonator
 #: tables, and 16 kHz is OpenTV's own addition.

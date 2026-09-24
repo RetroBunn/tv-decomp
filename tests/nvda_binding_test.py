@@ -207,7 +207,15 @@ def install_driver_stubs():
 			pass
 
 	handler.SynthDriver = SynthDriver
-	handler.VoiceInfo = lambda *a, **k: None
+	# NVDA's VoiceInfo is a StringParameterInfo with a language on it; the
+	# language is what drives automatic voice switching, so the stub has to
+	# carry it or the tests cannot see whether the driver sets it.
+	class VoiceInfo:
+		def __init__(self, id, displayName, language=None):
+			self.id, self.displayName = id, displayName
+			self.language = language
+
+	handler.VoiceInfo = VoiceInfo
 	handler.synthDoneSpeaking = _Notifier()
 	handler.synthIndexReached = _Notifier()
 
@@ -503,6 +511,28 @@ def driver_tests(_truvoice, commands):
 				setattr(synth, sid, first)
 				check(str(getattr(synth, sid)) == str(first),
 					"setting %r round-trips through its property" % sid)
+
+	# --- voice ids carry their language -----------------------------------
+	# TruVoice shipped five languages and only English is decompiled, but the
+	# ids are prefixed now so that adding one later does not renumber anyone's
+	# saved voice, and so NVDA can pick a voice by language.
+	voices = synth.availableVoices
+	check(list(voices) == ["en:%d" % i for i in range(10)],
+		"voices are keyed language:index")
+	check(all(v.language == "en" for v in voices.values()),
+		"and each carries its language for automatic switching")
+	check(voices["en:8"].displayName == "Wanda", "with the right names")
+
+	# A setting saved before the prefix existed is a bare index and means
+	# English; migrating it keeps people on the voice they chose.
+	synth.voice = "3"
+	check(synth.voice == "en:3", "a bare saved index migrates to English")
+	check(synth._voiceRate() == _truvoice.voiceRate(3),
+		"and really selects that voice")
+	synth.voice = "en:5"
+	check(synth.voice == "en:5", "a prefixed id is taken as it is")
+	synth.voice = "zz:99"
+	check(synth.voice == "en:0", "an unknown voice falls back to the first")
 
 	# The rate slider used to reach 400 wpm, well past the 26th and last row
 	# of the engine's rate table, so its top third made speech slower and
