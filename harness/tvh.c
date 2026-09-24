@@ -8,8 +8,11 @@
  * step function until it reports idle, and collect every PCM buffer it
  * hands to the audio queue.
  *
- * usage: tvh [-v voice0-9] [-8] [-t] [-z nuls] [-L word=phonemes]
- *             <dll> <text|@file> <out.wav>
+ * usage: tvh [-v voice0-9] [-8] [-t] [-i] [-z nuls] [-e en|es]
+ *             [-L word=phonemes] <dll> <text|@file> <out.wav>
+ *
+ * -i queues one TextData item per line instead of one for the whole text,
+ * which is what a SAPI caller speaking a multi-line document does.
  */
 #include <windows.h>
 #include <stdio.h>
@@ -24,23 +27,80 @@
 
 #define THISCALL __attribute__((thiscall))
 
-/* ---- engine object methods (addresses in CGRM_EN.DLL) ------------------ */
-#define VA_ENGINE_CTOR   0x10030fc0 /* this */
-#define VA_ENGINE_INIT   0x1002c450 /* this */
-#define VA_ENGINE_TEXTIN 0x10055ec0 /* this -> bool (TextIn helper object) */
-#define VA_ENGINE_FEED   0x10055aa0 /* this, text, len, &pos */
-#define VA_ENGINE_FLUSH  0x10055f50 /* this, flag */
-#define VA_ENGINE_FREE   0x100281f0 /* this -> free bytes in input ring */
-#define VA_ENGINE_STEP   0x1002c5a0 /* this -> flags: 1=idle, 2=pcm ready */
-#define VA_SET_PITCH     0x1002c810
-#define VA_SET_SPEED     0x1002c840
-#define VA_SET_VOLUME    0x1002c870
-#define VA_SET_VOICE     0x1002c8f0
-#define VA_PITCH_TABLE   0x100b5350 /* uint16 per voice, stride 4 */
-#define VA_SPEED_TABLE   0x100b53a0 /* uint32 per voice */
-#define VA_LEXICON_CS    0x10148b38 /* CRITICAL_SECTION */
-#define VA_LEX_ADD       0x10003d00 /* cdecl(word, pronunciation) */
-#define VA_OBJECT_COUNT  0x100bf5f8 /* live SAPI object count */
+/* ---- per-engine addresses ---------------------------------------------- */
+/* Two generations of the engine ship in these DLLs: American English is the
+ * October 1997 build, every other language is November 1995.  They are
+ * separate decompilations, but they are driven identically -- the same call
+ * sequence, and the same SAPI central object layout -- so all the harness
+ * needs is where each one keeps things.  How the Spanish addresses and
+ * offsets were established is written up in docs/SPANISH.md, and the field
+ * offsets are listed in es/engine.fields. */
+typedef struct {
+    const char *name;
+    /* engine object methods */
+    uint32_t ctor, init, textin, feed, flush, free_ring, step;
+    uint32_t set_pitch, set_speed, set_volume, set_voice;
+    /* module data */
+    uint32_t pitch_table;  /* uint16 per voice, stride 4 */
+    uint32_t speed_table;  /* uint32 per voice */
+    uint32_t lexicon_cs;   /* CRITICAL_SECTION */
+    uint32_t lex_add;      /* cdecl(word, pronunciation); 0 when not located */
+    uint32_t object_count; /* live SAPI object count; 0 when not located */
+    /* engine object fields */
+    uint32_t o_preformat, o_item_done, o_textin_on, o_sapi;
+    uint32_t o_cur_pitch, o_cur_speed, o_cur_volume, o_fmt, o_cur_bac;
+    uint32_t o_sample_rate, o_cur_voice, o_st_input_empty, o_st_idle;
+    uint32_t o_out_count, o_out_buf;
+    uint32_t o_w_212c, o_w_212e, o_w_2130, o_item_notify;
+} tv_abi;
+
+/* CGRM_EN.DLL, the October 1997 American English engine. */
+static const tv_abi abi_en = {
+    "en",
+    0x10030fc0, 0x1002c450, 0x10055ec0, 0x10055aa0, 0x10055f50, 0x100281f0, 0x1002c5a0,
+    0x1002c810, 0x1002c840, 0x1002c870, 0x1002c8f0,
+    0x100b5350, 0x100b53a0, 0x10148b38, 0x10003d00, 0x100bf5f8,
+    0x20ec, 0x20ed, 0x20ee, 0x20f4,
+    0x20f8, 0x20fc, 0x2100, 0x2104, 0x2108,
+    0x210c, 0x210e, 0x2111, 0x2112,
+    0x2124, 0x2128,
+    0x212c, 0x212e, 0x2130, 0x2138,
+};
+
+/* CGRM_ES.DLL, the November 1995 Spanish engine.  The live object count has
+ * not been located in it; it is skipped when zero, and the engine renders
+ * without it. */
+static const tv_abi abi_es = {
+    "es",
+    0x1000ddc0, 0x100086a0, 0x1001c6c0, 0x1001c310, 0x1001c710, 0x1000e5a0, 0x100087d0,
+    0x10008a40, 0x10008a70, 0x10008aa0, 0x10008b10,
+    0x1004c828, 0x1004c878, 0x10037c68, 0x10001370, 0,
+    0x704, 0x705, 0x706, 0x70c,
+    0x710, 0x714, 0x718, 0x1d8, 0x71c,
+    0x720, 0x722, 0x725, 0x726,
+    0x738, 0x73c,
+    0x740, 0x742, 0x744, 0x748,
+};
+
+static const tv_abi *A = &abi_en;
+
+/* Pick the engine from a voice name only that engine has.  Both tables are
+ * plain ASCII in .data, so this reads as the DLL saying which one it is. */
+static const tv_abi *abi_detect(pe_image *img)
+{
+    static const struct { const char *mark; const tv_abi *abi; } known[] = {
+        {"Peter", &abi_en}, {"Pedro", &abi_es},
+    };
+    size_t k;
+    uint32_t i;
+    for (k = 0; k < sizeof known / sizeof known[0]; k++) {
+        size_t len = strlen(known[k].mark);
+        for (i = 0; i + len < img->size; i++)
+            if (memcmp(img->base + i, known[k].mark, len + 1) == 0)
+                return known[k].abi;
+    }
+    return NULL;
+}
 
 #define ENGINE_SIZE 0x9200
 #define SAPI_SIZE   0x1000
@@ -130,10 +190,13 @@ int main(int argc, char **argv)
     int n_lex = 0;
     long opt_pitch = -1, opt_speed = -1, opt_volume = -1;
     int opt_preformat = 1, opt_textin = 1;
-    const char *dll, *textarg, *out;
+    const char *dll, *textarg, *out, *eng = NULL;
     uint8_t *E, *S;
     sapi_queue *aq;
     char *text;
+    char *item[256];
+    uint32_t itemlen[256];
+    int n_items = 0, cur = 0, split = 0;
     uint32_t textlen, pos = 0, rate;
     int pending = 0, fed_all = 0, steps = 0, r;
     bytebuf pcm = {0};
@@ -142,7 +205,9 @@ int main(int argc, char **argv)
     for (i = 1; i < argc && argv[i][0] == '-' && argv[i][1]; i++) {
         if (!strcmp(argv[i], "-v") && i + 1 < argc) voice = atoi(argv[++i]);
         else if (!strcmp(argv[i], "-8")) phone = 1;
+        else if (!strcmp(argv[i], "-i")) split = 1;
         else if (!strcmp(argv[i], "-t")) trace = 1;
+        else if (!strcmp(argv[i], "-e") && i + 1 < argc) eng = argv[++i];
         else if (!strcmp(argv[i], "-z") && i + 1 < argc) nuls = atoi(argv[++i]);
         else if (!strcmp(argv[i], "-c") && i + 1 < argc) cov_blocks = argv[++i];
         else if (!strcmp(argv[i], "-C") && i + 1 < argc) cov_out = argv[++i];
@@ -158,8 +223,9 @@ int main(int argc, char **argv)
         else { fprintf(stderr, "unknown option %s\n", argv[i]); return 2; }
     }
     if (argc - i != 3 || voice < 0 || voice > 9) {
-        fprintf(stderr, "usage: tvh [-v voice0-9] [-8] [-t] [-z nuls]"
-                        " [-L word=phonemes] <dll> <text|@file> <out.wav>\n");
+        fprintf(stderr, "usage: tvh [-v voice0-9] [-8] [-t] [-i] [-z nuls]"
+                        " [-e en|es] [-L word=phonemes]"
+                        " <dll> <text|@file> <out.wav>\n");
         return 2;
     }
     dll = argv[i]; textarg = argv[i + 1]; out = argv[i + 2];
@@ -167,7 +233,16 @@ int main(int argc, char **argv)
     fprintf(stderr, "loading %s\n", dll);
     if (sb_load(dll, &g_img) != 0)
         return 1;
-    fprintf(stderr, "mapped at %p, calling DllMain\n", (void *)g_img.base);
+    if (eng) {
+        if (!strcmp(eng, "en")) A = &abi_en;
+        else if (!strcmp(eng, "es")) A = &abi_es;
+        else { fprintf(stderr, "unknown engine %s\n", eng); return 2; }
+    } else if ((A = abi_detect(&g_img)) == NULL) {
+        fprintf(stderr, "cannot tell which engine %s is; pass -e en|es\n", dll);
+        return 1;
+    }
+    fprintf(stderr, "mapped at %p, %s engine, calling DllMain\n",
+            (void *)g_img.base, A->name);
     if (!pe_call_entry(&g_img, DLL_PROCESS_ATTACH)) {
         fprintf(stderr, "DllMain failed\n");
         return 1;
@@ -180,7 +255,7 @@ int main(int argc, char **argv)
     }
     if (unit) {
         /* unit comparisons call the originals directly: no hooks */
-        InitializeCriticalSection((CRITICAL_SECTION *)pe_va(&g_img, VA_LEXICON_CS));
+        InitializeCriticalSection((CRITICAL_SECTION *)pe_va(&g_img, A->lexicon_cs));
         return unit_run(unit);
     }
     hooks_install(hook_spec, trace);
@@ -197,14 +272,19 @@ int main(int argc, char **argv)
      * (sub_10052c40): the shared lexicon critical section and the live
      * object count.  sub_10052f90 then tries to load the user dictionary
      * english.dic; with no such file that is a no-op, so we skip it. */
-    InitializeCriticalSection((CRITICAL_SECTION *)pe_va(&g_img, VA_LEXICON_CS));
-    *(uint32_t *)pe_va(&g_img, VA_OBJECT_COUNT) = 1;
+    InitializeCriticalSection((CRITICAL_SECTION *)pe_va(&g_img, A->lexicon_cs));
+    if (A->object_count)
+        *(uint32_t *)pe_va(&g_img, A->object_count) = 1;
 
     /* User lexicon entries, as ITTSDialogs/the lexicon calls would add them
      * (sub_10003d00 copies and upper-cases the word itself). */
+    if (n_lex && !A->lex_add) {
+        fprintf(stderr, "-L is not supported for the %s engine yet\n", A->name);
+        return 2;
+    }
     for (i = 0; i < n_lex; i++) {
         void(__cdecl * add)(const char *, const char *) =
-            (void(__cdecl *)(const char *, const char *))pe_va(&g_img, VA_LEX_ADD);
+            (void(__cdecl *)(const char *, const char *))pe_va(&g_img, A->lex_add);
         char buf[256], *eq;
         strncpy(buf, lex_add[i], sizeof buf - 1);
         buf[sizeof buf - 1] = 0;
@@ -226,8 +306,8 @@ int main(int argc, char **argv)
     U32(S, 0xba8) = 1;
     U32(S, 0xb9c) = 0xffff;
     U32(S, 0xba0) = 0xffff;
-    U16(S, 0xb90) = U16(S, 0xb92) = *(uint16_t *)pe_va(&g_img, VA_PITCH_TABLE + 4 * voice);
-    U32(S, 0xb94) = U32(S, 0xb98) = *(uint32_t *)pe_va(&g_img, VA_SPEED_TABLE + 4 * voice);
+    U16(S, 0xb90) = U16(S, 0xb92) = *(uint16_t *)pe_va(&g_img, A->pitch_table + 4 * voice);
+    U32(S, 0xb94) = U32(S, 0xb98) = *(uint32_t *)pe_va(&g_img, A->speed_table + 4 * voice);
     U32(S, 0xbd4) = (uint32_t)opt_preformat; /* registry "PreFormat" (default on) */
     U32(S, 0xbd8) = (uint32_t)opt_textin;    /* registry "TextIn" (default on) */
     /* as if the application had called ITTSAttributes::Pitch/Speed/VolumeSet */
@@ -241,33 +321,70 @@ int main(int argc, char **argv)
      * its own.  SAPI SDK callers conventionally include their terminating
      * L'\0' in SDATA.dwSize, so the engine sees two trailing NULs.  The
      * count matters: the feed routine branches on total length (0x28, 0x82). */
-    text = (char *)realloc(text, textlen + nuls + 1);
-    memset(text + textlen, 0, nuls + 1);
-    textlen += nuls;
+    if (!split) {
+        text = (char *)realloc(text, textlen + nuls + 1);
+        memset(text + textlen, 0, nuls + 1);
+        item[0] = text;
+        itemlen[0] = textlen + nuls;
+        n_items = 1;
+    } else {
+        /* One item per line, cut at the end of each line's text rather than
+         * after its terminator, so every item but the first begins with the
+         * CR/LF that preceded it.  That is where a SAPI caller speaking a
+         * document puts the break -- see docs/SPANISH.md, where it is what
+         * reproduces spanish_test.wav exactly -- and it matters, because the
+         * leading newline is worth 0.43 s of silence and shifts the pitch
+         * contour of everything after it. */
+        uint32_t a = 0, b, e = 0;
+        while (e < textlen && n_items < 256) {
+            for (b = e; b < textlen && text[b] != '\n'; b++)
+                ;
+            e = b;
+            while (e > a && (text[e - 1] == '\r' || text[e - 1] == ' '))
+                e--;
+            if (e > a) {
+                char *t = (char *)malloc(e - a + nuls + 1);
+                memcpy(t, text + a, e - a);
+                memset(t + (e - a), 0, nuls + 1);
+                item[n_items] = t;
+                itemlen[n_items] = (e - a) + nuls;
+                n_items++;
+                a = e;
+            }
+            e = b + 1;
+        }
+        /* Anything after the last line's text is terminator and trailing
+         * blanks; a caller does not speak those on their own. */
+        if (!n_items) {
+            fprintf(stderr, "no text to speak\n");
+            return 2;
+        }
+        fprintf(stderr, "%d items\n", n_items);
+    }
 
     /* ---- engine thread prologue (sub_1002e240) ------------------------- */
     E = (uint8_t *)VirtualAlloc(NULL, ENGINE_SIZE, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
-    FN(m_v, VA_ENGINE_CTOR)(E);
-    U16(E, 0x212e) = 1;
-    U16(E, 0x212c) = 0;
-    U16(E, 0x2130) = 1;
-    PTR(E, 0x20f4) = S;
-    U16(E, 0x210c) = (uint16_t)U32(S, 0xb58);
+    FN(m_v, A->ctor)(E);
+    U16(E, A->o_w_212e) = 1;
+    U16(E, A->o_w_212c) = 0;
+    U16(E, A->o_w_2130) = 1;
+    PTR(E, A->o_sapi) = S;
+    U16(E, A->o_sample_rate) = (uint16_t)U32(S, 0xb58);
     if (U32(S, 0xba8) != 0 && U32(S, 0xba8) < 5)
-        U16(E, 0x2104) = (uint16_t)U32(S, 0xba8);
-    FN(m_v, VA_ENGINE_INIT)(E);
-    U8(E, 0x20ec) = (uint8_t)U32(S, 0xbd4);
-    U8(E, 0x20ee) = (uint8_t)U32(S, 0xbd8);
-    PTR(E, 0x2128) = GlobalAlloc(GPTR, OUTBUF_SIZE);
-    U32(E, 0x2124) = 0;
-    if (U8(E, 0x20ee))
-        FN(m_i, VA_ENGINE_TEXTIN)(E);
+        U16(E, A->o_fmt) = (uint16_t)U32(S, 0xba8);
+    FN(m_v, A->init)(E);
+    U8(E, A->o_preformat) = (uint8_t)U32(S, 0xbd4);
+    U8(E, A->o_textin_on) = (uint8_t)U32(S, 0xbd8);
+    PTR(E, A->o_out_buf) = GlobalAlloc(GPTR, OUTBUF_SIZE);
+    U32(E, A->o_out_count) = 0;
+    if (U8(E, A->o_textin_on))
+        FN(m_i, A->textin)(E);
 
     /* ---- main loop ------------------------------------------------------ */
     for (;;) {
         int flush = -1;
-        if (U8(E, 0x2112) && U8(E, 0x2111)) {
-            if (U8(E, 0x20ed)) {
+        if (U8(E, A->o_st_idle) && U8(E, A->o_st_input_empty)) {
+            if (U8(E, A->o_item_done)) {
                 /* take the next queued TextData item */
                 if (fed_all) {
                     if (!pending)
@@ -275,51 +392,51 @@ int main(int argc, char **argv)
                     goto params;
                 }
                 pos = 0;
-                U8(E, 0x20ed) = 0;
-                U32(E, 0x2138) = 0; /* item flags (PostMessage 0x4ca payload) */
-                FN(m_feed, VA_ENGINE_FEED)(E, text, textlen, &pos);
-                if (U8(E, 0x20ed))
+                U8(E, A->o_item_done) = 0;
+                U32(E, A->o_item_notify) = 0; /* item flags (PostMessage 0x4ca payload) */
+                FN(m_feed, A->feed)(E, item[cur], itemlen[cur], &pos);
+                if (U8(E, A->o_item_done) && ++cur >= n_items)
                     fed_all = 1;
                 flush = 1;
             }
         }
         if (flush < 0) {
-            if (!U8(E, 0x20ed) && FN(m_i, VA_ENGINE_FREE)(E) > 0x800) {
-                FN(m_feed, VA_ENGINE_FEED)(E, text, textlen, &pos);
-                if (U8(E, 0x20ed))
+            if (!U8(E, A->o_item_done) && FN(m_i, A->free_ring)(E) > 0x800) {
+                FN(m_feed, A->feed)(E, item[cur], itemlen[cur], &pos);
+                if (U8(E, A->o_item_done) && ++cur >= n_items)
                     fed_all = 1;
-            } else if (U8(E, 0x2112)) {
+            } else if (U8(E, A->o_st_idle)) {
                 flush = 0;
             }
         }
         if (flush >= 0) {
-            FN(m_vi, VA_ENGINE_FLUSH)(E, flush);
+            FN(m_vi, A->flush)(E, flush);
             pending = 1;
         }
     params:
-        if (U32(E, 0x20f8) != U16(S, 0xb90)) {
-            U32(E, 0x20f8) = U16(S, 0xb90);
-            FN(m_vi, VA_SET_PITCH)(E, (int)U32(E, 0x20f8));
+        if (U32(E, A->o_cur_pitch) != U16(S, 0xb90)) {
+            U32(E, A->o_cur_pitch) = U16(S, 0xb90);
+            FN(m_vi, A->set_pitch)(E, (int)U32(E, A->o_cur_pitch));
         }
-        if (U32(E, 0x20fc) != U32(S, 0xb94)) {
-            U32(E, 0x20fc) = U32(S, 0xb94);
-            FN(m_vi, VA_SET_SPEED)(E, (int)U32(E, 0x20fc));
+        if (U32(E, A->o_cur_speed) != U32(S, 0xb94)) {
+            U32(E, A->o_cur_speed) = U32(S, 0xb94);
+            FN(m_vi, A->set_speed)(E, (int)U32(E, A->o_cur_speed));
         }
-        if (U32(E, 0x2100) != U32(S, 0xb9c)) {
-            U32(E, 0x2100) = U32(S, 0xb9c);
-            FN(m_vi, VA_SET_VOLUME)(E, (int)U32(E, 0x2100));
+        if (U32(E, A->o_cur_volume) != U32(S, 0xb9c)) {
+            U32(E, A->o_cur_volume) = U32(S, 0xb9c);
+            FN(m_vi, A->set_volume)(E, (int)U32(E, A->o_cur_volume));
         }
-        if (U32(E, 0x2108) != U32(S, 0xbac))
-            U32(E, 0x2108) = U32(S, 0xbac);
-        if ((int)S16(E, 0x210e) != (int)U32(S, 0x64)) {
-            U16(E, 0x210e) = (uint16_t)U32(S, 0x64);
-            FN(m_vi, VA_SET_VOICE)(E, (int)S16(E, 0x210e));
+        if (U32(E, A->o_cur_bac) != U32(S, 0xbac))
+            U32(E, A->o_cur_bac) = U32(S, 0xbac);
+        if ((int)S16(E, A->o_cur_voice) != (int)U32(S, 0x64)) {
+            U16(E, A->o_cur_voice) = (uint16_t)U32(S, 0x64);
+            FN(m_vi, A->set_voice)(E, (int)S16(E, A->o_cur_voice));
         }
-        r = FN(m_i, VA_ENGINE_STEP)(E);
+        r = FN(m_i, A->step)(E);
         steps++;
         if (r & 2) {
-            bb_append(&pcm, PTR(E, 0x2128), U32(E, 0x2124));
-            U32(E, 0x2124) = 0;
+            bb_append(&pcm, PTR(E, A->o_out_buf), U32(E, A->o_out_count));
+            U32(E, A->o_out_count) = 0;
         }
         if (r & 1)
             pending = 0;

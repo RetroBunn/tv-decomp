@@ -20,14 +20,112 @@
 # English and Spanish have the same field *set* in a different order:
 #
 #   English   tracks 0x0000..0x19ac, then synth, syn_tab 0x2044, sr 0x210c
-#   Spanish   synth 0x0000..0x0730,  then tracks at 0x6ddc
+#   Spanish   synth 0x0000..0x0736,  then tracks at 0x6ddc
 #
-# Within the track block the two agree in places and not others -- trk_data
-# sits at block+0x3ac in both -- which is what one expects of two builds of
-# a common ancestor rather than a rewrite.
+# Within the synth and output region the two run in step, at a fixed
+# distance of 0x19e4:
+#
+#   syn_2038       English 0x2038   Spanish 0x0654    0x19e4
+#   syn_tab        English 0x2044   Spanish 0x0660    0x19e4
+#   o_2088         English 0x2088   Spanish 0x06a4    0x19e4
+#   o_rate_div100  English 0x2090   Spanish 0x06ac    0x19e4
+#
+# which makes the English layout a way of predicting where a Spanish field
+# will be.  It only holds in that region: filt_coef comes out at 0x19ac, so
+# English has 0x38 bytes there that Spanish has not, and sample_rate at
+# 0x19ec, another 8.  Each deviation is a place English grew.
 # ---------------------------------------------------------------------------
 
-struct Engine 0x8788
+# Identical to the English StageCtx, field for field -- see the note at
+# stage_ctx below for what establishes that.  The node pointers are typed
+# void* here because the Spanish Node struct has not been worked out yet.
+struct StageCtx 0x44
+0x00 void    *first            # start of this stage's window
+0x04 void    *cur              # nodes before cur are done by this stage
+0x08 void    *ctl              # next control node to execute
+0x0c void    *scan
+0x10 void    *last             # end of this stage's window
+0x14 void    *d14
+0x18 void    *d18
+0x1c int32_t  p_1c             # <- mode_I
+0x20 int32_t  p_20             # <- mode_P
+0x24 int32_t  rate_index       # (wpm - 46) >> 3
+0x28 int32_t  pitch
+0x2c int32_t  volume_atten
+0x30 int32_t  p_30             # <- rate_class
+0x34 int32_t  p_34             # <- flags_N
+0x38 int32_t  p_38             # <- flags_A
+0x3c uint32_t type_mask        # set per stage, not by the bulk copy
+0x40 int32_t  voice
+end
+
+struct Engine 0x8838
+# --- what the preformat pass keeps -----------------------------------------
+# All of this comes from sub_10007810, the ESC [ parser, and above all from
+# its reset-to-defaults handler, which writes every one of these and then
+# copies them into the five stage contexts.  The defaults it writes are in
+# the comments; each matches the English engine's.
+0x0054 int32_t  mode_I           # ESC[..I, clamped 0..1; -> StageCtx.p_1c
+0x0058 int32_t  mode_P           # default 1; -> StageCtx.p_20
+0x005c int32_t  rate_index       # default 0xd; -> StageCtx.rate_index
+0x0060 int32_t  speed_wpm        # default 150, floor 50; rate_index is
+                                 # (speed_wpm - 46) >> 3, as in English
+0x0064 int32_t  pitch            # ESC[..p: 2n for n clamped 25..200,
+                                 # default 42 -> 85.  Identical to English.
+0x0068 int32_t  volume_atten     # clamped 0..0x10
+0x006c int32_t  rate_class       # ESC[..f, clamped 0..9, then clamps
+                                 # rate_index against g_rate_class_max
+0x0070 int32_t  flags_N          # default 0x1780; -> StageCtx.p_34
+0x0074 int32_t  flags_A          # default 0x40;   -> StageCtx.p_38
+0x0078 int32_t  voice            # clamped 0..9; -> StageCtx.voice
+0x007c uint8_t  cfg_bytes[22]    # ESC[<idx>;<val>l, clamped against
+                                 # g_param_max and defaulted from
+                                 # g_default_params, exactly as English
+
+# --- input rings and the preformat pass ------------------------------------
+# sub_1000e240 is Engine_ResetRings: three wr/rd pairs, then -1, then the two
+# flag defaults.  Those differ between the generations -- English writes
+# 0x17c0 and 0x41 where this writes 0x1780 and 0x40, one bit more in each --
+# so English added an escape flag.
+0x01e0 int32_t  in_flags_N       # 0x1780 here, 0x17c0 in English
+0x01e4 int32_t  in_flags_A       # 0x40 here, 0x41 in English
+# sub_10007790 is Preformat_Reset: exactly these two, 1 and 0, as English.
+0x01e8 int32_t  esc_state        # set to 1
+0x01ec uint8_t  pre_busy
+# The CSI parser's own state, from sub_10007810: a parameter stack of 16
+# with a depth byte, a "saw a digit" flag, and two scratch values.
+0x01ed uint8_t  esc_depth
+0x01ee uint8_t  esc_seen_digit
+0x01f0 int32_t  esc_param[16]
+0x0230 int32_t  mode_I_on        # set when mode_I is 1
+
+# --- stage 0 ---------------------------------------------------------------
+# sub_10013310 is Stage0_Reset.  It does what the English one does and more:
+# English sets s0_ip, s0_need_test and s0_pending_ptr; this also sets up a
+# second buffer descriptor at 0x310 and a flag at 0x314.
+0x0234 const uint8_t *s0_ip      # -> the rule bytecode at 0x1005fb88
+0x0238 uint8_t  s0_need_test     # set to 1
+0x0239 uint8_t  s0_239
+0x0244 uint8_t  s0_pending[0xa0] # s0_pending_ptr is set to point here
+0x02e4 void    *s0_pending_ptr
+0x02f4 uint8_t  s0_2f4[0x1c]     # a second buffer, pointed at by s0_310
+0x0310 void    *s0_310
+0x0314 uint8_t  s0_314
+
+# --- stage 2, from sub_1001a8b0 --------------------------------------------
+0x0378 int32_t  s2_378
+0x037c int32_t  s2_37c
+
+# --- stage 3, from sub_1001b810 --------------------------------------------
+# Every one of these lands on an English s3_* field at exactly +0x19e4,
+# which is what confirmed the function.
+0x05b4 uint8_t  s3_1f98[22]      # seeded from a 22-byte table at +0x7c
+0x05ca uint8_t  s3_1fae          # set to 1
+0x05cc int32_t  s3_1fb0
+0x05d0 int32_t  s3_1fb4          # set to 1
+0x05d4 int32_t  s3_1fb8
+0x05d8 uint8_t  s3_1fbc
+
 # --- synthesiser state, which English keeps at 0x19ac onwards ---------------
 # sub_1000e6f0 (Synth_InitFilters) zeroes two bytes here before anything else,
 # exactly as the English one clears synth_19ad/synth_19ae/synth_hold.  Which
@@ -44,6 +142,10 @@ struct Engine 0x8788
 
 # Zeroed 32 bytes by sub_10017850; English calls its equivalent s3_1fbd[32].
 0x05d9 uint8_t  s3_1fbd[32]
+0x05f9 uint8_t  s3_1fdd
+0x05fc int32_t  s3_1fe0          # set to 2
+0x0600 int32_t  s3_1fe4          # set to 3
+0x0604 int32_t  s3_1fe8          # set to 4
 
 # The three fixed resonator constants, written per sample rate by
 # sub_1000e6f0 with the same values the English engine uses:
@@ -60,21 +162,103 @@ struct Engine 0x8788
 # 6, 7 and 8 take g_syn8k_* or g_syn11k_*, tables byte-identical to English's.
 0x0660 const void *syn_tab[10]
 
-# "cmp word ptr [ecx + 0x720], 0x1f40" is the 8000 Hz test.
-0x0720 uint16_t sample_rate
+# --- prosody, from sub_1000f070 --------------------------------------------
+# Three fields, the first set to 85, exactly as the English Prosody_Reset.
+# All three land at +0x19e4 from their English counterparts.
+0x0688 int32_t  e_206c           # set to 85, the default pitch
+0x068c int32_t  e_2070
+0x0690 uint8_t  e_2074
 
-# Set to 2 by the caller of Synth_InitFilters, which is Engine_Reset by
-# shape: it clears a run of flags, sets this to 2, then calls a chain of
-# reset routines ending in Synth_InitFilters.  English does the same.
-0x072c int32_t  out_state
-0x0731 uint8_t  reset_0731
-0x0732 uint8_t  reset_0732
+# --- the output stage ------------------------------------------------------
+# sub_1000ad50 is Output_Reset: it clears this whole run of int16 state, sets
+# o_2088 to 0xaaaa as English does, and finishes by dividing its pushed
+# sample-rate argument by 100.  The block runs 0x0692..0x0700 and only the
+# two fields with a distinctive value are named so far; the rest map to the
+# English o_* fields at +0x19e4 but have not been checked one by one.
+0x06a4 uint16_t o_2088           # set to 0xaaaa
+0x06ac int16_t  o_rate_div100    # sample_rate / 100
+
+# --- the host interface block ----------------------------------------------
+# This is English's 0x20ec..0x2140 run, field for field, except that the 1995
+# engine has neither fmt_2104 nor s2_bytes -- the latter being the COM byte
+# list the 1997 engine's phoneme trace writes to, so its absence here is what
+# you would expect.  Each omission shifts everything after it, so the English
+# offset less the Spanish one is 0x19e8 before fmt_2104, 0x19ec after it, and
+# 0x19f0 after s2_bytes.
+#
+# Engine_Construct (sub_1000ddc0) writes sample_rate, sapi, item_notify,
+# item_done, cur_voice, cur_bac, mode_I_on, a flag at 0x1d8, cur_pitch,
+# cur_speed and cur_volume -- the same fields in the same order as the English
+# constructor, less w_2130 and w_2132.  That order is what names most of this
+# block; Engine_Flush and Engine_Step then confirm six of them outright.
+0x0704 uint8_t  preformat        # SAPI "PreFormat" option
+0x0705 uint8_t  item_done        # constructor sets 1; Engine_Flush reads it
+0x0706 uint8_t  textin_on        # SAPI "TextIn" option; gates Engine_Flush
+0x0708 TextIn  *textin           # Engine_CreateTextIn stores the object here
+0x070c SapiCentral *sapi         # constructor sets NULL
+0x0710 uint32_t cur_pitch        # constructor: 85
+0x0714 uint32_t cur_speed        # constructor: 150
+0x0718 uint32_t cur_volume       # constructor: 0xffff
+0x071c uint32_t cur_bac          # constructor: 0
+0x0720 uint16_t sample_rate      # constructor: 0x1f40
+0x0722 int16_t  cur_voice        # constructor: 0
+
+# --- engine state, cleared by Engine_Reset ---------------------------------
+# sub_10008700 is Engine_Reset: it clears this run of flags, sets out_state
+# to 2, and then calls the eleven reset routines in the same order the
+# English one does.  Names are the English ones for the flags it clears in
+# the same sequence.  Engine_Step reads reset_pending, out_state and st_2115
+# through st_2117 by name, which fixes those five.
+0x0724 uint8_t  st_2110
+0x0725 uint8_t  st_input_empty   # set to 1; Engine_Flush sets it at end of input
+0x0726 uint8_t  st_idle          # set to 1; Engine_Flush clears it when it moved
+0x0727 uint8_t  st_2113
+0x0728 uint8_t  st_2114
+0x0729 uint8_t  st_2115
+0x072a uint8_t  st_2116
+0x072b uint8_t  st_2117
+0x072c int32_t  out_state        # set to 2; Engine_Step: "cmp [esi+0x72c], 2"
+0x0730 uint8_t  skip_text
+0x0731 uint8_t  reset_pending    # Engine_Step calls Engine_Reset when set
+0x0732 uint8_t  stop_mark        # tested first; its value decides the return
+0x0734 int32_t  reset_value      # returned when stop_mark was set
+
+# --- the PCM handoff and the stage cursor ----------------------------------
+0x0738 uint32_t out_count        # "mov edi,0x2ee0 ... cmp [esi+0x738], edi"
+0x073c uint8_t *out_buf          # the PCM buffer out_count counts into
+0x0740 uint16_t w_212c
+0x0742 uint16_t w_212e
+0x0744 uint16_t w_2130
+0x0746 uint16_t w_2132
+0x0748 uint32_t item_notify      # zeroed by the constructor, as English's is
+0x074c StageCtx *stage           # sub_1000ead0: "mov ebp,[ebx+0x74c]" and then
+                                 # "cmp edx, 0x7dc" -- stage_ctx[2], which
+                                 # corroborates both the base and the stride
+0x0750 int32_t  free_nodes       # Engine_Step's thresholds: 0x69, 0x25, 0xf
+# --- the five stage contexts -----------------------------------------------
+# StageCtx is English's, field for field.  sub_10007810's reset handler
+# copies the preformat block into all five with "lea ecx,[edi+0x754]" and a
+# stride of 0x44, writing +0x1c through +0x40 and stepping over +0x3c --
+# which is exactly English's p_1c, p_20, rate_index, pitch, volume_atten,
+# p_30, p_34, p_38 and voice, with type_mask left for the per-stage resets
+# to set.  The five type_mask values are 0x17, 0x06, 0x1c, 0x28, 0x3f, the
+# same as English's and in the same order.
+0x0754 StageCtx stage_ctx[5]
+
+# --- the three input rings, from sub_1000e240 ------------------------------
+0x5cc0 int32_t  in_rd
+0x5cc4 int32_t  in_wr
+0x5dc8 int32_t  pre_rd
+0x5dcc int32_t  pre_wr
 
 # --- the 22 parameter tracks, which English keeps at 0x0000 -----------------
 # All of the following come from sub_10017850, the counterpart of the English
 # Synth_ResetTracks: it loops 22 times seeding each track's first 12 frames
 # from a byte table at 0x100613b0 (g_param_init), with the tracks 0x100 bytes
 # apart.  Offsets are given absolutely; the block starts at 0x6ddc.
+0x6dd0 int32_t  mid_rd
+0x6dd4 int32_t  mid_wr
+0x6dd8 int32_t  e_9180           # set to -1
 0x6ddc uint8_t  synth_busy
 0x6de0 int32_t  trk_04
 0x6de4 int32_t  trk_08           # set to trk_0c - 2 and then to -1; unclear
@@ -91,4 +275,24 @@ struct Engine 0x8788
 # structure.
 0x7130 uint8_t *trk_buf[22]      # -> trk_data[i]
 0x7188 uint8_t  trk_data[22][256]
+
+# --- stage 2 state, past the tracks, from sub_1001a8b0 ---------------------
+# The values differ from English's throughout -- this writes 1, 0xd, 5, 7
+# and 0x14 where English writes 3, -1, -1, 180 and -1 -- so the 1995 stage 2
+# keeps different state.  Only the offsets are established.
+0x87b4 int32_t  s2_87b4
+0x87b8 int32_t  s2_87b8          # set to 7
+0x87d2 uint8_t  s2_87d2
+0x87d4 int32_t  s2_87d4
+0x87d8 uint8_t  s2_87d8
+0x87dc int32_t  s2_87dc
+0x87e0 int32_t  s2_87e0          # set to 0x14
+0x87e8 uint8_t  s2_87e8
+0x87f4 int32_t  s2_87f4          # set to 5
+0x87f9 uint8_t  s2_87f9          # set to 1
+0x87fc int32_t  s2_87fc          # set to 0xd
+0x8808 int32_t  s2_8808
+
+# From sub_1000fa10, the Stage1_Reset counterpart.
+0x8834 int32_t  s1_8834
 end
