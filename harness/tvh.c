@@ -216,7 +216,7 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "-c") && i + 1 < argc) cov_blocks = argv[++i];
         else if (!strcmp(argv[i], "-C") && i + 1 < argc) cov_out = argv[++i];
         else if (!strcmp(argv[i], "-H") && i + 1 < argc) hook_spec = argv[++i];
-        else if (!strcmp(argv[i], "-U") && i + 1 < argc) unit = argv[++i];
+        else if (!strcmp(argv[i], "-U") && i + 1 < argc) { unit = argv[++i]; (void)unit; }
         else if (!strcmp(argv[i], "-p") && i + 1 < argc) opt_pitch = strtol(argv[++i], NULL, 0);
         else if (!strcmp(argv[i], "-s") && i + 1 < argc) opt_speed = strtol(argv[++i], NULL, 0);
         else if (!strcmp(argv[i], "-V") && i + 1 < argc) opt_volume = strtoul(argv[++i], NULL, 0);

@@ -6,11 +6,11 @@ no registry, no window messages, no threads, no audio device.  The only
 thing it asks of the host is a C runtime.
 
 ```
-build/harness/tvtts.dll      the library (imports msvcrt.dll and nothing else)
-build/harness/libtvtts.a     its import library
-build/harness/tv.exe         the command line front end, built on the API
-build/harness/api_test.exe   the tests, linked statically
-build/harness/api_test_dll.exe   the same tests across the DLL boundary
+build/bin/tvtts.dll      the library (imports msvcrt.dll and nothing else)
+build/bin/libtvtts.a     its import library
+build/check/tv.exe         the command line front end, built on the API
+build/check/api_test.exe   the tests, linked statically
+build/check/api_test_dll.exe   the same tests across the DLL boundary
 ```
 
 Exports are plain cdecl names, undecorated, so `ctypes` and P/Invoke bind

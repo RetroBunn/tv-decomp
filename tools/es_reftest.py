@@ -27,8 +27,8 @@ import tempfile
 import wave
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-TVH = os.path.join(ROOT, "build", "harness", "tvh.exe")
-TVH_HOOK = os.path.join(ROOT, "build", "harness", "tvh_hook_es.exe")
+TVH = os.path.join(ROOT, "build", "check", "tvh.exe")
+TVH_HOOK = os.path.join(ROOT, "build", "check", "tvh_hook_es.exe")
 
 
 def split_items(text):

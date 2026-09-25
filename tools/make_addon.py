@@ -15,12 +15,13 @@ import zipfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(ROOT, "nvda-addon")
-OUT = os.path.join(ROOT, "build")
+OUT = os.path.join(ROOT, "build", "bin")     # the finished add-on
+OBJ = os.path.join(ROOT, "build", "obj")     # the folder it is zipped from
 
 
 def main():
     bits = 32 if "--32" in sys.argv[1:] else 64
-    dll = os.path.join(ROOT, "build", "harness",
+    dll = os.path.join(ROOT, "build", "bin",
                        "tvtts.dll" if bits == 32 else "tvtts64.dll")
     if not os.path.isfile(dll):
         sys.exit("%s is not built; run sh harness/build.sh first" % dll)
@@ -29,7 +30,7 @@ def main():
     m = re.search(r"^version\s*=\s*(\S+)", manifest, re.M)
     version = m.group(1) if m else "0.0.0"
 
-    stage = os.path.join(OUT, "addon")
+    stage = os.path.join(OBJ, "addon")
     shutil.rmtree(stage, ignore_errors=True)
     # Running the test leaves bytecode behind, and it is both useless to
     # NVDA and built by whichever Python happened to be to hand.
@@ -39,6 +40,7 @@ def main():
     shutil.copy2(dll, os.path.join(stage, "synthDrivers", "tvtts.dll"))
 
     name = "truvoice-%s%s.nvda-addon" % (version, "" if bits == 64 else "-x86")
+    os.makedirs(OUT, exist_ok=True)
     path = os.path.join(OUT, name)
     with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
         for dirpath, _, files in os.walk(stage):

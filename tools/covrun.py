@@ -3,7 +3,7 @@
 Usage: python tools/covrun.py [--full] [-j N] [--decompiled]
 
 Writes work/cov_merged.txt and work/cov_report.txt.  With --decompiled,
-lists the decompiled functions (from build/hook/hooks_gen.c) that still have
+lists the decompiled functions (from build/obj/hook/hooks_gen.c) that still have
 unexecuted blocks, with the uncovered block addresses.
 """
 import argparse

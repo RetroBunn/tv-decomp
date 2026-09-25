@@ -16,7 +16,7 @@ binaries are not part of this repository; place your own copy in
 | `python tools/covrun.py --decompiled --full` | which basic blocks of the decompiled functions the corpus never runs |
 | `python tools/covgen.py ...` | grows `tests/corpus/` by keeping only generated lines that reach new blocks |
 | `sh harness/build.sh` | builds `tvh.exe` (oracle), `tvh_hook.exe` (decompiled code hooked in), `tv.exe` (standalone), `tvtts.dll` (the library) and the API tests |
-| `build/harness/api_test.exe`, `api_test_dll.exe` | the library tests, statically linked and across the DLL boundary |
+| `build/check/api_test.exe`, `api_test_dll.exe` | the library tests, statically linked and across the DLL boundary |
 | `python tools/difftest.py [--full]` | byte-exact comparison of `tvh_hook.exe` against `tvh.exe` over the corpus |
 | `python tools/difftest.py --port [--full]` | the same comparison for `tv.exe`, the standalone build |
 | `python tools/difftest.py --port64 [--full]` | the same comparison for `tv64.exe`, the 64-bit build |
@@ -115,7 +115,7 @@ library.  See docs/LIBRARY.md.
 
 ## The standalone build
 
-`build/harness/tv.exe` is the engine on its own: it loads no DLL, talks to
+`build/check/tv.exe` is the engine on its own: it loads no DLL, talks to
 no SAPI and reads no registry -- its only import is the C runtime.  The
 driver is `src/port/main.c`, which does what the SAPI engine thread did for
 one `TextData` call; `src/port/msvcrt.c` supplies the handful of MSVC 4.2

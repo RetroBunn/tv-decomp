@@ -3,8 +3,8 @@
 Usage: python tools/difftest.py [--full] [--hooks SPEC] [-j N] [--only SUBSTR]
        python tools/difftest.py --ref
 
-Runs every input of the corpus through build/harness/tvh.exe (original code
-only, results cached in work/difftest/ref) and build/harness/tvh_hook.exe
+Runs every input of the corpus through build/check/tvh.exe (original code
+only, results cached in work/difftest/ref) and build/check/tvh_hook.exe
 (decompiled functions hooked in), and requires byte-identical WAV output.
 
 Corpus: tests/corpus/*.txt (UTF-8, converted to cp1252 like SAPI's
@@ -28,10 +28,10 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DLL = os.path.join(ROOT, "TruVoice", "CGRM_EN.DLL")
-TVH = os.path.join(ROOT, "build", "harness", "tvh.exe")
-TVH_HOOK = os.path.join(ROOT, "build", "harness", "tvh_hook.exe")
-TV_PORT = os.path.join(ROOT, "build", "harness", "tv.exe")
-TV_PORT64 = os.path.join(ROOT, "build", "harness", "tv64.exe")
+TVH = os.path.join(ROOT, "build", "check", "tvh.exe")
+TVH_HOOK = os.path.join(ROOT, "build", "check", "tvh_hook.exe")
+TV_PORT = os.path.join(ROOT, "build", "check", "tv.exe")
+TV_PORT64 = os.path.join(ROOT, "build", "check", "tv64.exe")
 
 #: The port is compared against the original, so every OpenTV extension
 #: has to be off: the point of this test is that the decompiled engine
@@ -264,14 +264,14 @@ def main():
     ap.add_argument("-j", type=int, default=os.cpu_count() or 4)
     ap.add_argument("--only", default="")
     ap.add_argument("--port", action="store_true",
-                    help="test build/harness/tv.exe, the standalone build, "
+                    help="test build/check/tv.exe, the standalone build, "
                          "which loads no DLL")
     ap.add_argument("--port64", action="store_true",
-                    help="test build/harness/tv64.exe, the 64-bit standalone "
+                    help="test build/check/tv64.exe, the 64-bit standalone "
                          "build")
     ap.add_argument("--lang", default="en", choices=("en", "es"),
                     help="which engine to test.  es uses the Spanish DLL, "
-                         "tests/corpus_es and build/harness/tvh_hook_es.exe; "
+                         "tests/corpus_es and build/check/tvh_hook_es.exe; "
                          "see docs/SPANISH.md")
     ap.add_argument("--ref", action="store_true",
                     help="instead of the corpus, check every build against "
@@ -282,7 +282,7 @@ def main():
     if a.lang == "es":
         global DLL, TVH_HOOK, CORPUS, WORK, EXTRA_GLOB, SUBSET
         DLL = os.path.join(ROOT, "TruVoice", "CGRM_ES.DLL")
-        TVH_HOOK = os.path.join(ROOT, "build", "harness", "tvh_hook_es.exe")
+        TVH_HOOK = os.path.join(ROOT, "build", "check", "tvh_hook_es.exe")
         CORPUS = os.path.join(ROOT, "tests", "corpus_es")
         WORK = os.path.join(ROOT, "work", "difftest_es")
         EXTRA_GLOB = None  # the shipped sample texts are English

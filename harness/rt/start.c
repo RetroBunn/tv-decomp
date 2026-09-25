@@ -19,6 +19,8 @@ void __stdcall mainCRTStartup(void)
 /* The mingw headers reference UCRT's __acrt_iob_func for stdin/stdout/stderr;
  * map it onto msvcrt.dll's __iob_func (32-byte FILE structs). */
 #include <stdio.h>
-extern FILE *__cdecl __iob_func(void);
+/* dllimport to match the declaration the header already made, or the
+ * redeclaration warns and the build output fills up with caret art. */
+__declspec(dllimport) FILE *__cdecl __iob_func(void);
 static FILE *__cdecl acrt_iob_func_shim(unsigned i) { return &__iob_func()[i]; }
 FILE *(__cdecl *_imp____acrt_iob_func)(unsigned) = acrt_iob_func_shim;

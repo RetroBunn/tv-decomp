@@ -33,22 +33,33 @@ tools that read a DLL, not by an ordinary build.
 sh harness/build.sh
 ```
 
-That produces, in `build/harness/`:
+That produces three directories.  `build/bin/` is what you would use:
 
 | | |
 |---|---|
-| `tv.exe`, `tv64.exe` | command line: text or a file in, WAV out |
 | `tvtts.dll`, `tvtts64.dll` | the flat C library, 27 exports |
+| `libtvtts.a`, `libtvtts64.a` | import libraries, to link against either |
+| `speakwin.exe` | the speak window |
+
+`build/check/` is the verification machinery, which is not something you
+run by hand -- `tools/difftest.py` drives it:
+
+| | |
+|---|---|
 | `tvh.exe` | the oracle: maps the original DLL with its own PE loader and sandboxed imports |
-| `tvh_hook.exe` | the same, with decompiled C patched in over the original |
+| `tvh_hook.exe`, `tvh_hook_es.exe` | the same, with decompiled C patched in over the original |
+| `tv.exe`, `tv64.exe` | command line: text or a file in, WAV out |
 | `api_test*.exe` | library tests |
+
+`build/obj/` is intermediates and can be deleted at any time.  The build
+finishes by printing all of that, so there is no need to go looking.
 
 `tools/extract_data.py` is how `data/` was made, kept in the tree so that
 anyone with the original can check that what is committed is what comes
 out of it. It is not part of a normal build.
 
 ```sh
-./build/harness/tv64.exe -v 0 "Hello world." out.wav
+./build/check/tv64.exe -v 0 "Hello world." out.wav
 ```
 
 ## Using it
@@ -78,6 +89,16 @@ python tools/make_addon.py
 Produces `build/truvoice-<version>.nvda-addon`. It is a native driver over
 the library — no SAPI anywhere — and needs NVDA 2026.1 or later.
 See [docs/NVDA.md](docs/NVDA.md).
+
+### As a speak window
+
+`build/bin/speakwin.exe` is a window for typing text and hearing it:
+voice, rate, pitch, volume and sample rate, with F5 to speak, F6 to pause,
+F7 to stop and F8 to reset. It exports to WAV as well.
+
+It is plain Win32 and uses only stock controls, so NVDA, JAWS and Narrator
+read it without the program implementing anything for them.
+See [docs/SPEAKWIN.md](docs/SPEAKWIN.md).
 
 ### The voices
 
@@ -162,6 +183,7 @@ underneath is right while callers get the better behaviour by default.
 | [docs/NVDA.md](docs/NVDA.md) | the add-on, and the engine quirks a driver has to handle |
 | [docs/VOICES.md](docs/VOICES.md) | voices, the 22 parameter tracks, phoneme input |
 | [docs/SPANISH.md](docs/SPANISH.md) | the second engine, and how far it has got |
+| [docs/SPEAKWIN.md](docs/SPEAKWIN.md) | the speak window, and how it stays accessible |
 
 ## Licence
 

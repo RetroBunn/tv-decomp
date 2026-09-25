@@ -403,7 +403,7 @@ would not even fail loudly.  `gen_hookmap.py` already takes the directory as
 an argument, so pointing it at `es/` was all that was needed.
 
 `es/engine.fields` feeds `tools/gen_struct.py` exactly as the English one
-does, producing `build/gen/es_engine_struct.h` with a layout assertion per
+does, producing `build/obj/gen/es_engine_struct.h` with a layout assertion per
 field.  Two types it refers to, `TextIn` and `SapiCentral`, are forward
 declared in `es/es_engine.h` and not laid out yet; declaring them keeps the
 fields that hold them, and every offset after them, honest.
@@ -414,7 +414,7 @@ are not yet enough Spanish ones to drive it.
 
 ## The first Spanish C, and proving it
 
-`harness/build.sh` now produces `build/harness/tvh_hook_es.exe`: the same
+`harness/build.sh` now produces `build/check/tvh_hook_es.exe`: the same
 trick the English decompilation is built on, aimed at `CGRM_ES.DLL`.  Every
 function written in `es/` is patched over the original with a five-byte
 jump, the engine runs, and the audio has to come out identical.  It is
