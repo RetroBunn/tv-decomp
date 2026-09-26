@@ -173,6 +173,31 @@ underneath is right while callers get the better behaviour by default.
   253 and below is bit-for-bit the original, so the voices still sound the
   way people know them.
 
+## What is next
+
+Three things, in this order.
+
+1. **Finish the Spanish engine.**  134 functions are decompiled and
+   byte-exact, 50.5% of the code the corpus executes.  The tokenizer, its
+   rule interpreter and the sample generator are complete; what is left is
+   the front end and the rest of the synthesiser.  The ones that had an
+   English counterpart to read against are largely used up -- ten are left,
+   seven of them C runtime -- so most of what remains has to be read from
+   the disassembly.  [docs/SPANISH.md](docs/SPANISH.md) ends with the queue
+   and how to remeasure it.
+
+2. **A SAPI 5 interface, 32-bit and 64-bit.**  Both libraries already build
+   at both word widths, so the new work is the shim rather than the engine.
+   This one waits on documentation: what a SAPI 5 voice has to implement
+   will be taken from a published specification, not written from memory.
+
+3. **French, German and Italian.**  All four 1995 engines are one build
+   with the same layout displaced in blocks, and `tools/xmatch.py` already
+   puts a confident counterpart on 454 of Spanish's 766 functions in
+   Italian, 439 in French and 423 in German -- before `--near` is used at
+   all.  Finishing Spanish first is what makes these three cheap, which is
+   why they come last.
+
 ## Documentation
 
 | | |

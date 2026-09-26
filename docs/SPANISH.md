@@ -1201,6 +1201,779 @@ The sweep is 2304 cases -- both directions, six counts, eight masks each
 way, three modes -- over a window of eight nodes with assorted types and
 stress bits.  A five-parameter function is where a corpus stops being
 enough.
+## The parameter setters, and a step function checked over four billion inputs
+
+`Engine_SetPitch`, `Engine_SetSpeed` and `Engine_SetVoice` are the English
+engine's instruction for instruction: store the value, then copy it into all
+five stage contexts, because a stage reads its own context and never the
+engine.  `Engine_SetSpeed` computes the same `(wpm - 46) >> 3` rate index
+with the same two faults, running off the end of a 26-row table above row 25
+and wrapping unsigned below 46.  `TVTTS_EXT_RATE`, which clamps those for
+English, is deliberately not wired up: without the duration scaling that
+lives in stage 2 it would be half a fix, and Spanish's stage 2 duration rules
+are not written.
+
+`Engine_SetVolume` is the one that differs.  English scans a table of
+boundaries; this computes the decibels in x87 and truncates --
+
+    fldlg2 ; fild vol ; fmul 1/65535 ; fyl2x ; fmul -10.0 ; _ftol
+
+which is `log10(vol * (1/65535)) * -10.0`, truncated toward zero, then capped
+at 15.  That is the same step function `src/engine/volume.c` tabulated for
+English, reached a different way, so `es/params.c` reuses those boundaries
+rather than recomputing them.
+
+Reusing them needed proof rather than an argument, because the two engines
+reach the value by different routes and the difference between them would be
+a single volume at one step edge.  The unit case bisects the **original's**
+own curve -- it is non-increasing, so for each attenuation there is a largest
+volume that still reaches it -- and checks ours on both sides of every one of
+the 64 boundaries it finds, which is a test that knows nothing our table
+could also be wrong about.  Then `-U volumefull` sweeps the whole domain:
+**4,294,967,216 volumes, 0x50 to 0xffffffff, every one identical**.  It takes
+a few minutes, so it is not in `all`.
+
+## The reset chain, and the field English has that this engine does not
+
+`Engine_Reset` calls eleven functions and `Engine_Init` calls the same set.
+Seven were unwritten; all seven are now in `es/reset.c`, which finishes the
+chain -- `Engine_Reset` and `Engine_Init` are complete subtrees.
+
+They are almost all stores, which makes them cheap to read and cheap to test:
+poison both objects with 0x5a, run one on each, compare whole.  That catches
+more than it looks like.  A field written that should not be shows up as a
+difference; a field the original writes that we miss shows up as our poison
+against its value.  A reset names fields by writing them, so the comparison
+is a direct check on that part of `es/engine.fields`.
+
+`Output_Reset` earned its keep.  It writes exactly the fields the English
+`Output_Reset` writes, in the same order, each at +0x19e4: the same two it
+skips, the same `0xaaaa` into `o_2088`, the same two arrays, the same
+sample-rate divide.  What it does not write is the point.  English ends with
+`o_20e8 = 0` and there is no such store here, because **there is no `o_20e8`
+in this engine** -- which is why everything from `preformat` onward sits at
++0x19e8 rather than +0x19e4.  That step had been read off the constructor's
+field order; the reset function arrives at it from the other direction.  The
+whole run 0x0692..0x0700 is now placed field by field instead of by analogy.
+
+`Synth_InitFilters` carries the other find.  Both engines build two 40-entry
+coefficient sets on the stack as int32 immediates and narrow the chosen one
+into `filt_coef`; all twenty synthesis tables they select between are
+byte-identical between the two images, and so are the six resonator
+constants.  The 11 kHz coefficients are English's to the bit.  **The 8 kHz
+ones are not**: this engine has -23934 and 17481 in slots 2 and 3 where the
+1997 build has -24759 and 20770 -- which are its own 11 kHz values in those
+two slots.  Two coefficients out of forty, in the rate the phone-quality
+output uses.  English's tables were re-read out of `CGRM_EN.DLL` to be sure
+this was a difference between the engines and not a slip in `src/`; they
+match `src/engine/synth.c` exactly.  The unit case runs `Synth_InitFilters`
+twice, once on a poisoned object (which takes the not-8000 branch) and once
+with `sample_rate` set to 8000, so the differing set is actually reached.
+
+`Synth_ResetTracks` has a third: after computing `trk_08` from `trk_0c`
+exactly as English does, it stores -1 over it.  The first store is dead.  It
+is written out anyway, because a reader comparing the two engines should be
+able to see that the 1995 build has a store the 1997 build does not.
+
+## Two stubbed diagnostics, and the only names the image gives up
+
+`sub_10008b40` is one byte, `c3`.  `sub_10008b50` is three, `c2 04 00`.  Both
+are diagnostics compiled down to a bare return, and both are called from real
+code: the first variadically with a format string, the second with a small
+integer.  They are written out rather than left bound to the DLL because the
+port has to link and because a stage that calls one must not be left with a
+hole.  Patching a five-byte jump over a one-byte function is safe here --
+both are followed by `cc` alignment padding to the next sixteen-byte
+boundary.
+
+Two call sites still carry their format strings, and they are the only place
+in the image where a name from the original source survives:
+
+    sub_1000af20   "ERROR: Arith.c Extend():   TCon=%d "
+    sub_1000f090   "ParL[P_F0]= %d"
+
+So `sub_1000af20` is `Extend()` and it came from a file called `Arith.c`, and
+`sub_1000f090` builds a parameter list indexed by symbolic names of which
+`P_F0` is one.  A sweep of every call site of both stubs found no others: the
+rest of the tracing was compiled out along with its strings.  1,566 printable
+strings in the data sections and exactly one names a `.c` file.
+
+## Leaves: two set tests, a scaler, and the .bss question
+
+With the English-leverage queue down to ten functions -- seven of them C
+runtime, which is bound rather than decompiled -- the productive ground is
+the leaves: functions that call nothing, so they can be tested exhaustively
+with no engine at all.
+
+* `Bits_AllIn` and `Bits_AnyIn` ask what `Bits_Test` cannot: is every bit of
+  one 96-bit set present in the other, and do the two share any bit.  Both
+  walk the three words from the low address up, so unlike the single-bit
+  operations they do not care which end bit 0 lives at.  The unit case gives
+  every word position its turn at being the one that decides, with the other
+  two filled all-ones and all-zero so neither function can short-circuit
+  before reaching it.
+* `Vowel_Index` scans "AEIOU" for a letter and returns its position or -1;
+  `Is_Vowel` answers the same question as a flag.  English has no
+  counterpart -- its letter-to-sound code tests vowels by open comparison,
+  its vowel set not being five things in a row.  `Vowel_Index` is emitted
+  **twice**, at 0x100132b0 and 0x100121f0, byte for byte the same 35 bytes
+  down to the absolute address of the table: one copy per translation unit,
+  which is what a static function in a shared header looks like afterwards.
+  Both are written out, because the hook build patches by address and a
+  decompilation that covered only one would leave the other quietly running
+  the original's code while the tests passed.
+* `Synth_ScaleParam` is English's `Synth_ScaleParam` case for case -- and
+  **stdcall here where English is cdecl**, the same split `Phone_TestMask`
+  has.  Written as cdecl first, it produced garbage from both sides at once:
+  the original pops its eight bytes and the caller popped them again.  The
+  unit case said so on the first run, with the exact argument.  The corpus
+  would have found it too, but not as quickly and not as precisely.
+* `Synth_MulShr11` and `Synth_Gate` are English's, line for line.  Neither
+  was found by `xmatch`: both are small enough that normalising the
+  immediates leaves too few 4-grams to score, so the ranking put them at
+  zero.  Reading `src/engine/frame.c` found them in a minute.  Worth
+  remembering that the matcher's silence on a short function means nothing.
+
+## The lexicon, and the .bss question
+
+Two functions turned out to be the same function twice: a table copied out
+of `.data` into `.bss` the first time something needs it, behind a flag
+nothing ever clears.  That is the `.bss` question answered for 2 KB of the
+103 KB, and the reason is in the image's own strings -- "Save Lexicon
+in: %s", "Cannot save lexicon file: %s".  The tables can be added to at
+runtime, so the build ships a read-only master and duplicates it.
+
+Each is a list of cumulative byte offsets into a blob of records that
+follows it, entry 0 forced to zero, so record *i* runs from `index[i]` to
+`index[i+1]`.  Every record's own length field equals that gap, for all 583
+records across both tables, which is what pins the layouts down.
+
+`Abbrev_Init` builds the 507-entry index for the text-to-text expansions the
+tokenizer applies:
+
+    "$"       -> "peso"
+    "%"       -> "por ciento"
+    "\x10:-)" -> "Sonrisa."
+
+`Lexicon_Init` builds the 78-entry index for the pronunciation lexicon that
+stage 1 consults before its letter-to-sound rules:
+
+    "ANO"    -> "Anj"          (with N-tilde, cp1252 0xd1)
+    "BABY"   -> "BEbI"
+    "BIRDIE" -> "B1IrRRrDI"
+
+which is a foreign-word exception list, as the entries suggest.  The two
+loaders differ in one way worth keeping: the abbreviation one returns 1
+whether or not it did the work, the lexicon one returns 1 only when the
+table was already there and 0 when it has just built it.  The unit case runs
+each both ways round and puts the table back afterwards.
+
+## The rule interpreter, and what TextIn's extra 0x3c holds
+
+`TextIn` is 0xac bytes here against English's 0x70, and the 0x3c difference
+has been an open question since the tokenizer was first read.  It holds the
+state of a bytecode interpreter.
+
+`TextIn_Advance` looks a token up, gets back a list of rules, and hands each
+to `sub_1001e5d0`.  That is a **recursive interpreter over a stream of int16
+words**: one opcode per word, dispatched through an 88-entry jump table for
+opcodes 4..0x5b, with two values handled outside it.  Operands that are
+single bytes occupy the low half of the following word, which is why every
+handler advances the instruction pointer by two and reads one byte.  With
+its handlers it comes to about 11 KB -- the largest coherent thing left.
+
+That gives four fields:
+
+| | |
+|---|---|
+| 0x68 | `rule_ip`, the instruction pointer |
+| 0x6c | `rule_trail`, where `Rule_MatchTrail` leaves the token's trailing character, sign-extended |
+| 0x80 | `errors[10]` |
+| 0xa8 | `err_count` |
+
+The dispatcher itself is not written.  What is written is the part of it that
+lives in separate functions, so each can be replaced and checked while the
+arms that call it are still the original's.  The smallest three are
+`Rule_TestBits`, which asks whether a token carries any or all of a 96-bit
+flag set, and the pair `Rule_SetTrail` and `Rule_MatchTrail`.
+`Rule_MatchTrail` records the character sign-extended and compares it
+unsigned, so a trailing character above 0x7f is stored as a negative number
+and still matches.  The larger handlers are in the next section.
+
+`TextIn_Detach` is `TextIn_RemoveToken`'s other half: it unlinks a token and
+**keeps** it, clearing its links and parking it in `TextIn.detached`, where
+`RemoveToken` unlinks and frees.  It makes the same refusal -- a token with
+nothing in front of it is a caller error -- and, like `Synth_ResetTracks`, it
+computes a return value for the refused case that the refusal then throws
+away.
+
+`TextIn_Error` is the sink all of this reaches for: it keeps the first ten
+codes in a ring, counts them, and always answers -1 so a caller can return
+its result straight out.  **Nothing in the corpus reaches it** -- no input
+the differential test carries makes the tokenizer give up -- so it is the
+first function here whose evidence is entirely the unit case.  That is also
+the argument for having decompiled it: when an input does trip it, the codes
+are readable from the object instead of lost inside the DLL.
+
+## What the rule opcodes do
+
+Six more of the interpreter's handlers are written, which is enough to see
+what the rules are for.  They rewrite a token's text into something sayable.
+
+`Rule_Scan` is the context test.  It walks away from a token, forwards or
+backwards, looking for one that carries the wanted flags, and leaves the
+signed number of steps in `rule_trail`.  Two flags steer the walk: 0x51
+makes a token transparent, so the walk steps over it, and 0x54 is a wall
+that abandons the search.  A count of two means "the second real token
+along", not "within two", because each pass steps at least once and then
+skips.  Backwards, the head node ends it -- the same boundary
+`TextIn_Detach` and `TextIn_RemoveToken` refuse to cross.
+
+`Rule_InsertWord` links a new token in beside a reference and gives it one
+of twenty-six fixed words.  `Rule_SpellOut` names a token's characters one
+at a time from a 256-entry table, separated by spaces, either every
+character above 0x1f or only the letters and digits.  `Rule_SayNumber`
+turns a token's number into words, steered by two more flags, and gives a
+number that ran to the end of its text a trailing space so the next token
+has something to sit against.
+
+Three things worth recording about the data those three read.
+
+**The word table is not fully translated.**  Among the Spanish there is
+"tiret", which is French; "minutes", which is French or English but not
+Spanish; and "un mitad", which is not how a half is said.  The character
+names have their own: "signo de pocentaje" is missing its r, "Dollar" never
+made it out of English, and the exclamation mark is named with a French
+apostrophe.  All of it is audible and all of it stays -- what the engine
+says is what these tables say, and correcting them would change the output.
+
+**`Rule_SpellOut` cannot overflow**, and it is worth having checked rather
+than assumed: the buffer is 132 bytes, the guard stops appending at 100
+characters, and the longest of the 256 names is 22, so the worst append
+starts at 99 and ends at 123.  The one name-table entry that is empty is at
+index 0x1f, which the function's own "0x1f and below" test puts out of
+reach.
+
+**The number formatter needs its digits writable.**  Above three digits it
+writes a NUL three characters from the end, recurses on the leading part,
+names the group it cut off, and then puts the three digits back.  So the
+string a caller gets back is the one it passed in -- but handing it a string
+literal still faults.  The unit case found that by crashing, and the fix was
+in the test rather than the code.
+
+The restoration is worth stating carefully because I first wrote it down
+wrong, as "the buffer comes back truncated".  It is now asserted over every
+input the unit case tries, which matters: two of the handlers hand the
+formatter a token's own text rather than a copy.
+
+`TextIn_InsertBefore` came out of the same subtree, and it refuses too late.
+By the time it decides the reference token has no predecessor it has already
+written `ref->prev = t`, so the refused token is left linked in front of
+`ref` with a null `prev`, owned by nothing, and never freed.
+`TextIn_InsertAfter` refuses before it links, which is why the note there
+only has to mention the leak.  Neither refusal is reachable from the corpus;
+both need a caller that has already lost the head.
+
+The unit suite for these does not use the whole-object comparison the rest
+of the file uses, because the inserts allocate and the two sides end up
+holding different addresses.  It compares contents instead: a token's body
+with its three string pointers taken as strings, and the list as a walk from
+the head recording, for each node, whether it is one of the block's and
+which.
+
+## The rest of the rule opcodes
+
+Five more handlers, and with them the shape of what the rules are for is
+complete enough to state: they decide, for each token, whether it is said as
+a word, said as a number, spelled out letter by letter, or replaced from a
+record the tokenizer attached to it.
+
+Three of them are numbers, and the differences between them are the point:
+
+| | source | length limit | style | if too long |
+|---|---|---|---|---|
+| `Rule_SayNumber` | `Token.num` | int32 | 1 or 4 by flag 0x31 | -- |
+| `Rule_SayNumberText` | `Token.text` | 17 characters | 1, and sets 0x31 | gives up |
+| `Rule_SayNumberOrSpell` | `Token.text` | 7 characters | 4 | spells it out |
+
+The two that read `Token.text` hand it to the formatter directly, so that
+text has to be writable.  They also differ on the trailing character:
+`Rule_SayNumberText`
+overwrites whatever was there with a space, the other two fill one in only
+when there was none.
+
+`Rule_Acronym` is the one with judgement in it.  `Word_IsAcronym` builds a
+consonant/vowel pattern for a three- or four-letter token and applies Spanish
+phonotactics: no vowel after the first consonant means initials (CBS, IBM); a
+doubled letter means a word; an H at either end means initials, H being
+silent; two consonants in front are a word if the second is R or L, initials
+if the first is S and the second is P, T or C.  SOL and USA come out as
+words.  The unit case runs it against **every one of the 17,576 three-letter
+combinations of A to Z**, which is the whole domain its rules actually
+decide, and 38,416 four-letter ones besides.
+
+`Rule_Acronym` then softens that: a token that looks like initials is still
+said as a word if a neighbour carrying flag 0x19 reads as a word itself, the
+token in front being consulted first.  Spelled out, a trailing full stop
+becomes a space first, so the letters do not end on a sentence break that was
+really an abbreviation mark.
+
+`Rule_SayRecord` says the text of a record hanging off `Token.d18`, and only
+if the record's own key matches the one the rule passes -- one opcode serving
+several kinds of attachment.  It also pluralises, under the engine's own
+conditions: flag 0x37, something in front, and a number on the token in front
+greater than one, with the number behind added in first for key 13 (so "2
+metros 50" counts as more than one).  A word ending in a vowel takes "s",
+anything else "es".  The vowel set it uses for that is `"aoieuAOIEU"`, which
+is **not** the `"AEIOUYaeiouy"` `Word_IsAcronym` uses -- no Y.
+
+Where the `d18` record comes from is not established, so `RuleRec` names only
+the three fields this handler touches and says so.
+
+### A buffer overflow in the shipping engine
+
+`Rule_Acronym` lowercases through a 104-byte stack buffer with no length
+check, straight into the return address.  The tokenizer splits on spaces, so
+it takes an unbroken run of 104 characters to reach -- a URL, or a row of
+symbols.  It is reproduced as written, because the decompilation's job is to
+be the original; past that length neither has defined behaviour, and the unit
+cases stay well inside it for the same reason.  It is a candidate for an
+OpenTV extension later, where a fix can sit behind a flag and be tested
+against the corpus with the flag off.
+
+### Two notes on the tests
+
+The whole-object comparison the rest of `unit_es` uses does not work here.
+The inserts allocate, so the two sides hold different addresses; the records
+are built one per side; and `Token.d18` points into whichever block built it.
+The comparison is by content instead -- a token's body with `d18` reduced to
+null-or-not, the strings compared as strings, and the list walked from the
+head recording which block node each one is.
+
+The number formatter's in-place truncation was found by the test crashing,
+not by reading: the first version passed string literals.  The fix was in the
+test, and the property is now something the test checks rather than a trap
+for the next reader.
+
+## The number grammar, and the dispatcher mapped
+
+`Number_WordsEx` is written.  It is where six of the interpreter's handlers
+end up, and it is the piece of Spanish grammar in the engine: three-digit
+groups, recursion one level per group, and the scale word appended on the way
+back up.
+
+The scale tables are indexed by **level % 4, not % 3** -- mil, millon, mil,
+billon, which is the long scale Spanish uses.  Reading that as % 3 was my
+first mistake and it made the fourth entry look dead; the unit sweep caught
+it on a seventeen-digit input, which is the shortest one that reaches level
+three.  The same misreading had hidden a second condition: the plural scale
+word is used when the part above is greater than one **or** when the level is
+3, whatever is above it.
+
+Being a pure function of six arguments, it can be swept properly, and it is:
+every value from 0 to 9999 against all four styles, both genders, all four
+group levels and both flag values -- 640,512 comparisons, in under a second.
+
+The styles turn out to be four: ordinals, cardinals-without-a-standalone-one,
+fractions, and plain cardinals.  Gender is a separate argument that rewrites
+the last letter of a word in place, at a fixed distance from the end;
+"doscientos " becomes "doscientas " by stepping back over the s first.
+
+The tables are misspelled in places -- "quarto", "quatroscientos",
+"setescientos", "ochoscientos", "novescientos", "cuadragstimo" -- and there
+is no "y" between twenty and its unit, because the tens entry is "veinti "
+and the unit follows with a space.  Twenty-one comes out "veinti un".  All of
+it is audible and all of it stays.
+
+### The dispatcher, read but not yet written
+
+`sub_1001e5d0` is mapped.  Its 88 arms are 85 distinct targets -- opcodes 30,
+31, 32 and 67 share the error arm -- and they fall through each other in
+chains, which is what makes it compact:
+
+| opcodes | what they do |
+|---|---|
+| 3 | logical NOT of one sub-expression |
+| 4..8 | AND over two to six sub-expressions |
+| 9..12 | OR over two to five |
+| 13, 14 | constant true, constant false |
+| 15..22 | set, compare and range-test `rule_trail` |
+| 23..28 | move the cursor, by count or by `rule_trail`, over all tokens or only significant ones |
+| 29 | compare `Token.w08` with an immediate |
+| 33..38 | build a flag set from one to three immediates and test the token |
+| 39..59 | build a flag set and scan for it, in either direction |
+| 60..91 | the handlers: say, spell, insert, remove, detach |
+
+Two things the map settled.  Four of the scan opcodes pass a `check` of 2
+rather than 1, which makes `Rule_Scan` walk and always answer no -- the note
+in `rule.c` claiming every call site passes 1 was wrong, and the unit case
+now covers every check value the dispatcher is seen to use.  And opcode 28
+walks the token list using the low half of `ebx` as its counter, which is the
+register holding `self`; it gets away with it because nothing reads `self`
+again before the return.
+
+## The interpreter itself, and what `detached` was for
+
+`Rule_Eval` is written.  It passed the whole corpus on its first run, which
+is the reward for having done the handlers first: by the time the dispatcher
+went in, every piece it calls that the corpus reaches was already byte-exact,
+so the only thing under test was the dispatch.
+
+It is checked two ways.  The corpus exercises the handler opcodes, because
+those need a token with text and a lexicon behind it and the corpus has
+both.  Everything else -- the combinators, the `rule_trail` comparisons, the
+cursor moves, the flag tests and scans, the four token readers, and the
+opcodes that are errors -- is driven by hand-written bytecode: sixty-four
+short programs against four arrangements of the token flags, with the whole
+block compared afterwards so a program that moves the cursor or rewrites
+`rule_trail` is checked on its effect as well as its answer.
+
+Two things came out of writing it.
+
+**`TextIn.detached` has a second half.**  `sub_1001d850` is
+`TextIn_Reattach`: it takes the token parked by `TextIn_Detach` and links it
+back beside another one, clearing the slot.  Between them, opcodes 74, 75 and
+76 are how a rule *moves* a token rather than rewriting it.  Reattaching
+after the last token sets `TextIn.cur`, where `TextIn_InsertAfter` sets
+`TextIn.tail` in the same situation -- two different fields four bytes apart,
+and the asymmetry is the original's.
+
+**The rewind in opcodes 58 to 61 is not a slip.**  Those arms subtract two
+from `rule_ip` between their two passes, which looked wrong until
+`sub_100211b0` turned out to read an operand from `rule_ip` itself.  The
+rewind lets the second pass read the same operand again.
+
+Eight handlers stay bound to the DLL: nothing in the corpus reaches them, so
+there is nothing to check a decompilation against.  They are declared as
+`Rule_Op60`, `Rule_Op64` and so on -- named for the opcode that calls them,
+which is the only thing established about them.
+
+`Synth_Step` and `Tracks_Op` went in alongside.  `Tracks_Op` is the one entry
+point the rest of the engine uses to ask the parameter tracks four questions:
+is there room, slide the window down, is the read cursor still behind, and
+step it.  Sliding subtracts 0x800 from all forty-four per-track cursors and
+the four global ones, and leaves `trk_08` alone when it holds the -1
+`Synth_ResetTracks` puts there.
+
+## ParL, and a coverage report worth running
+
+`Prosody_Build` is written.  It runs after every synthesis step: it reads the
+current byte of all twenty-two parameter tracks, applies the voice's
+percentage adjustments, works out the pitch and the four formants, and fills
+`filt_coef`, which is what `Synth_Generate` then runs the filter from.  It is
+the function the image's one surviving trace string calls ParL, and the trace
+fires -- alongside error 0x65 -- when the pitch comes out below 0x3c, which
+is also where the pitch gets forced to 0x41.
+
+At 2,427 bytes it passed the corpus on its first run, which was surprising
+enough to be worth distrusting.  A negative control settled it: adding one to
+the pitch takes the corpus from 205/205 to **12/205**.  The first control
+tried -- moving a clamp from 0x6b to 0x6c -- changed nothing at all, which
+was not a sign the hook was dead but a sign that particular clamp is never
+reached.  That is the distinction the coverage report makes, so it got run:
+
+    python tools/covrun.py --lang es --full --decompiled
+
+It lists every decompiled function with blocks the corpus never executes, and
+it found two things.
+
+**`TextIn_Reattach` had no evidence at all** -- 0 of its 11 blocks, and no
+unit case either, because it was written in the same pass as the dispatcher
+that calls it and nothing in the corpus reaches that opcode.  It has a unit
+case now: every reference position, both directions, the head it refuses to
+go in front of, the null reference and the empty slot.
+
+**Ten of `Prosody_Build`'s 119 blocks are unreached**, and they are exactly
+the ones written from the disassembly alone.  Six of them are the arms
+guarded by the `s3_1fbd` bit, which no frame the corpus produces ever sets --
+so the `(x * 5 * 2) & ~6) >> 1` table indexing in the four formants and the
+three amplitudes rests on the reading and nothing else.  One is the
+`row != 0` arm: no phoneme in the corpus puts anything in the top nibble of
+track 21, so every frame uses voice row 0.  The other three are clamps.  All
+ten are named in the file.
+
+The same report is worth reading for the rest: `Rule_Eval` executes 128 of
+296 blocks from the corpus, with the remainder covered by the bytecode unit
+case, and `Number_WordsEx` 65 of 103, with the remainder covered by the
+sweep.  Between the three tests there is very little that nothing looks at,
+and the report is how to tell which is which.
+
+## The TextIn object's own lifecycle
+
+Four more went in around the tokenizer: `TextIn_Construct`, `TextIn_Reset`,
+`TextIn_Advance` and `Engine_CreateTextIn`.  They are small, but they close
+the loop on the object -- it is now made, reset, advanced and filled entirely
+by decompiled code, with only the mode-4 reset and the rule runner left bound
+to the DLL.
+
+They also name four more fields: `TextIn.ti_04`, which `TextIn_Advance` takes
+a different path on when it is 1; `ti_6e` and `ti_74`, which both the
+constructor and the reset clear; and `Token.w32`, cleared when a token is
+made.  That leaves 0x6f..0x73 and 0x75..0x7f of the `TextIn` still
+unexamined.
+
+`Engine_CreateTextIn` settles one small thing: the tokenizer's mode comes
+from the SAPI object when there is one and is zero when the engine is
+standalone, which is the only place the tokenizer's behaviour depends on the
+host.
+
+## Reading the signal processing
+
+`Synth_Generate` is written and byte-exact.  What stopped the first attempt
+was not its size -- 4,436 bytes -- but that the instruction listing tells you
+everything about it except what it computes.  It is a long run of
+imul/add/sar with no calls to break it up, and the compiler has interleaved
+the state rotation of the delay lines through the arithmetic, so reading it
+line by line means holding a dozen stack slots in your head at once.
+
+`tools/dataflow.py` is the answer to that, and it is worth having for the
+front end too.  It walks the listing keeping a symbolic value for every
+register and stack slot and prints the expression at each point the function
+commits one.  What took a page of assembly becomes:
+
+    1000a701  edi  = (((W0x5a*W0x36)+2*((W0x12*D0xb8)+(W0x1c*D0x90)))) >> 0xf
+    1000a76b  edi  = (((W0x58*W0x3c)+2*((W0x34*W0x1c)+(W0x1a*D0x80)))) >> 0xf
+    1000a7c9  ebp  = (((D0xb0*W0x56)+2*((W0x3a*W0x1a)+(D0xb4*W0x18)))) >> 0xf
+
+`W0x5a` is the int16 at `[esp+0x5a]`, `D0x90` the int32 at `[esp+0x90]`, and
+`E0x06ae` would be a field of the object.  The names say where a value came
+from, not what it means, which is the point: they are what the listing
+actually knows.
+
+That makes the shape plain.  The function is a **cascade of saturating Q15
+biquads**, each one
+
+    y = (2 * (x * a + y1 * b) + y2 * c) >> 15
+
+clamped to int16 -- at 0x7fff on the way up and 0x8000 on the way down, with
+the boundary tested at -32767 rather than -32768.  Thirty-four expressions
+commit in the loop body, of which about eight are the resonator cascade and
+the rest are the excitation and the output stage.  The prologue copies
+thirty-nine int16 fields of the output block into locals and the epilogue
+puts them back, which is why the state offsets in the expressions are stack
+slots rather than object fields.
+
+### What the reading found
+
+Most of the reading is done and is recorded here so it is not done twice.
+
+**Arguments.**  `Synth_Generate(Engine *self, uint16_t rate, const int16_t
+*coef)`, where `coef` is `filt_coef` and `rate` is compared against 0x1f40
+inside the sample loop.
+
+**State.**  The prologue copies thirty-nine int16 fields of the output block
+into locals and the epilogue puts them back.  `o_20ae[22]` is the delay line,
+interleaved so that `[esp+0x12]`, `[esp+0x1e]`, `[esp+0x1c]`, `[esp+0x5a]`,
+`[esp+0x1a]`, `[esp+0x58]` ... are `o_20ae[0]`, `[1]`, `[2]`, `[3]`, `[4]`,
+`[5]`; the pairs `(0,1)`, `(2,3)`, `(4,5)` and so on are one resonator's two
+delayed samples each.  `o_2092[0..9]` at `[esp+0x44]` down to `[esp+0x32]`
+hold the coefficients the filter is currently running with.
+
+**Coefficients.**  `coef[0]` and `coef[1]` are read out first, then
+`coef[2..29]` are copied to `[esp+0xcc]` upward and `coef[32..39]` to
+`[esp+0x108]` upward, with `coef[30]` and `coef[31]` kept separately as the
+two pitch periods.  A rearrangement block then negates seven of them and
+widens the set the biquads use:
+
+| slot | value | slot | value |
+|---|---|---|---|
+| `D0xc4` | `coef[37]` | `D0xa4` | `coef[18]` |
+| `D0xc0` | `coef[38]` | `D0xa0` | `coef[20]` |
+| `D0xbc` | `-coef[39]` | `D0x9c` | `coef[22]` |
+| `D0xb8` | `coef[23]` | `D0x98` | `coef[24]` |
+| `D0xb4` | `coef[12]` | `D0x94` | `coef[26]` |
+| `D0xb0` | `-coef[13]` | `D0x8c` | `coef[4]` |
+| `D0xac` | `coef[2]` | `D0x88` | `-coef[5]` |
+| `D0xa8` | `-coef[3]` | `D0x78` | `coef[6]` |
+| | | `D0x74` | `-coef[7]` |
+
+`coef[0]` is a control word, not a coefficient: bit 7 is the mute flag
+`Prosody_Build` ORs in, and bits 0..4 index `g_10049b78` and decide whether a
+constant of 0x4000 is used.  `coef[1]` is scaled by `(x * 20861) >> 15`,
+which is two over pi in Q15.
+
+**Excitation.**  `o_2076` counts down one per sample; when it goes negative a
+new pitch pulse starts, `o_2082` is set to -1, the ten `o_2092` coefficients
+are reloaded from `coef[14]`, `-coef[15]`, `coef[36]`, `coef[10]`,
+`-coef[11]`, `coef[27]`, `coef[8]`, `-coef[9]`, `coef[25]`, `coef[32]`, and
+the two pitch periods in `coef[30]` and `coef[31]` swap.  So the filter's
+coefficients are held constant across a pitch period and only change on a
+pulse.  The pulse is differentiated against `o_208c`, shifted up three and
+scaled by `coef[17]`; the noise is an LFSR in `o_208a` scaled by `coef[16]`;
+the two are added.
+
+**Two dead fragments**, both `test x, 0x8000; je skip; or x, 0x8000` -- a bit
+set that is already set.  One is in the coefficient copy loop and one is in
+the noise generator.
+
+**Output.**  One sample per iteration, appended to `out_buf` at `out_count`,
+which advances by two.  The loop runs **`o_rate_div100`** times -- the
+sample rate over a hundred, which `Output_Reset` computes, so one call is ten
+milliseconds of audio.  That is a correction: an earlier reading of this had
+`coef[19]` as the sample count, because the register holding the count was
+loaded from a coefficient slot and then reloaded from the object two
+instructions later.  The unit harness found it in its first run, by
+generating one sample instead of eighty.
+
+### The harness
+
+`unit_es -U synth` drives the function directly, which is the thing four
+reading passes did not give.  Both engines get the same seeded output block,
+the same coefficients and their own output buffer; the comparison reports the
+first sample that differs and every byte range of the object that differs,
+named where the field is known.  Two hundred and fifty-six seeded states
+against both sample rates, plus twenty-four runs of four hundred consecutive
+frames: 537 comparisons in all.
+
+The coefficients start from the real 11 kHz filter table, because feeding the
+generator junk mostly tests the guards: `o_rate_div100` decides how long it
+runs, `coef[30]` and `coef[31]` are pitch periods used as counters, and
+`coef[0]` is a control word whose low five bits index a table.
+
+It has a control of its own, and getting that to fire took three tries.  A +1
+on a Q15 coefficient rounds away when the excitation is small; so does a
+single changed delay-line word when that resonator happens to be quiet.  What
+does fire is perturbing the whole state block, and the harness refuses to
+report success unless it does -- a comparison that cannot see a difference is
+not evidence of anything.
+
+A single call cannot see everything.  The pitch counters `o_2076` and
+`o_2078`, the phase accumulator `o_20e0`, the noise in `o_2088` and the
+`o_207a` state machine are all carried from one frame to the next, and a
+real utterance is thousands of consecutive calls.  So the suite also walks
+both engines through runs of four hundred frames with the coefficients
+changing under them, stopping at the first frame whose state or output
+diverges.  That is what found the `c30`/`c31` swap, which every single-call
+comparison passes.
+
+With that in place the transcription could go in a piece at a time, and
+every piece was bisectable.  The harness found three bugs on the first pass,
+and each was a class rather than a typo:
+
+* the five parallel sections double only their first product, where every
+  section in the serial chain doubles the sum of its first two;
+* the aspiration tap reads `o_20ae[6]` in two states at once -- the value
+  from before the resonator above moved it along, and the value after;
+* the pulse-mode branch tests the high byte of `o_2080`, not a bit of
+  `coef[0]` as the instruction's operand first suggested.
+
+The harness has since found six more, and the list is worth keeping because
+none of them is the kind of thing a careful reading catches:
+
+* `o_208e` takes the last sample's shaped pulse and `o_2092[10]` is simply
+  `coef[33]` -- neither is touched inside the loop, so both look like state
+  the function ignores until the epilogue writes them;
+* `coef[34]` and `coef[35]` are a pair that swaps on every pitch pulse, the
+  way `coef[30]` and `coef[31]` do;
+* **the noise generator's state lives in `o_2088` between calls.**  Starting
+  it at zero passes every unit case whose seed leaves `o_2088` at zero, and
+  fails the corpus from the second frame onward.  That one is the argument
+  for having both tests: the harness could not see it and the corpus could
+  not say where it was;
+* the negations are done in a 16-bit register before being widened, so
+  -32768 negates to itself rather than becoming 32768;
+* the intermediates wrap, and signed overflow is undefined in C, so they are
+  written unsigned -- a decompilation that only matches on the inputs it
+  happens to be given is not a decompilation, which is why the harness feeds
+  it pseudo-random coefficients as well as real ones.
+
+Three more closed it, and each was found by a test rather than by reading:
+
+* **the parallel sections do not get the same noise the serial chain got.**
+  Past the half-way point of a pitch period -- `o_2076` non-zero and
+  `o_2078` gone negative -- the noise is halved, in 16 bits so the sign
+  propagates, and `coef[28]`'s term at the bottom of the branch takes the
+  halved value too.  The engine is quieting the aspiration in the closed
+  phase of the glottal cycle.  This is why every pseudo-random set failed
+  and every real one passed: the real coefficient sets in the corpus reach
+  that branch with state that hides it;
+* `ser`, the feedback the aspiration tap contributes to the output stage,
+  is **saturated** like every other stage.  It shows up in one place only
+  -- when the output is muted, because then the sample is forced to zero
+  and `o_207c` is the one field where the value survives;
+* **`c30` and `c31` swap on every pitch pulse**, exactly as `coef[34]` and
+  `coef[35]` do.  Assigning `coef[31]` to `c30` instead gets the first two
+  periods right and every one after that wrong.  No single-call comparison
+  can see this, which is what the chained test below exists for.
+
+With those in, `Synth_Generate` is byte-exact: 537 of 537 unit comparisons
+and 205 of 205 corpus configurations with it hooked in.
+
+## A second build of the same engine
+
+Lernout & Hauspie shipped TruVoice inside their TTS3000 system, and two of
+those DLLs are worth knowing about.  Neither is in the repository -- both
+are covered by the `*.dll` line in `.gitignore` -- but what was read out of
+them is recorded here.
+
+`SPMct160.dll` (124 KB, 1999) is the **language control** and is no use at
+all: its exports are the TTS3000 front-end API (`TtsEgConvertText`,
+`TtsEgGetPcmData`, `TtsEgProsodyHndl`), `xmatch` scores 0 of 766 functions
+against it at any threshold, and it shares no engine data.  Where it does
+arithmetic it works on 32-bit state with the coefficients compiled in as
+strength-reduced constants -- `0xf`, `0x11`, `0x81`, `0x101`, `0x1ff`, all
+2^n +/- 1 -- which is a different algorithm from anything here.  It does
+carry the pipeline configuration in plain text, e.g.
+`T="Pm(TTS);G(TTS);Pos(TTS);Morph(TTS);M(number);D(number)"`, which says
+which stages TTS3000 handles and which are L&H's own.
+
+`SPMtv160.dll` (268 KB, 1998) is **the synthesiser**, and it is the same
+engine.  It exports `vfOpen`, `vfGenPcm`, `vfSetSpkr`, `vfTuneSpkr`,
+`vfP2Tic`, `vfSetSegDb`, `vfSetSynthRange` and their fellows; its `.text` is
+only 64 KB across 175 functions, because the whole text front end is
+TTS3000's rather than its own.
+
+**The data is shared, in bulk.**  Comparing `.data` and `.rdata` against
+`CGRM_ES.DLL` finds 85,561 bytes in runs of 48 bytes or more.  One of them
+settles what it is: the run at `CGRM_ES 0x10049970` is 584 bytes long, and
+`0x10049970 + 584` is exactly the end of `g_pulse_gain`, so the block is
+`g_pulse_shape` and `g_pulse_gain` back to back and byte-identical.  In
+`CGRM_ES.DLL` nothing reads it but `Synth_Generate`; in `SPMtv160.dll`
+nothing reads its copy but `sub_1000266a`.
+
+**The code is not shared, but it corresponds.**  `xmatch` finds only two
+matches at 0.30 and both are thunks, so the two were built by different
+compilers and token-level matching is useless.  The structure survives
+anyway.  Four shared data blocks have exactly the same number of consumers
+on each side -- 2 and 2, 4 and 4, 2 and 2, 1 and 1 -- which pairs the
+functions off:
+
+| block | CGRM_ES.DLL | SPMtv160.dll |
+| --- | --- | --- |
+| `0x10049970` pulse tables | `Synth_Generate` `10009bf0` 4436 B | `1000266a` 3491 B |
+| `0x10049d03` | `Synth_InitFilters` `1000e6f0` 884 B | `1000b580` 811 B |
+| `0x10049d03` | `Prosody_Build` `1000f090` 2427 B | `1000b921` 2549 B |
+| `0x10058812` | `Segment_Apply` `100117e0` 2441 B | `1000e803` 1922 B |
+| `0x10058812` | `Cluster_SetTracks` `10012f30` 848 B | `1000f9f6` 701 B |
+| `0x1004d028` | `BitTable_Rank` `10012220` 188 B | `1000efc8` 139 B |
+| `0x1004d028` | `BitTable_Count` `100122f0` 132 B | `1000f053` 115 B |
+
+The pairing was calibrated against functions already decompiled, which is
+the only way to trust it.  `Synth_InitFilters` shares 95 of its 109
+immediates with `1000b580`, the filter coefficients themselves included
+(`0x7b21`, `0x78c2`, `0x7625` ...).  `Synth_Generate` shares 87 with
+`1000266a`, `0x1f40` -- the 8000 Hz test -- among them.
+
+**It is easier to read than the original.**  `SPMtv160.dll` was built with a
+compiler that emits `imul` with a real immediate where MSVC 4.2 emits a
+chain of `lea`s, and that uses `ebp` frames where MSVC 4.2 indexes
+everything off `esp`.  Run `dataflow.py` on `1000266a` and the output stage
+reads
+
+    10003181  edx  = ((edx*0x184d)) >> 0xf
+    10003192  eax  = ((eax*0x1d71)) >> 0xf
+
+-- 6221 and 7537, the two scalings that in `CGRM_ES.DLL` have to be
+recovered from `lea eax, [ebx + eax*4]` chains five instructions long.  The
+same listing shows six serial biquads and five parallel sections in the same
+order, and the `>> 0xe` of the aspiration tap.  None of that was used to
+write `es/generate.c`, which was finished first; it is recorded because it
+independently confirms that reading and because it made the rows above
+cheaper to take on, and every one of them is now decompiled.
+
+To reproduce any of this, disassemble it once with
+`python tools/disasm.py SPMtv160.dll work/spmtv160`.
+
 ## What is next
 
 There are now three tests with different reach: `difftest --lang es` asks
@@ -1209,24 +1982,34 @@ is the same function, and `es_reftest` asks whether the harness still
 reproduces a recording made through SAPI.  Work that is not covered by one
 of them is work that is not finished.
 
-1. Keep going outward along the call graph, hooking as you go, and add a
-   unit case whenever a function has a boundary the corpus cannot reach.
-   `Engine_InputStage`, `Engine_Flush`, `Preformat_PutChar` and
-   `Engine_Feed` all sit one step from the rings and are already named.
+Where it stands, counting only code the corpus actually executes and
+excluding the C runtime, which is bound rather than decompiled (the MSVC 4.2
+objects begin at 0x1002345a; everything below that address is the engine's
+own): **130 of 195 functions and 43,985 of 87,061 bytes, 50.5%.**  Rerun the
+measurement with `python tools/covrun.py --lang es --full`, which writes
+`work/cov_es_merged.txt`, and rank what is left with `tools/xmatch.py`.
+
+1. The leaves.  They call nothing at all, so they can be tested
+   exhaustively with no engine, which is the cheapest ground there is.
+   `Synth_Generate` was the biggest of them and is done.
 2. Take the 1995 core before the Spanish-only code: `xmatch --near`
    against Italian and German makes those cheap to read, and each one
    decompiled serves four languages.  The two subtrees with the most bytes
    executing are `Stage3_Run` -> `sub_1001b880` -> `sub_10010ba0`,
-   `sub_10016460`, `sub_1001b440`, and `Synth_Step` -> `Synth_Generate`.
-3. Escape sequences are missing from the corpus.  `Preformat_Run` is the
-   whole `ESC [` command set and nothing currently exercises it; the
-   English corpus has several such inputs to copy the shape from.
-4. Follow the rule bytecode at `0x1005fb88`, which `Stage0_Reset` points
-   `s0_ip` at.  Stage 0 is the rule interpreter and the doorway to the
-   front end, which is the bulk of the work and shares nothing.
-5. Place the rest of the output block, 0x692..0x700 of int16 state that
-   `Output_Reset` clears without naming.
-6. The `.bss` question.  Spanish has 103 KB of it and English none, so some
-   of what English keeps per-engine is global here.
-7. Find the live SAPI object count, the last of the fifteen harness
+   `sub_10016460` and `sub_1001b440`.
+3. Follow the *other* rule bytecode, at `0x1005fb88`, which `Stage0_Reset`
+   points `s0_ip` at.  There are two machines, not one: `Rule_Eval` runs on
+   the `TextIn` and rewrites tokens, and this one runs in stage 0 and is
+   the doorway to the front end.  Whether they share an
+   encoding is not established -- `s0_ip` steps through its own stack of
+   frames and nothing has been read across yet.
+4. The rest of the `.bss` question.  `Abbrev_Init` and `Lexicon_Init` show
+   one shape it takes -- a table shipped read-only and duplicated into
+   `.bss` on first use so it can be added to -- but the two together
+   account for 2 KB of the 103 KB.
+5. Find the live SAPI object count, the last of the fifteen harness
    addresses.  Nothing needs it, so it is the least urgent thing here.
+
+Two earlier items are done.  The escape-sequence gap is closed:
+`tests/corpus_es` now carries six `ESC [` inputs, 17 through 22.  The output
+block 0x0692..0x0700 is placed field by field, above.

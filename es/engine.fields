@@ -119,6 +119,7 @@ struct Token 0x3c
 0x28 char    *text2            # replacement text emitted instead of text
 0x2c char    *types            # per-character split marks
 0x30 uint8_t  trail            # the character that ended the token
+0x32 int16_t  w32              # cleared when a token is made
 0x34 int16_t  w34              # set to 1, not 0, when a token is made
 0x36 int16_t  is_number
 0x38 int32_t  num
@@ -130,10 +131,15 @@ end
 # is not worked out yet, and the trailing gap keeps the size honest.
 struct TextIn 0xac
 0x00 Engine  *engine          # Engine_CreateTextIn stores self here
+0x04 int32_t  ti_04            # TextIn_Construct clears it, TextIn_Advance
+                              # takes a different path when it is 1
 0x08 int32_t  input_done      # <- Engine.st_input_empty, every flush
 0x0c int32_t  item_done       # <- Engine.item_done, every flush
 0x10 int32_t  mode             # TextIn_Tokenize compares it against 4
-0x18 int32_t  d18
+0x18 Token   *detached        # TextIn_Detach parks the token it has just
+                              # unlinked here and TextIn_Reattach puts it
+                              # back beside another one; one slot, cleared
+                              # on the way out
 0x1c Token    head_node       # the list always starts here, which is why
                               # InsertAfter and RemoveToken treat a null
                               # neighbour as a caller error rather than
@@ -142,6 +148,23 @@ struct TextIn 0xac
 0x5c Token   *tail             # TextIn_InsertAfter retargets it
 0x60 Token   *cur              # tokens up to here are expanded
 0x64 int32_t  count            # tokens held; Tokenize stops at 210
+
+# 0x68 onward is the 0x3c this object has and English's does not: the state
+# of the rule interpreter that TextIn_Advance runs.  sub_1001e490 loads a
+# rule's address into rule_ip and sub_1001e5d0 walks it, reading one int16
+# opcode per step; operands that are bytes sit in the low half of the next
+# int16, which is why every handler advances rule_ip by 2 and reads one byte.
+0x68 int16_t *rule_ip          # the interpreter's instruction pointer
+0x6c int16_t  rule_trail       # Rule_MatchTrail leaves the token's trailing
+                               # character here, sign-extended
+0x6e int16_t  ti_6e            # cleared by TextIn_Construct and Reset
+
+# sub_1001dce0 is TextIn_Error: it appends the code it is given to a ring of
+# ten and counts them, which is where these two come from.  0x6e..0x7f is
+# still unexamined.
+0x74 uint8_t  ti_74            # cleared by TextIn_Construct and Reset
+0x80 int32_t  errors[10]       # the first ten error codes, in order
+0xa8 int32_t  err_count        # how many have been reported
 end
 
 struct Engine 0x8838
@@ -214,6 +237,37 @@ struct Engine 0x8838
 # "cmp byte [ecx+0x385],0" then "cmp dword [esi+0x750],0x260" then
 # "mov byte [esi+0x384],1" -- English's !s2_1d55 && free_nodes > 0x260.
 0x0384 uint8_t  s2_1d54
+0x045c int32_t  trans_len         # the length of the glide into a
+#   segment, in samples.  sub_10012390 hands it to Extend as both the
+#   sample count and, clamped to 20, the contour number, and treats 0x7f
+#   and anything <= 0 as "no glide".
+0x0458 int32_t  s3_458            # how many samples sub_10017e60 winds
+#   tracks 0 and 2 back by, and adds to their trk_param[t][3].
+0x0468 int32_t  s3_468            # a duration, halved toward a table
+#   value by sub_10015720 and then clamped against s3_1fe8.
+0x046c int32_t  s3_46c            # the run length sub_10015720 hands to
+#   Track_Fill and then takes off trk_param[t][3].
+0x0478 int32_t  s3_478            # copied to s3_47c by sub_10015090,
+#   less 6 when it shortens.
+0x047c int32_t  s3_47c            # the level sub_10017e60 redraws
+#   track 2 to, and stores into trk_490[2].
+0x04e8 int32_t  trk_4e8[22]       # a third per-track int32 array.
+#   sub_10010ba0 walks it with a stride of 4 while reading trk_490[i] as
+#   [p - 0x58], which pins the two bases exactly 0x58 apart, and 0x540 is
+#   the next offset anything in the image references.
+0x0540 int32_t  trk_540[3]        # entry k is track 9 + k.  sub_10015720
+#   indexes it by track - 9 in its loop over tracks 9 to 11 and also
+#   reaches entry 1 -- track 10's -- as a scalar.  The original writes it
+#   as [ebx - 0x692c] off &trk_wr[9], which lands exactly here.
+0x055c int32_t  trk_55c[22]       # a fourth.  Only indices 9 to 15 are
+#   ever touched -- the four tracks sub_10010ba0 adjusts and their
+#   partners, used there alongside trk_490[9..11] and trk_param[9..11][6]
+#   -- and 0x55c + 22 * 4 is exactly where s3_param_raw begins.
+0x0490 int32_t  trk_490[22]       # a second per-track int32 array,
+#   written beside trk_param[t][6] and trk_param[t+4][6] by
+#   sub_10012cb0.  Twenty-two again: the highest index reached is 17
+#   and the next field referenced anywhere is 0x4e8, which is exactly
+#   0x490 + 22 * 4.  What it holds is not established.
 0x0385 uint8_t  s2_1d55
 
 # --- stage 3, from sub_1001b810 --------------------------------------------
@@ -238,9 +292,9 @@ struct Engine 0x8838
 
 # sub_1000e6f0 builds two 40-entry coefficient arrays on the stack as int32
 # and copies the chosen one out with "mov word ptr [ecx], si", so this is
-# int16 here as it is in English.  The immediates it writes are the English
-# filt_coef_11k values exactly: -24759, 20770, -24550, 28898, -19553, 27618,
-# 31521, 30905, 17368, 8192, 27691, 25148, 11354.
+# int16 here as it is in English.  The 11 kHz set is English's filt_coef_11k
+# to the bit; the 8 kHz set has -23934 and 17481 in slots 2 and 3 where
+# English has -24759 and 20770.  See the note in es/reset.c.
 0x0004 int16_t  filt_coef[40]
 
 # Zeroed 32 bytes by sub_10017850; English calls its equivalent s3_1fbd[32].
@@ -249,6 +303,11 @@ struct Engine 0x8838
 0x05fc int32_t  s3_1fe0          # set to 2; Stage3_Insert adds it to s3_1fe4
 0x0600 int32_t  s3_1fe4          # set to 3
 0x0604 int32_t  s3_1fe8          # set to 4
+0x0650 uint8_t  s3_650            # gates the tracks 9..15 branch in
+#   sub_10010ba0; written elsewhere.
+0x0630 int32_t  seg_len           # the segment length in samples.
+#   sub_10012390 lays its whole contour across it and branches on it
+#   at 4, 7 and 8; sub_100117e0 is what sets it.
 
 # The three fixed resonator constants, written per sample rate by
 # sub_1000e6f0 with the same values the English engine uses:
@@ -274,13 +333,38 @@ struct Engine 0x8838
 0x0691 uint8_t  mute            # set when the host asks for volume < 0x50
 
 # --- the output stage ------------------------------------------------------
-# sub_1000ad50 is Output_Reset: it clears this whole run of int16 state, sets
-# o_2088 to 0xaaaa as English does, and finishes by dividing its pushed
-# sample-rate argument by 100.  The block runs 0x0692..0x0700 and only the
-# two fields with a distinctive value are named so far; the rest map to the
-# English o_* fields at +0x19e4 but have not been checked one by one.
+# sub_1000ad50 is Output_Reset, and reading it through settles the block.  It
+# writes exactly the fields the English Output_Reset writes, in the same
+# order, each at +0x19e4: the same two it skips (o_2078 and the unnamed hole
+# at English 0x2084), the same 0xaaaa into o_2088, the same two arrays, and
+# the same sample-rate divide.
+#
+# What it does not write is the point.  English ends with "o_20e8 = 0" and
+# this has no such store -- there is no o_20e8 here, which is why everything
+# from preformat onward sits at +0x19e8 rather than +0x19e4.  That step was
+# read off the constructor's field order; the reset function arrives at it
+# from the other direction.
+0x0692 int16_t  o_2076
+0x0694 int16_t  o_2078           # not reset, exactly as in English
+0x0696 int16_t  o_207a
+0x0698 int16_t  o_207c
+0x069a int16_t  o_207e
+0x069c int16_t  o_2080
+0x069e int16_t  o_2082
+0x06a2 int16_t  o_2086
 0x06a4 uint16_t o_2088           # set to 0xaaaa
+0x06a6 int16_t  o_208a
+0x06a8 int16_t  o_208c
+0x06aa int16_t  o_208e
 0x06ac int16_t  o_rate_div100    # sample_rate / 100
+0x06ae int16_t  o_2092[11]
+0x06c4 int16_t  o_20a8
+0x06c6 int16_t  o_20aa
+0x06c8 int16_t  o_20ac
+0x06ca int16_t  o_20ae[22]
+0x06f8 int32_t  o_20dc
+0x06fc int32_t  o_20e0
+0x0700 int32_t  o_20e4
 
 # --- the host interface block ----------------------------------------------
 # This is English's 0x20ec..0x2140 run, field for field, except that the 1995
@@ -397,6 +481,12 @@ struct Engine 0x8838
 0x6ea0 uint8_t  trk_14[32]
 0x6ec0 int32_t  trk_34
 0x6ec4 int32_t  trk_38
+0x6ec8 int32_t  trk_param[22][7]  # 22 tracks of seven int32.  The gap
+#   between trk_38 and trk_buf is 0x268 = 22 * 28 exactly, 22 is the
+#   count every other trk_ array has, and the shape is settled by the
+#   accesses: sub_10015410 takes 0x6fc4, 0x6fc8 and 0x6fcc, which are
+#   columns 0, 1 and 2 of row 9, while column 6 is written on its own
+#   for many different rows.  What the columns mean is not established.
 # 0x6ec8..0x7130 is unexamined.  English has s3_param[22] in the equivalent
 # gap, 0x1b8 bytes of it against the 0x268 here, so it is not the same
 # structure.

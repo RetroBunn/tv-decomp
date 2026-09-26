@@ -1,10 +1,10 @@
 """Run the oracle with block coverage over the difftest matrix and report.
 
-Usage: python tools/covrun.py [--full] [-j N] [--decompiled]
+Usage: python tools/covrun.py [--full] [-j N] [--decompiled] [--lang en|es]
 
-Writes work/cov_merged.txt and work/cov_report.txt.  With --decompiled,
-lists the decompiled functions (from build/obj/hook/hooks_gen.c) that still have
-unexecuted blocks, with the uncovered block addresses.
+Writes work/cov_merged.txt (work/cov_es_merged.txt for --lang es).  With
+--decompiled, lists the decompiled functions that still have unexecuted
+blocks, with the uncovered block addresses.
 """
 import argparse
 import concurrent.futures as cf
@@ -19,7 +19,6 @@ import difftest  # noqa: E402
 
 ROOT = difftest.ROOT
 WORK = os.path.join(ROOT, "work")
-BLOCKS = os.path.join(WORK, "cgrm_en", "blocks.txt")
 
 
 def main():
@@ -27,9 +26,15 @@ def main():
     ap.add_argument("--full", action="store_true")
     ap.add_argument("-j", type=int, default=os.cpu_count() or 4)
     ap.add_argument("--decompiled", action="store_true")
+    ap.add_argument("--lang", default="en", choices=("en", "es"),
+                    help="which engine to measure; see docs/SPANISH.md")
     a = ap.parse_args()
 
-    outdir = os.path.join(WORK, "cov")
+    difftest.set_lang(a.lang)
+    BLOCKS = os.path.join(WORK, "cgrm_" + a.lang, "blocks.txt")
+    tail = "" if a.lang == "en" else "_" + a.lang
+    hookdir = "hook" if a.lang == "en" else "hook_" + a.lang
+    outdir = os.path.join(WORK, "cov" + tail)
     os.makedirs(outdir, exist_ok=True)
     runs = difftest.configs(a.full, difftest.prepare_inputs())
 
@@ -55,7 +60,7 @@ def main():
         for line in open(hf):
             b, f = line.split()
             hit.add(int(b, 16))
-    with open(os.path.join(WORK, "cov_merged.txt"), "w") as fp:
+    with open(os.path.join(WORK, "cov%s_merged.txt" % tail), "w") as fp:
         for f in sorted(total):
             for b in sorted(total[f] & hit):
                 fp.write("%08x %08x\n" % (b, f))
@@ -65,7 +70,8 @@ def main():
         sum(len(v) for v in total.values())))
 
     if a.decompiled:
-        gen = open(os.path.join(ROOT, "build", "hook", "hooks_gen.c")).read()
+        gen = open(os.path.join(ROOT, "build", "obj", hookdir,
+                                "hooks_gen.c")).read()
         done = [(int(m.group(1), 16), m.group(2))
                 for m in re.finditer(r'\{0x([0-9a-f]+), hk_\d+, "(\w+)"\}', gen)]
         for addr, name in sorted(done):

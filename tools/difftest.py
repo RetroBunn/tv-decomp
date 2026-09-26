@@ -50,6 +50,31 @@ EXTRA_GLOB = os.path.join(ROOT, "TruVoice", "*.TXT")
 #: them keeps the configuration count stable as the corpus grows.
 SUBSET = ("01_basic", "03_dates_times", "10_punct", "12_long")
 
+#: One row per engine, so that adding French or German is a row here
+#: rather than a branch in everything that drives the harness.
+SUBSETS = {
+    "en": SUBSET,
+    "es": ("01_basico", "02_numeros", "03_acentos", "04_punt"),
+}
+
+
+def set_lang(lang):
+    """Point the module at one engine's DLL, corpus, hook build and workdir.
+
+    Everything that differs between engines is one of these six names.
+    Callers that drive the harness -- difftest itself, covrun -- go through
+    here so they cannot disagree about where an engine's files live.
+    """
+    global DLL, TVH_HOOK, CORPUS, WORK, EXTRA_GLOB, SUBSET
+    if lang == "en":
+        return
+    DLL = os.path.join(ROOT, "TruVoice", "CGRM_%s.DLL" % lang.upper())
+    TVH_HOOK = os.path.join(ROOT, "build", "check", "tvh_hook_%s.exe" % lang)
+    CORPUS = os.path.join(ROOT, "tests", "corpus_%s" % lang)
+    WORK = os.path.join(ROOT, "work", "difftest_%s" % lang)
+    EXTRA_GLOB = None  # the shipped sample texts are English
+    SUBSET = SUBSETS[lang]
+
 
 def md5(path):
     return hashlib.md5(open(path, "rb").read()).hexdigest()
@@ -279,14 +304,8 @@ def main():
                          "installed engine")
     a = ap.parse_args()
 
-    if a.lang == "es":
-        global DLL, TVH_HOOK, CORPUS, WORK, EXTRA_GLOB, SUBSET
-        DLL = os.path.join(ROOT, "TruVoice", "CGRM_ES.DLL")
-        TVH_HOOK = os.path.join(ROOT, "build", "check", "tvh_hook_es.exe")
-        CORPUS = os.path.join(ROOT, "tests", "corpus_es")
-        WORK = os.path.join(ROOT, "work", "difftest_es")
-        EXTRA_GLOB = None  # the shipped sample texts are English
-        SUBSET = ("01_basico", "02_numeros", "03_acentos", "04_punt")
+    set_lang(a.lang)
+    if a.lang != "en":
         if a.port or a.port64:
             print("there is no standalone Spanish build yet")
             return 2

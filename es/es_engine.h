@@ -113,6 +113,26 @@ int32_t TV_STDCALL Synth_MulShr12(int32_t a, int32_t b, int32_t *hi);
 /* @0x1000af00 */
 int32_t TV_STDCALL Synth_MulQ15(int32_t a, int32_t b);
 
+/* @0x1000aed0 */
+int32_t TV_STDCALL Synth_MulShr11(int32_t a, int32_t b);
+/* @0x1000ea70 */
+uint8_t TV_THISCALL Synth_Gate(Engine *self, int32_t op);
+/* @0x1001db60 */
+int32_t TV_CDECL Bits_AllIn(const uint32_t *need, const uint32_t *have);
+/* @0x1001db90 */
+int32_t TV_CDECL Bits_AnyIn(const uint32_t *want, const uint32_t *have);
+/* @0x1001bfd0 */
+int32_t TV_STDCALL Synth_ScaleParam(int32_t index, uint8_t raw);
+
+/* The Spanish five vowels.  Vowel_Index exists twice in the image, byte for
+ * byte the same; see the note in util.c. */
+/* @0x100132b0 */
+int32_t TV_STDCALL Vowel_Index(uint8_t c);
+/* @0x100121f0 */
+int32_t TV_STDCALL Vowel_Index2(uint8_t c);
+/* @0x100132e0 */
+uint8_t TV_STDCALL Is_Vowel(uint8_t c);
+
 /* ---- the TextIn tokenizer (textin.c) -------------------------------------- */
 
 /* @0x1001dc10 */
@@ -127,10 +147,16 @@ int32_t TV_CDECL AllocString(char **p, int32_t n);
 Token *TV_THISCALL TextIn_RemoveToken(TextIn *self, Token *t, int32_t dir);
 /* @0x1001d740 */
 Token *TV_THISCALL TextIn_InsertAfter(TextIn *self, Token *ref);
+/* @0x1001d7c0 */
+Token *TV_THISCALL TextIn_InsertBefore(TextIn *self, Token *ref);
+/* @0x1001d850 */
+Token *TV_THISCALL TextIn_Reattach(TextIn *self, Token *ref, int32_t dir);
 /* @0x1001c950 */
 int32_t TV_THISCALL TextIn_Tokenize(TextIn *self);
 /* @0x1001c8a0 */
 int32_t TV_THISCALL TextIn_Flush(TextIn *self, int32_t final);
+/* @0x1001fdd0 */
+int32_t TV_THISCALL TextIn_Unmatched(TextIn *self, Token *t);
 
 /* ---- the C runtime the engine calls --------------------------------------
  * Statically linked into CGRM_ES.DLL, so the hook build binds these to the
@@ -143,6 +169,14 @@ void *TV_CDECL tv_malloc(size_t n);
 void TV_CDECL tv_free(void *p);
 /* @0x100235d7 */
 void *TV_CDECL tv_new(size_t n);
+/* @0x1002d21e */
+char *TV_CDECL tv_itoa(int32_t value, char *buf, int32_t radix);
+/* @0x100237b8 */
+char *TV_CDECL tv_strchr(const char *s, int32_t c);
+/* @0x1002449d */
+int32_t TV_CDECL tv_atoi(const char *s);
+/* @0x10023b51 */
+char *TV_CDECL tv_strlwr(char *s);
 
 /* the tokenizer's inner parts, still to do */
 /* @0x1001c9e0 */
@@ -151,14 +185,23 @@ int32_t TV_THISCALL TextIn_ReadToken(TextIn *self, Token **out);
 void TV_THISCALL TextIn_Split(TextIn *self, Token **t);
 /* @0x1001d470 */
 void TV_THISCALL TextIn_Mode4(TextIn *self, Token *t);
+/* @0x1001c6c0 */
+uint8_t TV_THISCALL Engine_CreateTextIn(Engine *self);
+/* @0x1001c790 */
+TextIn *TV_THISCALL TextIn_Construct(TextIn *self, int32_t mode);
+/* @0x1001c850 */
+int32_t TV_THISCALL TextIn_Reset(TextIn *self);
 /* @0x1001e0d0 */
 int32_t TV_THISCALL TextIn_Advance(TextIn *self);
+/* the mode-4 reset and the rule runner, neither written yet */
+/* @0x10022970 */
+void TV_THISCALL TextIn_Mode4Reset(TextIn *self);
+/* @0x1001e490 */
+int32_t TV_THISCALL Rule_Run(TextIn *self, Token **t);
 /* @0x1001f850 */
 void TV_THISCALL TextIn_Emit(TextIn *self, int32_t final);
 /* @0x1000e120 */
 void TV_THISCALL Queue_Push(void *queue, void *data, int32_t len);
-/* @0x1001dce0 */
-void TV_THISCALL TextIn_Error(TextIn *self, int32_t code);
 
 /* ---- the engine object's life (engine.c) ---------------------------------- */
 
@@ -202,6 +245,14 @@ uint8_t TV_THISCALL Stage2_Run(Engine *self);
 int32_t TV_THISCALL Stage3_Run(Engine *self);
 /* @0x100077b0 */
 uint8_t TV_THISCALL Synth_Step(Engine *self);
+/* the frame generator and the parameter-list builder it sits between;
+ * neither is written yet.  sub_1000f090 is the one the surviving trace
+ * string calls ParL. */
+/* @0x10009bf0 */
+void TV_THISCALL Synth_Generate(Engine *self, uint16_t rate,
+                                const int16_t *coef);
+/* @0x1000f090 */
+void TV_THISCALL Prosody_Build(Engine *self);
 /* @0x10017900 */
 uint8_t TV_THISCALL Tracks_Op(Engine *self, int32_t op, int32_t arg);
 
@@ -249,6 +300,104 @@ void TV_THISCALL Track_BlendFwd(Engine *self, uint8_t *buf, int32_t pos,
 void TV_THISCALL Track_BlendBack(Engine *self, uint8_t *buf, int32_t pos,
                                  int32_t shape, int32_t n, uint8_t target);
 
+/* ---- the parameter setters and the diagnostics (params.c) ---------------- */
+
+/* @0x10008a40 */
+void TV_THISCALL Engine_SetPitch(Engine *self, int32_t pitch);
+/* @0x10008a70 */
+void TV_THISCALL Engine_SetSpeed(Engine *self, int32_t wpm);
+/* @0x10008aa0 */
+void TV_THISCALL Engine_SetVolume(Engine *self, uint32_t vol);
+/* @0x10008b10 */
+void TV_THISCALL Engine_SetVoice(Engine *self, uint32_t voice);
+/* Both stubbed out in the shipping build; see the note in params.c. */
+/* @0x10008b40 */
+void TV_CDECL Engine_Trace(void *obj, const char *fmt, ...);
+/* @0x10008b50 */
+void TV_THISCALL Engine_Error(Engine *self, int32_t code);
+
+/* ---- the rule interpreter's helpers (rule.c) ----------------------------- */
+
+/* @0x10021630 */
+int32_t TV_STDCALL Rule_TestBits(const uint32_t *want, Token *t, int32_t any);
+/* @0x10021600 */
+int32_t TV_THISCALL Rule_SetTrail(TextIn *self, Token *t, uint32_t v);
+/* @0x100215d0 */
+int32_t TV_THISCALL Rule_MatchTrail(TextIn *self, Token *t);
+/* digits must be writable: above three digits the formatter truncates it in
+ * place as it recurses and puts it back before returning.  See rule.c. */
+/* @0x10021be0 */
+int32_t TV_THISCALL Rule_SayGroupedNumber(TextIn *self, Token **first,
+                                          uint32_t v, int32_t force_space);
+/* @0x100212b0 */
+int32_t TV_THISCALL Rule_SayRecord(TextIn *self, Token *t,
+                                   uint32_t key, int32_t plural);
+/* @0x10020f00 */
+int32_t TV_CDECL Word_IsAcronym(const char *s);
+/* @0x10020d70 */
+int32_t TV_THISCALL Rule_Acronym(TextIn *self, Token *t, uint32_t v);
+/* Returns the value it parsed, which Rule_SayGroupedNumber stores back
+ * into Token.num; every other caller ignores it. */
+/* @0x10020920 */
+int32_t TV_CDECL Number_Words(char *digits, char *out,
+                              int32_t style, int32_t mode);
+/* the six-argument formatter behind it, not written yet */
+/* @0x100200d0 */
+int32_t TV_CDECL Number_WordsEx(char *digits, char *out,
+                                int32_t style, int32_t mode, int32_t a, int32_t b);
+/* @0x10021720 */
+int32_t TV_THISCALL Rule_SayNumber(TextIn *self, Token *t, uint32_t v);
+/* @0x10021820 */
+int32_t TV_THISCALL Rule_SayNumberText(TextIn *self, Token *t, uint32_t v);
+/* @0x10021aa0 */
+int32_t TV_THISCALL Rule_SayNumberOrSpell(TextIn *self, Token *t, uint32_t v);
+/* @0x10022810 */
+int32_t TV_THISCALL Rule_SpellOut(TextIn *self, Token *t,
+                                  uint32_t v, int32_t all);
+/* @0x10021670 */
+int32_t TV_THISCALL Rule_InsertWord(TextIn *self, Token *ref,
+                                    uint32_t v, int32_t dir);
+/* @0x10021080 */
+int32_t TV_THISCALL Rule_Scan(TextIn *self, const uint32_t *want, Token *t,
+                              int32_t dir, int32_t count, int32_t check);
+/* @0x1001d9f0 */
+Token *TV_THISCALL TextIn_Detach(TextIn *self, Token *t);
+/* @0x1001dce0 */
+int32_t TV_THISCALL TextIn_Error(TextIn *self, int32_t code);
+
+/* ---- the rule interpreter (interp.c) ------------------------------------- */
+
+/* @0x1001e5d0 */
+int32_t TV_THISCALL Rule_Eval(TextIn *self, Token **cursor, Token **anchor,
+                              uint32_t v);
+
+/* The eight handlers the corpus never reaches, still bound to the DLL.  They
+ * are named for the opcode that calls them, which is the only thing
+ * established about them; nothing here claims to know what they do. */
+/* @0x100211b0 */
+int32_t TV_THISCALL Rule_Op60(TextIn *self, const uint32_t *want, Token *t,
+                              int32_t dir);
+/* @0x10021470 */
+int32_t TV_THISCALL Rule_Op64(TextIn *self, Token *t, uint32_t v, int32_t n,
+                              int32_t flag);
+/* @0x100221f0 */
+int32_t TV_THISCALL Rule_Op77(TextIn *self, Token *t, uint32_t v);
+/* @0x10020a50 */
+int32_t TV_THISCALL Rule_Op78(TextIn *self, Token **t, uint32_t v);
+/* @0x10021960 */
+int32_t TV_THISCALL Rule_Op80(TextIn *self, Token *t, uint32_t v);
+/* @0x10020950 */
+int32_t TV_THISCALL Rule_Op82(TextIn *self, Token *t, uint32_t v);
+/* @0x10021fb0 */
+int32_t TV_THISCALL Rule_Op85(TextIn *self, Token *t, uint32_t v);
+
+/* ---- the lexicon and abbreviation indexes (tables.c) --------------------- */
+
+/* @0x1001dd10 */
+int32_t TV_CDECL Abbrev_Init(void);
+/* @0x10023120 */
+int32_t TV_CDECL Lexicon_Init(void);
+
 /* ---- stage 2 and stage 3 helpers (stage2.c, stage3.c) -------------------- */
 
 /* @0x1001aa60 */
@@ -259,6 +408,104 @@ void TV_THISCALL Stage3_Reset(Engine *self);
 /* @0x1001be30 */
 Node *TV_THISCALL Stage3_Insert(Engine *self, Node *ref, int32_t mode);
 
+/* A sparse-record index over a bitmap: BitTable_Rank gives the packed
+ * position of the record at (a, b) in table `kind`, or -1 when there is
+ * none, and BitTable_Count gives the set bits in the first `nbytes` of a
+ * row -- which callers use as the count of records.  See es/bittab.c on
+ * what the arguments are not yet known to mean. */
+/* @0x100122f0 */
+int32_t TV_STDCALL BitTable_Count(int32_t kind, int32_t nbytes);
+/* @0x10012220 */
+int32_t TV_STDCALL BitTable_Rank(int32_t a, int32_t b, int32_t kind);
+/* @0x10012df0 */
+int32_t TV_THISCALL Variant_Find(Engine *self, int32_t rec, int32_t vowel,
+                                 int32_t ctx0, int32_t ctx1, int32_t nctx);
+/* Selects the record for the consonant pair around the vowel that
+ * stage 3's scan node sits on, and sets four track parameters from
+ * it.  Returns 1 when it set them and 0 when it found nothing. */
+/* @0x10012f30 */
+uint8_t TV_THISCALL Cluster_SetTracks(Engine *self, int32_t vowel);
+/* Writes a straight line from `from` to `to` into `n` bytes of a track
+ * buffer, starting at `start` and wrapping at 256. */
+/* @0x10012ed0 */
+void TV_STDCALL Ramp_Fill(uint8_t *buf, int32_t start, int32_t n,
+                          int32_t from, int32_t to);
+/* Sets track `track` (9..12) and its partner at track + 4. */
+/* @0x10012cb0 */
+void TV_THISCALL Track_Set(Engine *self, int32_t a, int32_t b, int32_t c,
+                           int32_t unused4, int32_t track,
+                           int32_t unused6);
+/* Glides a track from `to` back to `from` over `tcon` samples and holds
+ * at `from` for the rest of the `n` bytes.  Arith.c's Extend(). */
+/* @0x1000af20 */
+void TV_THISCALL Extend(Engine *self, uint8_t *buf, int32_t start,
+                        int32_t tcon, int32_t n, int32_t to,
+                        int32_t from);
+/* Lays a whole parameter contour -- six levels, four breakpoints -- across
+ * one segment of a track, and a three-run contour across its partner. */
+/* @0x10012390 */
+void TV_THISCALL Track_Contour(Engine *self,
+                               int32_t l1, int32_t l2, int32_t l3,
+                               int32_t l4, int32_t t0, int32_t t1,
+                               int32_t t2, int32_t t3, int32_t p2,
+                               int32_t l5, int32_t p3, int32_t l0,
+                               int32_t p1, int32_t track,
+                               int32_t unused15);
+/* Builds the whole parameter set for one phoneme segment: finds the
+ * record for the consonant pair, unpacks it as a bit stream and drives
+ * Track_Contour, Track_Set and Ramp_Fill over four tracks. */
+/* @0x100117e0 */
+uint8_t TV_THISCALL Segment_Apply(Engine *self, int32_t vowel);
+/* The per-phoneme corrections to the track parameters: two dozen tests on
+ * stage 3's three phonemes, each nudging particular trk_param cells. */
+/* @0x10010ba0 */
+void TV_THISCALL Track_Adjust(Engine *self);
+/* Emits one track's pending shape into its buffer, choosing among the two
+ * blends and Extend by the mode in trk_param[track][0]. */
+/* @0x10017aa0 */
+void TV_THISCALL Track_Emit(Engine *self, int32_t track);
+/* One phoneme segment of stage 3: Segment_Apply when the control node is a
+ * vowel, otherwise the consonant corrections and a pass over tracks 9 to
+ * 11 that emits each and then restores its parameters. */
+/* @0x10015720 */
+void TV_THISCALL Stage3_Segment(Engine *self);
+/* Three more of sub_1001b880's correction passes; see es/adjust.c on why
+ * the grouping is the original's rather than a derived one. */
+/* @0x10014f20 */
+void TV_THISCALL Track_AdjustWeights(Engine *self);
+/* @0x10016220 */
+void TV_THISCALL Track_AdjustBeforeR(Engine *self);
+/* @0x100162b0 */
+void TV_THISCALL Track_AdjustGap(Engine *self);
+/* Pulls tracks 10 and 11 toward each other over a run of samples. */
+/* @0x100179d0 */
+void TV_THISCALL Track_Couple(Engine *self, int32_t pos, int32_t count,
+                              int32_t gain);
+/* Sets the emit mode on every track and the blend shape on 9 to 16. */
+/* @0x10016350 */
+void TV_THISCALL Track_SetModes(Engine *self);
+/* The trill/tap adjacency cases. */
+/* @0x10014fb0 */
+void TV_THISCALL Track_AdjustTrill(Engine *self);
+/* Track_SetModes' sibling, keyed on the current phoneme. */
+/* @0x10015410 */
+void TV_THISCALL Track_SetShapes(Engine *self);
+/* Blends a track backward by a fixed delta rather than toward a target. */
+/* @0x10017dc0 */
+void TV_THISCALL Track_BlendDelta(Engine *self, uint8_t *buf, int32_t mode,
+                                  int32_t pos, int32_t tcon, int32_t n,
+                                  int32_t delta);
+/* Winds tracks 0 and 2 back by s3_458 and redraws the vacated run. */
+/* @0x10017e60 */
+void TV_THISCALL Track_Shorten(Engine *self);
+/* @0x10015090 */
+void TV_THISCALL Track_AdjustPause(Engine *self);
+/* @0x10010a30 */
+void TV_THISCALL Track_AdjustVelar(Engine *self);
+/* Averages each track's old level with its new one, within a limit. */
+/* @0x10011660 */
+void TV_THISCALL Track_Average(Engine *self);
+
 /* ---- not written yet ------------------------------------------------------
  * Declared with an address and nothing else.  tools/gen_hookmap.py emits a
  * --defsym for every annotated symbol it cannot find a definition of, so a
@@ -266,9 +513,5 @@ Node *TV_THISCALL Stage3_Insert(Engine *self, Node *ref, int32_t mode);
  * what makes it possible to decompile one function at a time rather than a
  * whole subsystem at once. */
 
-/* @0x1001c850 */
-void TV_THISCALL TextIn_Reset(TextIn *self);
-/* @0x10008b50 */
-void TV_THISCALL Engine_Error(Engine *self, int32_t code);
 
 #endif /* TV_ES_ENGINE_H */

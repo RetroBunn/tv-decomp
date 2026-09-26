@@ -12,8 +12,9 @@ binaries are not part of this repository; place your own copy in
 | `python tools/disasm.py TruVoice/CGRM_EN.DLL work/cgrm_en` | recursive-descent analysis → `functions.txt`, `analysis.pickle` |
 | `python tools/listing.py TruVoice/CGRM_EN.DLL work/cgrm_en [addr...]` | annotated listing (whole file or given functions) |
 | `python tools/calltree.py TruVoice/CGRM_EN.DLL work/cgrm_en <addr> [depth]` | static call tree |
+| `python tools/dataflow.py TruVoice/CGRM_ES.DLL work/cgrm_es <addr> [--from addr]` | the arithmetic as expressions rather than instructions, for the runs of imul/add/sar that have no calls to break them up |
 | `python tools/blocklist.py ...` / `tvh.exe -c blocks -C hits` / `tools/covreport.py` | basic-block coverage of real runs |
-| `python tools/covrun.py --decompiled --full` | which basic blocks of the decompiled functions the corpus never runs |
+| `python tools/covrun.py --decompiled --full [--lang es]` | which basic blocks of the decompiled functions the corpus never runs |
 | `python tools/covgen.py ...` | grows `tests/corpus/` by keeping only generated lines that reach new blocks |
 | `sh harness/build.sh` | builds `tvh.exe` (oracle), `tvh_hook.exe` (decompiled code hooked in), `tv.exe` (standalone), `tvtts.dll` (the library) and the API tests |
 | `build/check/api_test.exe`, `api_test_dll.exe` | the library tests, statically linked and across the DLL boundary |
