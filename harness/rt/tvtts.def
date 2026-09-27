@@ -2,12 +2,17 @@ EXPORTS
     tvtts_add_lexicon
     tvtts_break_sequence
     tvtts_create
+    tvtts_create_lang
     tvtts_destroy
     tvtts_get_extensions
+    tvtts_get_language
     tvtts_get_pitch
     tvtts_get_rate
     tvtts_get_sample_rate
     tvtts_get_voice
+    tvtts_language
+    tvtts_language_count
+    tvtts_language_name
     tvtts_mark_sequence
     tvtts_pitch_sequence
     tvtts_punctuation_sequence
@@ -15,9 +20,11 @@ EXPORTS
     tvtts_sample_rate_hz
     tvtts_set_compat
     tvtts_set_extensions
+    tvtts_set_language
     tvtts_set_pitch
     tvtts_set_rate
     tvtts_set_sample_rate
+    tvtts_set_textin_mode
     tvtts_set_voice
     tvtts_set_volume
     tvtts_speak_bytes
@@ -26,6 +33,7 @@ EXPORTS
     tvtts_speak_utf8
     tvtts_text_to_phonemes
     tvtts_voice_count
+    tvtts_voice_language
     tvtts_voice_name
     tvtts_voice_pitch
     tvtts_voice_rate

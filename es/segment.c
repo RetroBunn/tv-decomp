@@ -33,34 +33,34 @@
 
 /* per-vowel record tables, vowels 0..2 then 3..4 */
 /* @0x100573a0 */
-extern const uint8_t *const g_100573a0[3];
+extern const tv_ref g_100573a0[3];
 /* @0x100573e0 */
 extern const int32_t g_100573e0[3];
 /* @0x100573f0 */
-extern const uint8_t *const g_100573f0[3];
+extern const tv_ref g_100573f0[3];
 /* @0x1005f524 */
-extern const uint8_t *const g_1005f524[5];
+extern const tv_ref g_1005f524[5];
 /* @0x1005f51c */
 extern const int32_t g_1005f51c[5];
 /* @0x1005f54c */
-extern const uint8_t *const g_1005f54c[5];
+extern const tv_ref g_1005f54c[5];
 /* the four contour tables, one per track, six bytes an entry */
 /* @0x10057400 */
-extern const uint8_t *const g_10057400[3];
+extern const tv_ref g_10057400[3];
 /* @0x10057410 */
-extern const uint8_t *const g_10057410[3];
+extern const tv_ref g_10057410[3];
 /* @0x10057420 */
-extern const uint8_t *const g_10057420[3];
+extern const tv_ref g_10057420[3];
 /* @0x10057430 */
-extern const uint8_t *const g_10057430[3];
+extern const tv_ref g_10057430[3];
 /* @0x1005f560 */
-extern const uint8_t *const g_1005f560[2];
+extern const tv_ref g_1005f560[2];
 /* @0x1005f568 */
-extern const uint8_t *const g_1005f568[2];
+extern const tv_ref g_1005f568[2];
 /* @0x1005f570 */
-extern const uint8_t *const g_1005f570[2];
+extern const tv_ref g_1005f570[2];
 /* @0x1005f578 */
-extern const uint8_t *const g_1005f578[2];
+extern const tv_ref g_1005f578[2];
 /* consonant letter -> 0..22, or -1 */
 /* @0x100613c0 */
 extern const int8_t g_100613c0[128];
@@ -175,23 +175,23 @@ uint8_t TV_THISCALL Segment_Apply(Engine *self, int32_t vowel)
     case 'A':
     case 'E':
     case 'I':
-        base = g_100573a0[vowel];
-        hdr = g_100573f0[vowel];
+        base = TV_REF(uint8_t, g_100573a0[vowel]);
+        hdr = TV_REF(uint8_t, g_100573f0[vowel]);
         count = g_100573e0[vowel];
-        ct[0] = g_10057400[vowel];
-        ct[1] = g_10057410[vowel];
-        ct[2] = g_10057420[vowel];
-        ct[3] = g_10057430[vowel];
+        ct[0] = TV_REF(uint8_t, g_10057400[vowel]);
+        ct[1] = TV_REF(uint8_t, g_10057410[vowel]);
+        ct[2] = TV_REF(uint8_t, g_10057420[vowel]);
+        ct[3] = TV_REF(uint8_t, g_10057430[vowel]);
         break;
     case 'O':
     case 'U':
-        base = g_1005f524[vowel];
-        hdr = g_1005f54c[vowel];
+        base = TV_REF(uint8_t, g_1005f524[vowel]);
+        hdr = TV_REF(uint8_t, g_1005f54c[vowel]);
         count = g_1005f51c[vowel];
-        ct[0] = g_1005f560[vowel - 3];
-        ct[1] = g_1005f568[vowel - 3];
-        ct[2] = g_1005f570[vowel - 3];
-        ct[3] = g_1005f578[vowel - 3];
+        ct[0] = TV_REF(uint8_t, g_1005f560[vowel - 3]);
+        ct[1] = TV_REF(uint8_t, g_1005f568[vowel - 3]);
+        ct[2] = TV_REF(uint8_t, g_1005f570[vowel - 3]);
+        ct[3] = TV_REF(uint8_t, g_1005f578[vowel - 3]);
         break;
     default:
         /* not a vowel: the original has no table to read and does not

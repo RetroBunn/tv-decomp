@@ -2144,6 +2144,159 @@ become `h i j k m p q t a v e w o u` with the second node going away.  Reading
 that arm is what the lowercase letters in the phoneme alphabet are for; nothing
 else produces them.
 
+## Towards a Spanish voice in the add-on
+
+Decompiling Spanish and *shipping* Spanish are not the same thing.  The hook
+build patches the decompiled C over the original DLL, so anything not written
+yet is still the DLL's; a library someone can install has no DLL to fall back
+on, and CGRM_ES.DLL cannot be redistributed.  Four things stood between the two,
+and two of them are now done.
+
+**The last ten functions.**  Seven rule opcodes (`Rule_Op60`, `64`, `77`, `78`,
+`80`, `82`, `85` -- 2,782 bytes) and the three mode 4 header handlers
+(`Mode4_From`, `Mode4_Header`, `Mode4_Date` -- 933 bytes) were the only
+executable code left bound to the DLL, and no corpus input reaches any of them.
+They are written now, so the only function symbols still resolved against
+CGRM_ES.DLL are the eleven C runtime entries and the two calls the engine makes
+*upward*: `Queue_Push`, which is where a bookmark surfaces, and `ByteList_Add`,
+which is where stage 2 writes its phoneme trace.  Both of those are the host's
+to provide, which is what a port layer is.
+
+What the seven opcodes turned out to be:
+
+| opcode | what it does |
+| --- | --- |
+| 0x60 | how many tokens away the next one carrying a given flag is, forward or back, with 0x51 transparent and 0x54 a wall; the signed distance goes in `rule_trail` |
+| 0x64 | replaces the token with one of the interpreter's own 26 words, pluralised with s or es depending on whether it ends in a vowel |
+| 0x77 | joins a token onto the one before it, saying a repeated character once |
+| 0x78 | a date: "3 de enero del 1997", with `primero` for the first of the month, the twelve month names, and a year of four digits between 1001 and 2099 or two between 51 and 99 |
+| 0x80 | the number as a count, spelled out instead past seven digits |
+| 0x82 | the ordinal, made plural by the count before it |
+| 0x85 | a run of up to seventeen digits read two at a time, a pair beginning with zero said as "cero" and then the single digit |
+
+`unit_es -U ruleops` drives all seven directly, since nothing else can: 433
+cases, and 249 of 433 when three of them are deliberately broken.  Mode 4's
+handlers are reached through `-U mode4`, which already existed for the
+announcements.
+
+**Stored pointers.**  Sixty-six declarations in `es/` were raw
+`const uint8_t *const`, which is right for a 32-bit hook build and wrong for
+anything else: NVDA is a 64-bit process, and a stored address in the engine's
+data is four bytes whatever a pointer is on the host.  They are `tv_ref` now --
+an offset from `tv_data`, exactly as `src/` has been since the English port --
+and the hook build proves the change was empty, because `TV_REF` is a no-op cast
+there and all 205 configurations still come out identical.
+
+**The data.**  `python tools/extract_data.py TruVoice/CGRM_ES.DLL
+data/es/engine.tvdata es` lifts the tables out: 155,857 bytes in six chunks,
+1,039 relocations.  Spanish has a `.bss` that English does not -- 104 KB at
+0x1002e000, where the lexicon and abbreviation tables are copied at load time so
+the host can add to them -- and because it is zero-filled it costs the
+repository nothing; what it needs is space at the right offset, which
+`tools/gen_data.py` places from the size each declaration gives.  Four had no
+size and now do.
+
+Spanish has ten voices of its own, in `.data` at 0x100497cc in the same
+ANSI-then-UTF-16 form as English's: **Pedro, Isabel, Josefa, Carlos, Rogelio,
+Ezequiel, Luis, Paco, Ricardo** and **Jorge**.  Their pitch, rate class and
+words-per-minute sit at 0x1004c828, 0x1004c850 and 0x1004c878, ten int32 each;
+nine share a default of 150 wpm and Rogelio speaks at 120.
+
+Two defects turned up on the way, both of the same kind -- one address with two C
+names.  `FoldAccent` and `Accent_Split` were both 0x10014db0, so `es/escape.c`
+had been calling the DLL's copy of it rather than the decompiled one; unified on
+`Accent_Split`, and the corpus still passes, which says the two agree there too.
+`g_char_flags` was the earlier one, above.
+
+## One library, two engines
+
+The add-on cannot carry CGRM_ES.DLL, so a Spanish voice needs the engine built
+standalone -- and it is, now, in the same library as English rather than beside
+it.  `tvtts.dll` carries both engines and `src/port/api.c` is the only file that
+knows there is more than one.
+
+**The API grew a language.**  Voices are numbered across the languages -- English
+0..9, Spanish 10..19 -- so a caller that does not care about languages asks for a
+voice list and gets all of them, with `tvtts_voice_language` to say what each one
+speaks.  `tvtts_set_voice(s, 12)` switches the synth to Spanish voice 2, which is
+the whole of how a caller changes language if it would rather think in voices;
+`tvtts_set_language`, `tvtts_create_lang`, `tvtts_language_count` and
+`tvtts_language` are there for callers that would rather not.  Changing language
+builds a new engine and throws the old one away, because the two have nothing in
+common to carry over: rate, pitch and the output rate follow the caller, and the
+voice becomes the new language's first.
+
+Spanish's ten voices, in the order 0x1000830e registers them -- which is not the
+order they sit in memory, any more than English's is:
+
+| voice | name | wpm | pitch |
+| --- | --- | --- | --- |
+| 10 | Pedro | 150 | 85 |
+| 11 | Jorge | 150 | 50 |
+| 12 | Ricardo | 150 | 125 |
+| 13 | Paco | 150 | 73 |
+| 14 | Luis | 150 | 129 |
+| 15 | Ezequiel | 120 | 89 |
+| 16 | Rogelio | 150 | 117 |
+| 17 | Carlos | 150 | 203 |
+| 18 | Josefa | 150 | 208 |
+| 19 | Isabel | 150 | 152 |
+
+Ezequiel is the one that speaks at 120 rather than 150, which is the slot English
+gives Grandpa Amos -- the same position carrying the same character in both
+languages, which is what says the order was read right.
+
+**The two engines keep their names apart by prefix.**  Both decompilations call
+the same job by the same name, because both engines have one: there are two
+`Engine_Feed`s and they are different functions on different objects.  So
+Spanish is compiled with every name of its own prefixed `es_`, from a header
+`tools/gen_rename.py` writes out of the `@0x` annotations -- 467 of them -- and
+`tools/gen_data.py --prefix es_` lays its tables out to match.  The hook build
+does not use any of it, because `gen_hookmap.py` has to see the real names to
+bind them to the DLL.  After that the only global symbol the two trees shared was
+`Engine_ZeroDwordIfMinus1`, which both decompilations write themselves and
+neither annotates.
+
+**What the standalone build needed that the hook build did not.**  Four things,
+each of which the hook build had been quietly getting from the DLL:
+
+  - The eleven C runtime entries, in `es_port/msvcrt_es.c`.  Most are the
+    standard functions under another name; `atol` and the character classes read
+    the "C" locale table the original CRT built into its own data, which is at a
+    different address in each DLL, so each language brings its own.
+  - The two calls the engine makes *upward*: `Queue_Push`, where a bookmark
+    surfaces, and `ByteList_Add`, where stage 2 would write a phoneme trace.
+  - The lexicon lock and the window notifications, which are nothing in a library
+    that has no other instance to race with and no window to post to.  English
+    does the same, and the second of those kept user32 out of the library.
+  - `g_stage0_words`, which is two levels of stored address -- a table of word
+    lists, each a run of strings -- and had been missed by the `tv_ref` sweep
+    because the sweep looked for one `*` and this has three.  It was the first
+    thing the standalone build crashed on.
+
+**One raw offset had to stop being a literal.**  The escape parser's digit
+handler asks `Engine_ZeroDwordIfMinus1` to clear `esc_param[nparam]` if it holds
+-1, and it does that by offset rather than by index because the original tests
+the slot before it checks whether the slot exists.  Written as `0x1f0` that is
+right only while pointers are four bytes wide: `in_seg[20]` holds a `char *`, so
+at 64 bits the array sits somewhere else and every `ESC[<digit>` wrote into the
+wrong field.  Sixteen corpus cases heard it -- every escape case there is, in all
+four option combinations, which is what pointed straight at the cause.  It is
+`offsetof(Engine, esc_param)` now.  English has the same call and never noticed,
+because English's is reached only past the sixteenth parameter and no input
+reaches that; Spanish's runs on every digit.
+
+**Where it stands.**  The standalone build produces audio byte-identical to the
+hook build across the whole corpus, at both word widths:
+
+    difftest --lang es --full            205/205    the hook build vs the original
+    difftest --lang es --full --port      205/205    the library, 32-bit
+    difftest --lang es --full --port64    205/205    the library, 64-bit
+
+and English is unmoved at 335/335 on all three.  `tvtts_set_textin_mode` was
+added along the way, because mode 4 was reachable from the harness and not from
+the library, which left one corpus case untestable through it.
+
 ## What is next
 
 There are three tests with different reach: `difftest --lang es` asks whether
@@ -2152,50 +2305,48 @@ function, and `es_reftest` asks whether the harness still reproduces a recording
 made through SAPI.  Work that is not covered by one of them is work that is not
 finished.
 
-Where it stands, counting only code the corpus actually executes and excluding
-the C runtime, which is bound rather than decompiled (the MSVC 4.2 objects begin
-at 0x1002345a; everything below that address is the engine's own): **196 of 196
-functions and 87,277 of 87,277 bytes, 100%.**  Rerun the measurement with
-`python tools/covrun.py --lang es --full`, which writes
-`work/cov_es_merged.txt`.
+Where the decompilation stands, counting only code the corpus executes and
+excluding the C runtime, which is bound rather than decompiled (the MSVC 4.2
+objects begin at 0x1002345a; everything below that address is the engine's own):
+**196 of 196 functions and 87,277 of 87,277 bytes, 100%.**  212 functions are
+written in all.  Rerun the measurement with
+`python tools/covrun.py --lang es --full`.
 
-So the Spanish engine is done, in the sense the project has measured all along:
-every function the 205 corpus configurations reach is decompiled, and the whole
-of it is byte-exact -- 205 of 205 configurations, the `unit_es` suites with
-hooks off, and the SAPI recording.  202 functions are hooked in all, the six
-beyond the executing set being callees that were cheap to write while their
-callers were open.
+An NVDA user can hear Spanish now.  The driver lists all twenty voices, each as
+its name and the language it speaks -- "Pedro (Castilian Spanish)" -- because a
+list of twenty names with no language between them says nothing about which is
+which, and two languages could one day share a name.  The id is still
+`"<language>:<index within that language>"`, so nobody's saved voice moved; what
+the driver keeps now is a map from that to the index the library wants, since the
+library counts across the languages and the id counts within one.  They part
+company at the eleventh voice.
 
-What is not decompiled is the code the corpus never reaches: 226 functions and
-44.5 KB below the CRT boundary, out of 428 and 130 KB.  Two thirds of those
-bytes -- 68 functions and 29.6 KB -- are in functions that call Win32 or COM
-directly, which is the DLL's own SAPI 4 plumbing and not the engine: the biggest
-are the wide-character text interface (`sub_1000c1d0`, `WideCharToMultiByte`),
-the engine thread and its message loop (`sub_1000b0e0`, `WaitForSingleObject`
-and `PostMessageA`, and no static caller) and a properties dialog
-(`sub_100051c0`, `SendDlgItemMessageA` and `WinHelpA`).  This project replaces
-that layer rather than reproducing it.  The remaining 158 functions and 14.9 KB
-import nothing and average 96 bytes -- thunks, accessors and the arms of the
-front end that no interface this harness offers can reach, the three mode 4
-header handlers among them.  Getting to those needs new ways in before it needs
-new C, so the honest next step is not more functions:
+**And it speaks at 16 kHz.**  That rate is OpenTV's own -- the original offered
+8 kHz and 11.025 and nothing else -- and it had been English's alone, so choosing
+it with a Spanish voice did nothing.  It works now, and the port was smaller than
+the finding that justified it: the same three formulas that reproduce both of
+English's sets exactly reproduce **all 2120 values of Spanish's own two sets**
+too, and in fact all twenty tables the two engines select between are
+byte-identical.  So there is one copy of the generated tables for both engines,
+`src/syn_hifi.c` behind `src/syn_hifi.h`, and each `Synth_InitFilters` points at
+them.  The fixed 242 Hz resonator in `filt_coef[12]`, `[13]` and `[33]` has to be
+replaced with them or the output keeps 11 kHz damping: measured on a Spanish
+sentence, the 4-7 kHz band against 300 Hz-3 kHz is 1.14 with the old resonator
+and 1.35 with the right one.  `api_test` now runs every language at every rate
+and checks the samples scale with the rate, since the same words take the same
+time to say.
 
-1. **The three mode 4 header handlers** (`sub_10022cf0`, `sub_10022e90`,
-   `sub_10022f90`) are the only front-end code left with a caller that is
-   written.  `-U mode4` now covers `TextIn_Mode4` and `TextIn_InsertText` the
-   same way; the handlers need `TextIn_Mode4Reset` driven over a made-up message,
-   which means giving the test an engine with the message in its input ring,
-   because that is where `TextIn_ReadLine` reads from.
-2. **The other rule bytecode**, at `0x1005fb88`, which `Stage0_Reset` points
-   `s0_ip` at.  There are two machines, not one: `Rule_Eval` runs on the
-   `TextIn` and rewrites tokens, and this one runs in stage 0.  Both are now
-   decompiled, but whether they share an encoding is still not established.
-3. **The rest of the `.bss` question.**  `Abbrev_Init` and `Lexicon_Init` show
-   one shape it takes -- a table shipped read-only and duplicated into `.bss` on
-   first use so it can be added to -- but the two together account for 2 KB of
-   the 103 KB.
-4. **The live SAPI object count**, the last of the fifteen harness addresses.
-   Nothing needs it, so it is the least urgent thing here.
+Which variety each language is comes from the DLLs themselves.  The version
+resource of CGRM_EN gives LANGID 0x0409, English (United States), and CGRM_ES
+gives 0x040a, Spanish (Spain); Centigram's own strings say only "English
+TruVoice" and "Spanish TruVoice", which does not distinguish a variety.  So the
+names are "American English", which the project already used, and "Castilian
+Spanish".  `tvtts_language_name` is where they live, one row per language, so the
+speak window and the add-on cannot disagree.
+
+Next, and in this order: a SAPI 5 interface, from published documentation
+rather than from memory; then French, German and Italian, which are the same
+1995 build as Spanish with the layout displaced in blocks.
 
 Two earlier items are done.  The escape-sequence gap is closed: `tests/corpus_es`
 now carries six `ESC [` inputs, 17 through 22.  The output block 0x0692..0x0700

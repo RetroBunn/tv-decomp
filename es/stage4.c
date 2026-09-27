@@ -19,7 +19,7 @@
 /* One curve per shape number: bytes of Q15 weight, scaled by 128 on read and
  * terminated by a zero. */
 /* @0x10058368 */
-extern const uint8_t *const g_track_shape[];
+extern const tv_ref g_track_shape[];
 
 /* @0x10004810 */
 void TV_THISCALL Stage4_Reset(Engine *self)
@@ -76,7 +76,7 @@ void TV_STDCALL Track_Fill(uint8_t *buf, int32_t pos, int32_t n, uint8_t value)
 void TV_THISCALL Track_BlendFwd(Engine *self, uint8_t *buf, int32_t pos,
                                 int32_t shape, int32_t n, uint8_t target)
 {
-    const uint8_t *s = g_track_shape[shape];
+    const uint8_t *s = TV_REF(uint8_t, g_track_shape[shape]);
     int32_t w = (int32_t)*s++ << 7;
     int32_t left = n;
     uint8_t *p;
@@ -97,7 +97,7 @@ void TV_THISCALL Track_BlendFwd(Engine *self, uint8_t *buf, int32_t pos,
 void TV_THISCALL Track_BlendBack(Engine *self, uint8_t *buf, int32_t pos,
                                  int32_t shape, int32_t n, uint8_t target)
 {
-    const uint8_t *s = g_track_shape[shape] + 1;
+    const uint8_t *s = TV_REF(uint8_t, g_track_shape[shape]) + 1;
     int32_t w = (int32_t)*s << 7;
     int32_t left = n;
     uint8_t *p;

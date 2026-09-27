@@ -22,12 +22,12 @@
 /* @0x10058618 */
 extern const uint8_t g_10058618[0x200];
 /* two byte tables reached through pointer variables, both indexed by the
- * phoneme.  g_10057d50's entry is a divisor, and it is zero for several
+ * phoneme.  TV_REF(uint8_t, g_10057d50)'s entry is a divisor, and it is zero for several
  * letters, so the original divides by zero if it ever gets one of them. */
 /* @0x10057d50 */
-extern const uint8_t *const g_10057d50;
+extern const tv_ref g_10057d50;
 /* @0x10057ce8 */
-extern const uint8_t *const g_10057ce8;
+extern const tv_ref g_10057ce8;
 /* indexed by the second table's entry */
 /* @0x100580c0 */
 extern const uint8_t g_100580c0[256];
@@ -118,8 +118,8 @@ void TV_THISCALL Stage3_Segment(Engine *self)
 
     /* ---- the three tracks */
     {
-        const uint8_t *div = g_10057d50;
-        const uint8_t *sel = g_10057ce8;
+        const uint8_t *div = TV_REF(uint8_t, g_10057d50);
+        const uint8_t *sel = TV_REF(uint8_t, g_10057ce8);
         int32_t ph = cls0((uint8_t)c_ctl);
         int32_t v;
 

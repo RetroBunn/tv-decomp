@@ -380,6 +380,29 @@ static void sync_sliders(void)
     show_slider_value(ID_VOLVAL, g_vol, L"%");
 }
 
+/*
+ * A voice as a person reads it: "Peter (American English)".  The library carries
+ * one engine per language and numbers the voices across them, so the name alone
+ * would leave a list of twenty with no way to tell which is which -- and two
+ * languages could one day share a name.
+ */
+static void voice_label(int voice, wchar_t *out, int cap)
+{
+    const char *name = tvtts_voice_name(voice);
+    const char *lang = tvtts_language_name(tvtts_voice_language(voice));
+    char buf[128];
+
+    if (name == NULL)
+        name = "?";
+    if (lang != NULL)
+        _snprintf(buf, sizeof buf, "%s (%s)", name, lang);
+    else
+        _snprintf(buf, sizeof buf, "%s", name);
+    buf[sizeof buf - 1] = 0;
+    MultiByteToWideChar(CP_UTF8, 0, buf, -1, out, cap);
+    out[cap - 1] = 0;
+}
+
 static void apply_voice_defaults(int voice)
 {
     g_rate = tvtts_voice_rate(voice);
@@ -476,8 +499,9 @@ static void build_controls(void)
     h = mk(L"COMBOBOX", L"", WS_TABSTOP | WS_VSCROLL | CBS_DROPDOWNLIST, ID_VOICE);
     n = tvtts_voice_count();
     for (i = 0; i < n; i++) {
-        wchar_t w[64];
-        MultiByteToWideChar(CP_UTF8, 0, tvtts_voice_name(i), -1, w, 64);
+        wchar_t w[96];
+
+        voice_label(i, w, 96);
         SendMessageW(h, CB_ADDSTRING, 0, (LPARAM)w);
     }
     SendMessageW(h, CB_SETCURSEL, DEF_VOICE, 0);
@@ -670,14 +694,14 @@ static INT_PTR CALLBACK dlgproc(HWND h, UINT m, WPARAM wp, LPARAM lp)
             return TRUE;
         case ID_VOICE:
             if (HIWORD(wp) == CBN_SELCHANGE) {
-                wchar_t buf[96], name[64];
+                wchar_t buf[160], name[96];
                 g_voice = (int)SendDlgItemMessageW(h, ID_VOICE, CB_GETCURSEL, 0, 0);
                 /* the engine keeps a default rate and pitch per voice, and
                  * adopting them is what makes each voice sound like itself */
                 apply_voice_defaults(g_voice);
-                MultiByteToWideChar(CP_UTF8, 0, tvtts_voice_name(g_voice), -1, name, 64);
-                _snwprintf(buf, 96, L"%s: rate %d, pitch %d.", name, g_rate, g_pitch);
-                buf[95] = 0;
+                voice_label(g_voice, name, 96);
+                _snwprintf(buf, 160, L"%s: rate %d, pitch %d.", name, g_rate, g_pitch);
+                buf[159] = 0;
                 set_status(buf);
             }
             return TRUE;

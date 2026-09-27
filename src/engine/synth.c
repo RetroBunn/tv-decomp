@@ -40,12 +40,11 @@ extern const uint8_t g_param_init[22];
  * lifted, by tools/gen_synth_hifi.py.  Only the three rate-dependent
  * resonator tables differ from the wideband set; see that generator.
  * No address annotation, because there is nothing to annotate. */
-extern const int32_t g_synhifi_6[180];
-extern const int32_t g_synhifi_7[180];
-extern const int32_t g_synhifi_8[700];
-extern const int32_t g_synhifi_2038;
-extern const int32_t g_synhifi_c12;
-extern const int32_t g_synhifi_c13;
+#include "syn_hifi.h"
+
+/* The name this engine gives the rate has to be the rate the tables were made
+ * for; src/syn_hifi.c asserts the other half of it. */
+typedef char tv_en_hifi_rate_agrees[(TV_SR_HIFI == TV_SYNHIFI_RATE) ? 1 : -1];
 
 /* Fixed Q15 filter coefficients, 8000 Hz and 11025 Hz output. */
 static const int16_t filt_coef_8k[40] = {

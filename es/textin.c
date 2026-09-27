@@ -1247,17 +1247,6 @@ extern const char g_str_dot[];          /* "." */
 /* @0x1006ae68 */
 extern const char g_str_newline[];      /* "\n" */
 
-/* The three header handlers.  Nothing in the corpus reaches them -- mode 4 is
- * not reachable through this build's interface -- so they are still the
- * original's. */
-/* @0x10022cf0 */
-extern void TV_THISCALL Mode4_From(TextIn *self, const char *text);
-/* @0x10022e90 */
-extern void TV_THISCALL Mode4_Header(TextIn *self, const char *text,
-                                     int32_t which);
-/* @0x10022f90 */
-extern void TV_THISCALL Mode4_Date(TextIn *self, const char *text);
-
 /*
  * Mode 4: read the headers of a mail message.
  *
@@ -1368,5 +1357,134 @@ int32_t TV_THISCALL TextIn_Mode4Reset(TextIn *self)
     tok->len = 1;
     tok->trail = ' ';
     tok->d1c = 3;
+    return 1;
+}
+
+/* The labels mode 4 reads a header out with, and the two endings it puts after
+ * one.  " Ett: " for the at sign is not Spanish for it -- "arroba" is -- and
+ * belongs with the German announcements in TextIn_Mode4: another string that
+ * was never translated. */
+/* @0x10069c98 */
+extern const char g_str_from[];        /* " De: " */
+/* @0x10069ca0 */
+extern const char g_str_at[];          /* " Ett: " */
+/* @0x10069ca8 */
+extern const char g_str_period[];      /* " Punto: " */
+/* @0x10069cb8 */
+extern const char g_str_subject[];     /* " Asunto: " */
+/* @0x10069cc8 */
+extern const char g_str_date[];        /* " Fecha: " */
+/* @0x10069cd8 */
+extern const char g_str_cc[];          /* " C C : " */
+/* @0x10069ce0 */
+extern const char g_str_bcc[];         /* " B C C : " */
+/* @0x1006ae6c */
+extern const char g_str_dot_nl[];      /* ".\n" */
+/* @0x1006ae70 */
+extern const char g_str_sp_dot_nl[];   /* " .\n" */
+
+/*
+ * Mode 4: the From: header.
+ *
+ * A name in brackets after the address -- "someone@somewhere (Nombre)" -- is
+ * the whole of what is said, and everything else is dropped.  Otherwise an
+ * address in angle brackets is cut off, but only when the '<' is more than four
+ * characters in, and what is left is read a character at a time with '.' said
+ * as " Punto: " and '@' as " Ett: ".
+ */
+/* @0x10022cf0 */
+int32_t TV_THISCALL Mode4_From(TextIn *self, char *text)
+{
+    char buf[276];
+    char *open, *close;
+
+    strcpy(buf, g_str_from);
+    open = tv_strchr(text, '(');
+    close = open != NULL ? tv_strchr(text, ')') : NULL;
+    if (open != NULL && close != NULL) {
+        *close = 0;
+        strcat(buf, open + 1);
+    } else {
+        char *lt = tv_strchr(text, '<');
+        int32_t at, n;
+
+        if (lt != NULL && tv_strchr(text, '>') != NULL && text + 4 < lt)
+            *lt = 0;
+        n = (int32_t)strlen(buf);
+        for (at = 0; text[at] != 0; at++) {
+            char c = text[at];
+
+            if (c == '.') {
+                strcat(buf, g_str_period);
+                n = (int32_t)strlen(buf);
+            } else if (c == '@') {
+                strcat(buf, g_str_at);
+                n = (int32_t)strlen(buf);
+            } else {
+                buf[n++] = c;
+                buf[n] = 0;
+            }
+        }
+    }
+    strcat(buf, g_str_dot_nl);
+    TextIn_TokenizeText(self, buf, 0);
+    return 1;
+}
+
+/*
+ * Mode 4: the Subject:, Cc: and Bcc: headers, which differ only in the label.
+ * Anything else is refused.
+ */
+/* @0x10022e90 */
+int32_t TV_THISCALL Mode4_Header(TextIn *self, const char *text, int32_t which)
+{
+    char buf[275];
+    const char *label;
+
+    memset(buf, 0, sizeof buf);
+    if (which == 1)
+        label = g_str_subject;
+    else if (which == 2)
+        label = g_str_cc;
+    else if (which == 3)
+        label = g_str_bcc;
+    else
+        return 0;
+    strcpy(buf, label);
+    strcat(buf, text);
+    strcat(buf, g_str_dot_nl);
+    TextIn_TokenizeText(self, buf, 0);
+    return 1;
+}
+
+/*
+ * Mode 4: the Date: header.
+ *
+ * The label goes in as a token of its own, flagged d1c = 1, and then the date
+ * itself is tokenized with `mark` set so that every token of it carries flag 3.
+ * The caller's buffer is overwritten with " .\n" and tokenized again to close
+ * the line, which is why the text has to be writable.
+ */
+/* @0x10022f90 */
+int32_t TV_THISCALL Mode4_Date(TextIn *self, char *text)
+{
+    char label[12];
+    Token *tok;
+    int32_t len;
+
+    strcpy(label, g_str_date);
+    tok = TextIn_InsertAfter(self, self->tail);
+    if (tok == NULL)
+        return TextIn_Error(self, 0);
+    len = (int32_t)strlen(label);
+    if (AllocString(&tok->text, len + 1) == -1)
+        return TextIn_Error(self, 0);
+    strcpy(tok->text, label);
+    tok->len = (int16_t)len;
+    tok->trail = ' ';
+    tok->d1c = 1;
+    TextIn_TokenizeText(self, text, 1);
+    strcpy(text, g_str_sp_dot_nl);
+    TextIn_TokenizeText(self, text, 0);
     return 1;
 }

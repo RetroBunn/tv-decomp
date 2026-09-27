@@ -175,6 +175,15 @@ underneath is right while callers get the better behaviour by default.
 
 ## What is next
 
+**Spanish is in.**  One library carries both engines, the add-on offers
+twenty voices in two languages, and each is listed with the language it
+speaks -- "Peter (American English)", "Pedro (Castilian Spanish)" -- and
+tagged so NVDA's automatic language switching can pick it.  Voices are
+numbered across the languages, so setting one from another language switches
+the engine; `tvtts_set_language` is there for callers that would rather ask
+directly.  The standalone build is byte-identical to the original across both
+corpora at 32 and 64 bits.
+
 **The Spanish engine is finished.**  Every function the corpus executes is
 decompiled and byte-exact: 196 of 196 functions and 87,277 of 87,277 bytes,
 100% of the code the 205 configurations reach, with the C runtime bound to
@@ -183,14 +192,15 @@ interpreters, the classifier, all five pipeline stages, the synthesiser and
 the sample generator are all in `es/`, and 205 of 205 corpus configurations,
 the whole `unit_es` suite and a SAPI recording all come back identical.  What
 is left in the image is the DLL's SAPI 4 plumbing, which this project
-replaces rather than reproduces, and front-end arms no interface reaches;
-[docs/SPANISH.md](docs/SPANISH.md) ends with what those are and how to
-remeasure.
+replaces rather than reproduces; 212 functions are written in all, and the only
+ones still resolved against the DLL are eleven C runtime entries and the two
+calls the engine makes upward.  [docs/SPANISH.md](docs/SPANISH.md) ends with
+what remains and how to remeasure.
 
 Two things remain, in this order.
 
-1. **A SAPI 5 interface, 32-bit and 64-bit.**  Both libraries already build
-   at both word widths, so the new work is the shim rather than the engine.
+1. **A SAPI 5 interface, 32-bit and 64-bit.**  The library already builds at
+   both word widths, so the new work is the shim rather than the engine.
    This one waits on documentation: what a SAPI 5 voice has to implement
    will be taken from a published specification, not written from memory.
 

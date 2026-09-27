@@ -75,6 +75,10 @@ typedef int (TVTTS_CALL *tvtts_callback)(const tvtts_event *ev, void *user);
 
 /* rate is 11025 (the engine's native rate) or 8000.  NULL on failure. */
 TVTTS_API tvtts_synth *TVTTS_CALL tvtts_create(uint32_t sample_rate);
+/* The same, in a given language: "en", "es".  tvtts_create is this with the
+ * first language the library carries, which is English. */
+TVTTS_API tvtts_synth *TVTTS_CALL tvtts_create_lang(uint32_t sample_rate,
+                                                    const char *lang);
 
 /*
  * Output rate, as an index rather than a number of hertz, because the
@@ -103,6 +107,14 @@ TVTTS_API tvtts_synth *TVTTS_CALL tvtts_create(uint32_t sample_rate);
 
 TVTTS_API int TVTTS_CALL tvtts_set_sample_rate(tvtts_synth *s, int which);
 TVTTS_API int TVTTS_CALL tvtts_get_sample_rate(const tvtts_synth *s);
+/* The three output rates, as tvtts_set_sample_rate indexes them: 8000, 11025
+ * and 16000.  The original offered the first two; the third is OpenTV's, and
+ * every engine has it -- the tables for it are computed from the formulas that
+ * reproduce both of the original's sets exactly, and those formulas hold for the
+ * 1995 engines as well as the 1997 one. */
+#define TVTTS_SR_8K   0
+#define TVTTS_SR_11K  1
+#define TVTTS_SR_16K  2
 TVTTS_API uint32_t TVTTS_CALL tvtts_sample_rate_hz(int which);
 TVTTS_API void TVTTS_CALL tvtts_destroy(tvtts_synth *s);
 
@@ -287,9 +299,44 @@ TVTTS_API int TVTTS_CALL tvtts_get_voice(const tvtts_synth *s);
 TVTTS_API int TVTTS_CALL tvtts_get_rate(const tvtts_synth *s);
 TVTTS_API int TVTTS_CALL tvtts_get_pitch(const tvtts_synth *s);
 
-/* The voices, in the order the engine indexes them. */
+/* The voices, in the order the engine indexes them.  With more than one
+ * language in the library they run on: English 0..9, then the next language's,
+ * and tvtts_voice_language says which language a voice belongs to. */
 TVTTS_API int TVTTS_CALL tvtts_voice_count(void);
 TVTTS_API const char *TVTTS_CALL tvtts_voice_name(int voice);
+
+/* ---- languages ----------------------------------------------------------- */
+/*
+ * The library carries one engine per language it has been taught, and a synth
+ * speaks one of them at a time.  They are not variants of one engine: TruVoice
+ * shipped five language DLLs and the 1995 four are a different generation from
+ * the 1997 English one, so each is its own decompilation with its own object
+ * layout.  What they share is this interface.
+ *
+ * A language is named by its two-letter code -- "en", "es" -- and the voices
+ * are numbered across all of them, so a caller that only wants a list of
+ * voices can ignore languages entirely and ask tvtts_voice_language which one
+ * each voice speaks.
+ *
+ * Changing language builds a new engine and throws the old one away, so it
+ * cannot be done part way through an utterance and returns -1 if tried.  The
+ * settings that belong to the caller rather than to the engine -- rate, pitch,
+ * volume, sample rate -- are carried across; the voice becomes the first one
+ * of the new language, because a voice number means nothing outside its own.
+ */
+TVTTS_API int TVTTS_CALL tvtts_language_count(void);
+TVTTS_API const char *TVTTS_CALL tvtts_language(int index);
+/*
+ * A language's name for a person to read: "American English".  Takes the code,
+ * so it composes with tvtts_voice_language, and returns NULL for a code the
+ * library does not carry.  The names come from what each DLL says it is -- its
+ * version resource gives a LANGID, 0x0409 for CGRM_EN and 0x040a for CGRM_ES --
+ * rather than from anybody's idea of what the voices sound like.
+ */
+TVTTS_API const char *TVTTS_CALL tvtts_language_name(const char *code);
+TVTTS_API const char *TVTTS_CALL tvtts_voice_language(int voice);
+TVTTS_API const char *TVTTS_CALL tvtts_get_language(const tvtts_synth *s);
+TVTTS_API int TVTTS_CALL tvtts_set_language(tvtts_synth *s, const char *lang);
 
 /* The engine's default rate and pitch for a voice, as SAPI reported them. */
 TVTTS_API int TVTTS_CALL tvtts_voice_rate(int voice);
@@ -310,6 +357,17 @@ TVTTS_API int TVTTS_CALL tvtts_add_lexicon(const char *word, const char *phoneme
  * put after the text; the feed routine branches on the total length, so it
  * changes the output.  The defaults (1, 1, 2) are what SAPI produced.
  */
+/*
+ * Which tokenizer the text goes through, as SAPI's "TextInMode" chose.  0 is
+ * the ordinary one and what every caller wants; 4 is the mail reader, which
+ * reads From:, Subject:, Date:, Cc: and Bcc: out of a message and announces
+ * quoted passages.  The engine builds its tokenizer when the synth is made, so
+ * this has to be set before the first utterance; it is here because the
+ * original had it and the corpus covers it, not because a screen reader wants
+ * it.
+ */
+TVTTS_API void TVTTS_CALL tvtts_set_textin_mode(tvtts_synth *s, int mode);
+
 TVTTS_API void TVTTS_CALL tvtts_set_compat(tvtts_synth *s, int preformat,
                                            int textin, int terminators);
 

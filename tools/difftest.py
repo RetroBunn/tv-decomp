@@ -31,6 +31,9 @@ DLL = os.path.join(ROOT, "TruVoice", "CGRM_EN.DLL")
 TVH = os.path.join(ROOT, "build", "check", "tvh.exe")
 TVH_HOOK = os.path.join(ROOT, "build", "check", "tvh_hook.exe")
 TV_PORT = os.path.join(ROOT, "build", "check", "tv.exe")
+#: The library numbers voices across the languages; the hook build numbers one
+#: engine's from zero.  Set by set_lang.
+PORT_VOICE_BASE = 0
 TV_PORT64 = os.path.join(ROOT, "build", "check", "tv64.exe")
 
 #: The port is compared against the original, so every OpenTV extension
@@ -58,6 +61,11 @@ SUBSETS = {
 }
 
 
+#: Where each language's voices begin in the library, in the order
+#: src/port/api.c lists them.
+VOICE_BASE = {"en": 0, "es": 10}
+
+
 def set_lang(lang):
     """Point the module at one engine's DLL, corpus, hook build and workdir.
 
@@ -66,6 +74,8 @@ def set_lang(lang):
     here so they cannot disagree about where an engine's files live.
     """
     global DLL, TVH_HOOK, CORPUS, WORK, EXTRA_GLOB, SUBSET
+    global PORT_VOICE_BASE
+    PORT_VOICE_BASE = VOICE_BASE[lang]
     if lang == "en":
         return
     DLL = os.path.join(ROOT, "TruVoice", "CGRM_%s.DLL" % lang.upper())
@@ -144,11 +154,12 @@ def configs(full, inputs):
 
 
 def run_one(exe, extra, name, path, voice, phone, outdir, suffix="", pargs=(),
-            dll=True):
+            dll=True, voice_base=0):
     os.makedirs(outdir, exist_ok=True)
     tag = "%s_v%d%s%s" % (name, voice, "_8k" if phone else "", suffix)
     out = os.path.join(outdir, tag + ".wav")
-    args = [exe] + extra + list(pargs) + ["-v", str(voice)] + (["-8"] if phone else []) + \
+    args = [exe] + extra + list(pargs) + ["-v", str(voice + voice_base)] + \
+        (["-8"] if phone else []) + \
         ([DLL] if dll else []) + ["@" + path, out]
     r = subprocess.run(args, capture_output=True, text=True)
     if r.returncode != 0 or not os.path.exists(out):
@@ -306,9 +317,6 @@ def main():
 
     set_lang(a.lang)
     if a.lang != "en":
-        if a.port or a.port64:
-            print("there is no standalone Spanish build yet")
-            return 2
         if a.ref:
             print("ref/ holds English recordings; use tools/es_reftest.py")
             return 2
@@ -357,7 +365,8 @@ def main():
             exe = TV_PORT64 if a.port64 else TV_PORT
             cands = dict((t, (o, e)) for t, o, e in ex.map(
                 lambda r: run_one(exe, CLASSIC, r[0], r[1], r[2], r[3], canddir,
-                                  r[4], r[5], dll=False), runs))
+                                  r[4], r[5], dll=False,
+                                  voice_base=PORT_VOICE_BASE), runs))
         else:
             cands = dict((t, (o, e)) for t, o, e in ex.map(
                 lambda r: run_one(TVH_HOOK, ["-H", a.hooks], r[0], r[1], r[2], r[3],

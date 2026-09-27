@@ -1,6 +1,10 @@
 """Lift the engine's constant data out of a TruVoice DLL into data/.
 
-Usage: python tools/extract_data.py [TruVoice/CGRM_EN.DLL] [data/en/engine.tvdata]
+Usage: python tools/extract_data.py [<dll>] [<out.tvdata>] [<srcdir>]
+
+With no arguments it does English: CGRM_EN.DLL, data/en/engine.tvdata, src/.
+Spanish is
+  python tools/extract_data.py TruVoice/CGRM_ES.DLL data/es/engine.tvdata es
 
 This is run once, by someone who has the original, and the result is
 committed.  An ordinary build then needs no Centigram binary at all: see
@@ -33,12 +37,13 @@ def main():
     image = args[0] if args else os.path.join(ROOT, "TruVoice", "CGRM_EN.DLL")
     out = (args[1] if len(args) > 1
            else os.path.join(ROOT, "data", "en", "engine.tvdata"))
+    srcdir = args[2] if len(args) > 2 else "src"
     if not os.path.isfile(image):
         sys.exit("extract_data: %s not found.  This step needs your own copy "
                  "of the original; an ordinary build does not." % image)
 
     img = Image(image)
-    annots = scan(os.path.join(ROOT, "src"))
+    annots = scan(os.path.join(ROOT, srcdir))
 
     spans = []
     sections = []

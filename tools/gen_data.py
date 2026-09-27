@@ -1,6 +1,10 @@
 """Lay the engine's constant data out for the standalone build.
 
-Usage: python tools/gen_data.py <image> <srcdir> <out.s> <obj>...
+Usage: python tools/gen_data.py [--prefix P] <image> <srcdir> <out.s> <obj>...
+
+--prefix is for a language that shares the library with another one: its
+symbols are compiled with that prefix (see tools/gen_rename.py), so the labels
+here have to carry it too, while the annotations they are looked up by do not.
 
 <image> is either data/en/engine.tvdata, which is what an ordinary
 build uses and needs no Centigram binary, or a TruVoice DLL for anyone
@@ -47,12 +51,22 @@ ELEM = {
     "char": 1, "uint8_t": 1, "int8_t": 1, "signed": 1, "unsigned": 1,
     "uint16_t": 2, "int16_t": 2, "short": 2,
     "uint32_t": 4, "int32_t": 4, "int": 4, "long": 4, "float": 4,
+    # a stored address, always four bytes: see src/tv_ref.h
+    "tv_ref": 4,
 }
 
 
 def scan(srcdir):
-    """name -> (addr, is_func, nbytes or None)"""
+    """name -> (addr, is_func, nbytes or None)
+
+    srcdir may be several, comma separated: a language's engine and the
+    port layer that owns one both carry annotations.
+    """
     out = {}
+    if "," in srcdir:
+        for one in srcdir.split(","):
+            out.update(scan(one))
+        return out
     for root, _, files in os.walk(srcdir):
         for fn in files:
             if not fn.endswith((".c", ".h")):
@@ -77,6 +91,13 @@ def scan(srcdir):
                     continue
                 name = ids[-1]
                 size = None
+                if not dims and "*" not in flat:
+                    # a scalar of a known type sizes itself, which is what a
+                    # .bss counter or flag needs to be placed at all
+                    for tok in ids:
+                        if tok in ELEM:
+                            size = ELEM[tok]
+                            break
                 if dims and all(d.strip() for d in dims) and "*" not in flat:
                     for tok in ids:
                         if tok in ELEM:
@@ -108,8 +129,13 @@ def nm_syms(objs):
 
 
 def main():
-    image, srcdir, out_s = sys.argv[1], sys.argv[2], sys.argv[3]
-    objs = sys.argv[4:]
+    args = sys.argv[1:]
+    prefix = ""
+    if args and args[0] == "--prefix":
+        prefix = args[1]
+        args = args[2:]
+    image, srcdir, out_s = args[0], args[1], args[2]
+    objs = args[3:]
     # Either the committed tables or, for whoever has one, the original
     # DLL.  The two are interchangeable here by construction: see
     # tools/extract_data.py.
@@ -118,9 +144,12 @@ def main():
     annots = scan(srcdir)
     defined, undefined = nm_syms(objs)
 
+
     need = {}
     for sym in sorted(undefined - defined):
         b = base_name(sym)
+        if prefix and b.startswith(prefix):
+            b = b[len(prefix):]
         if b in annots:
             need[b] = (sym,) + annots[b]
 
@@ -185,7 +214,7 @@ def main():
         # 32-bit PE decorates C symbols with a leading underscore and 64-bit
         # does not, so the region answers to both spellings.
         fp.write("\t.balign 16\n")
-        for nm in ("tv_data", "_tv_data"):
+        for nm in (prefix + "tv_data", "_" + prefix + "tv_data"):
             fp.write("\t.globl %s\n%s:\n" % (nm, nm))
         here = 0
         for i, (lo, hi) in enumerate(blobs):

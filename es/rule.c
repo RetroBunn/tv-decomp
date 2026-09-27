@@ -195,7 +195,7 @@ int32_t TV_THISCALL Rule_Scan(TextIn *self, const uint32_t *want, Token *t,
  * the table; nothing in the corpus produces one.
  */
 /* @0x10069b18 */
-extern const char *const g_rule_words[26];
+extern const tv_ref g_rule_words[26];
 
 /* @0x10021670 */
 int32_t TV_THISCALL Rule_InsertWord(TextIn *self, Token *ref, uint32_t v,
@@ -208,7 +208,7 @@ int32_t TV_THISCALL Rule_InsertWord(TextIn *self, Token *ref, uint32_t v,
 
     t = dir == -1 ? TextIn_InsertBefore(self, ref) : TextIn_InsertAfter(self, ref);
     idx = *self->rule_ip++;
-    w = g_rule_words[idx];
+    w = TV_REF(char, g_rule_words[idx]);
     len = strlen(w);
     if (AllocString(&t->text2, (int32_t)len + 5) == -1)
         return TextIn_Error(self, 0);
@@ -243,7 +243,7 @@ int32_t TV_THISCALL Rule_InsertWord(TextIn *self, Token *ref, uint32_t v,
 /* @0x10069d08 */
 extern const uint32_t g_char_flags[256];
 /* @0x1006a2a0 */
-extern const char *const g_char_names[256];
+extern const tv_ref g_char_names[256];
 /* @0x10069c30 */
 extern const char g_str_space[];
 
@@ -266,7 +266,7 @@ int32_t TV_THISCALL Rule_SpellOut(TextIn *self, Token *t, uint32_t v,
             continue;
         if (all == 0 && (g_char_flags[c] & 0xc) == 0)
             continue;
-        strcat(buf, g_char_names[c]);
+        strcat(buf, TV_REF(char, g_char_names[c]));
         strcat(buf, g_str_space);
     }
     len = strlen(buf);
@@ -745,7 +745,7 @@ int32_t TV_THISCALL Rule_SayGroupedNumber(TextIn *self, Token **first,
     t->num = Number_Words(digits, words, 4, mode);
     if (comma != 0) {
         strcat(words, g_str_space);
-        strcat(words, g_rule_words[1]);        /* "coma" */
+        strcat(words, TV_REF(char, g_rule_words[1]));        /* "coma" */
         strcat(words, g_str_space);
         Number_Words(t->text, frac, 4, mode);
         strcat(words, frac);
@@ -1203,5 +1203,345 @@ int32_t TV_THISCALL Rule_ClassifyToken(TextIn *self, Token *t)
             t->num = v;
         }
     }
+    return 1;
+}
+
+/* The rest of the rule opcodes: the seven arms Rule_Eval dispatches to that
+ * nothing in the corpus reaches.  They are written because the standalone
+ * build has no DLL to fall back on, and tested by unit_es rather than by the
+ * corpus -- see the "rule opcodes" suite, which drives each one directly. */
+
+/* @0x1006ae30 */
+extern const char g_str_del[];         /* "del " */
+/* @0x1006ae38 */
+extern const char g_str_de[];          /* "de " */
+/* @0x1006ae64 */
+extern const char g_str_zero[];        /* "0" */
+/* The twelve months, indexed from one; entry 0 is "?" and entry 13 is null. */
+/* @0x1006a2e8 */
+extern const tv_ref g_month_names[14];
+
+/*
+ * Opcode 0x60: is there a token this far off with one of these flags?
+ *
+ * Walks `count` tokens away from the one given -- `count` is the operand --
+ * forward or back according to `dir`, treating a token flagged 0x51 as not
+ * counting and stopping dead at one flagged 0x54.  Each step lands on the next
+ * token that is not transparent, and that token's d1c is looked up in `want`.
+ * On a match the number of steps taken goes into rule_trail, signed, so the
+ * caller knows how far away it was.
+ */
+/* @0x100211b0 */
+int32_t TV_THISCALL Rule_Op60(TextIn *self, const uint32_t *want, Token *t,
+                              int32_t dir)
+{
+    int32_t count = (int32_t)*self->rule_ip;
+    int16_t steps = 0;
+    int32_t i;
+
+    self->rule_trail = 0;
+    self->rule_ip = self->rule_ip + 1;
+    if (t == NULL)
+        return 0;
+    for (i = 0; i < count; i++) {
+        int32_t transparent = 1;
+
+        while (transparent) {
+            if (dir == -1) {
+                t = t->prev;
+                if (t == NULL || self->head == t)
+                    return 0;
+                steps--;
+            } else {
+                t = t->next;
+                if (t == NULL)
+                    return 0;
+                steps++;
+            }
+            if (!Bits_Test(0x51, t->bits))
+                transparent = 0;
+            if (Bits_Test(0x54, t->bits))
+                return 0;
+        }
+        if (Bits_Test((int32_t)t->d1c, want)) {
+            self->rule_trail = steps;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/*
+ * Opcode 0x82: say the number as an ordinal, and make it plural if the token
+ * before it counts more than one.
+ */
+/* @0x10020950 */
+int32_t TV_THISCALL Rule_Op82(TextIn *self, Token *t, uint32_t v)
+{
+    char buf[0x100];
+
+    Number_Words(t->text, buf, 3, 2);
+    Bits_Set(0x32, t->bits);
+    if (t->prev != NULL && t->prev->num > 1)
+        strcat(buf, g_str_s);
+    if (AllocString(&t->text2, (int32_t)strlen(buf) + 5) == -1)
+        return TextIn_Error(self, 0);
+    strcpy(t->text2, buf);
+    if (t->trail == 0)
+        Bits_Set(0x50, t->bits);
+    t->trail = ' ';
+    t->d1c = v;
+    return 1;
+}
+
+/*
+ * Opcode 0x78: a date.  "3 de enero del 1997".
+ *
+ * Three tokens at most: the day, which is "primero" when it is 1 and the
+ * cardinal otherwise; the month, from the table above, with "de " in front;
+ * and, when a number follows that could be a year, "de " and the full year for
+ * four digits between 1001 and 2099, or "del " and the number for two digits
+ * between 51 and 99.  The cursor is left on the last token taken.
+ */
+/* @0x10020a50 */
+int32_t TV_THISCALL Rule_Op78(TextIn *self, Token **tp, uint32_t v)
+{
+    char buf[0x50];
+    Token *t = *tp;
+    int32_t style;
+
+    Number_Words(t->text, buf, t->num == 1 ? 1 : 2, 0);
+    if (AllocString(&t->text2, (int32_t)strlen(buf) + 5) == -1)
+        return TextIn_Error(self, 0);
+    strcpy(t->text2, buf);
+    t->trail = ' ';
+    t->d1c = v;
+
+    t = t->next;
+    if (t == NULL)
+        return TextIn_Error(self, 0);
+    if (t->num <= 0 || t->num >= 0xd)
+        return 0;
+    if (AllocString(&t->text2, 0xf) == -1)
+        return TextIn_Error(self, 0);
+    strcpy(t->text2, g_str_de);
+    strcat(t->text2, TV_REF(char, g_month_names[t->num]));
+    t->trail = ' ';
+    t->d1c = v;
+    *tp = t;
+
+    t = t->next;
+    if (t == NULL || t->is_number == 0)
+        return 1;
+    style = 0;
+    if (t->len == 4 && t->num > 1000 && t->num < 0x834) {
+        style = 4;
+        Number_Words(t->text, buf, 2, 0);
+    } else if (t->len == 2 && t->num > 50 && t->num < 100) {
+        style = 2;
+        Number_Words(t->text, buf, 2, 0);
+    }
+    if (style == 0)
+        return 1;
+    if (AllocString(&t->text2, (int32_t)strlen(buf) + 7) == -1)
+        return TextIn_Error(self, 0);
+    strcpy(t->text2, style == 4 ? g_str_de : g_str_del);
+    strcat(t->text2, buf);
+    t->d1c = v;
+    *tp = t;
+    return 1;
+}
+
+/*
+ * Opcode 0x64: put one of the interpreter's own words in the token's place.
+ *
+ * The operand names the word and also goes into both of the token's int16
+ * fields.  With `plural` set, and when the token before counts more than one --
+ * or, for v == 0xd, the two either side between them -- the word takes an s or
+ * an es depending on whether it ends in a vowel.
+ */
+/* @0x10021470 */
+int32_t TV_THISCALL Rule_Op64(TextIn *self, Token *t, uint32_t v, int32_t n,
+                              int32_t plural)
+{
+    const char *w = TV_REF(char, g_rule_words[n]);
+
+    if (AllocString(&t->text2, (int32_t)strlen(w) + 5) == -1)
+        return TextIn_Error(self, 0);
+    strcpy(t->text2, w);
+    t->w0a = (int16_t)n;
+    t->w08 = (int16_t)n;
+    t->d1c = v;
+    if (t->prev != NULL && t->prev->trail == 0)
+        t->prev->trail = ' ';
+    if (t->trail == 0) {
+        t->trail = ' ';
+        Bits_Set(0x50, t->bits);
+    } else if (t->trail == '.' && !Bits_Test(0x49, t->bits)) {
+        t->trail = ' ';
+    }
+    if (plural != 0) {
+        int32_t len = (int32_t)strlen(t->text2);
+
+        if (t->prev != NULL && len > 0) {
+            int32_t num = t->prev->num;
+
+            if (v == 0xd && t->next != NULL)
+                num += t->next->num;
+            if (num > 1)
+                strcat(t->text2,
+                       tv_strchr(g_str_vowels_plain,
+                                 (int32_t)(int8_t)t->text2[len - 1]) != NULL
+                           ? g_str_s : g_str_es);
+        }
+    }
+    return 1;
+}
+
+/*
+ * Opcode 0x80: say the number, as a count of whatever follows.
+ *
+ * More than seven digits is spelled out instead.  Mode 2 is the plain reading
+ * and mode 1 the one used when the token already carries flag 0x4a, or when
+ * Rule_Scan finds that flag within two tokens ahead.
+ */
+/* @0x10021960 */
+int32_t TV_THISCALL Rule_Op80(TextIn *self, Token *t, uint32_t v)
+{
+    uint32_t want[3];
+    char buf[0x100];
+    int32_t mode = 2;
+
+    want[0] = 0;
+    want[1] = 0;
+    want[2] = 0;
+    if (t == NULL || t->text == NULL)
+        return 0;
+    if (strlen(t->text) > 7)
+        return Rule_SpellOut(self, t, v, 0);
+    if (Bits_Test(0x4a, t->bits)) {
+        mode = 1;
+    } else {
+        Bits_Set(0x4a, want);
+        if (Rule_Scan(self, want, t, 1, 2, 1))
+            mode = 1;
+    }
+    Number_Words(t->text, buf, 2, mode);
+    if (AllocString(&t->text2, (int32_t)strlen(buf) + 5) == -1)
+        return TextIn_Error(self, 0);
+    strcpy(t->text2, buf);
+    t->d1c = v;
+    if (t->trail == 0) {
+        t->trail = ' ';
+        Bits_Set(0x50, t->bits);
+    }
+    return 1;
+}
+
+/*
+ * Opcode 0x85: read a run of digits two at a time.
+ *
+ * Up to seventeen digits, taken in pairs and each pair said as a number with a
+ * space after it, which is how a telephone number or a long reference is read
+ * out.  A pair beginning with a zero says "cero" and then the second digit on
+ * its own.
+ */
+/* @0x10021fb0 */
+int32_t TV_THISCALL Rule_Op85(TextIn *self, Token *t, uint32_t v)
+{
+    /* The original reserves three bytes for the pair and then has
+     * Number_Words write the words back over the same buffer, which reaches
+     * into the 0x61 bytes of frame that follow it and are used for nothing
+     * else.  The size here is that whole span, so the frame is laid out as the
+     * original laid it out and nothing else moves. */
+    char pair[0x64];
+    char scratch[0x64];
+    char out[400];
+    int32_t pairs, at = 0;
+
+    out[0] = 0;
+    /* The original reads t->len before it tests t for null, so a null token
+     * faults there rather than returning; the order is safe here instead. */
+    if (t == NULL || t->text == NULL)
+        return 0;
+    if (strlen(t->text) > 0x11)
+        return 0;
+    pairs = (int32_t)t->len;
+    if (pairs > 0) {
+        pairs = (pairs + 1) >> 1;
+        do {
+            at += 2;
+            pair[0] = t->text[at - 2];
+            pair[2] = 0;
+            pair[1] = t->text[at - 1];
+            if (pair[0] == '0') {
+                /* Number_Words truncates what it is given, which is why the
+                 * original hands it the string in .data rather than a copy;
+                 * kept as it was. */
+                Number_Words((char *)g_str_zero, scratch, 2, 2);
+                strcat(out, scratch);
+                strcat(out, g_str_space);
+                Number_Words(&pair[1], scratch, 2, 2);
+                strcat(out, scratch);
+            } else {
+                Number_Words(pair, pair, 2, 2);
+                strcat(out, pair);
+            }
+            strcat(out, g_str_space);
+        } while (--pairs != 0);
+    }
+    if (AllocString(&t->text2, (int32_t)strlen(out) + 5) == -1)
+        return TextIn_Error(self, 0);
+    strcpy(t->text2, out);
+    t->d1c = v;
+    return 1;
+}
+
+/*
+ * Opcode 0x77: join this token onto the one before it.
+ *
+ * What each of them says -- text2 if it has one, its own text otherwise --
+ * goes end to end into the previous token, and where the first ends with the
+ * same character the second begins with, that character is said once.  The
+ * token this was called on keeps its text; the previous one now says both.
+ */
+/* @0x100221f0 */
+int32_t TV_THISCALL Rule_Op77(TextIn *self, Token *t, uint32_t v)
+{
+    char first[255];
+    char second[128];
+    Token *prev;
+    const char *s;
+
+    memcpy(first, g_str_space, 2);
+    memset(first + 2, 0, sizeof first - 2);
+    memcpy(second, g_str_space, 2);
+    memset(second + 2, 0, sizeof second - 2);
+
+    prev = t->prev;
+    if (prev == NULL || self->head == prev)
+        return 0;
+    s = prev->text2 != NULL ? prev->text2 : prev->text;
+    if (s != NULL)
+        strcpy(first, s);
+    s = t->text2 != NULL ? t->text2 : t->text;
+    if (s != NULL)
+        strcpy(second, s);
+    {
+        /* When the first string came out empty the original reads the byte
+         * before its buffer, which is the last byte of the second one and is
+         * always zero: the buffers are cleared above and nothing fills either
+         * of them to the end.  So an empty first string compares zero, which
+         * is what the 0 below is. */
+        size_t len = strlen(first);
+        char last = len > 0 ? first[len - 1] : 0;
+
+        strcat(first, last == second[0] ? second + 1 : second);
+    }
+    /* the original does not check this one */
+    AllocString(&prev->text2, (int32_t)strlen(first) + 5);
+    strcpy(prev->text2, first);
+    if (prev->d1c == 0)
+        prev->d1c = v;
     return 1;
 }

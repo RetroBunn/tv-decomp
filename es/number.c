@@ -50,27 +50,27 @@
 #include "es_engine.h"
 
 /* @0x1006a110 */
-extern const char *const g_num_units[20];
+extern const tv_ref g_num_units[20];
 /* @0x1006a160 */
-extern const char *const g_num_units_ord[20];
+extern const tv_ref g_num_units_ord[20];
 /* @0x1006a1b0 */
-extern const char *const g_num_frac[22];
+extern const tv_ref g_num_frac[22];
 /* @0x1006a208 */
-extern const char *const g_num_tens[10];
+extern const tv_ref g_num_tens[10];
 /* @0x1006a230 */
-extern const char *const g_num_tens_ord[10];
+extern const tv_ref g_num_tens_ord[10];
 /* @0x1006a258 */
-extern const char *const g_num_hund[10];
+extern const tv_ref g_num_hund[10];
 /* @0x1006a280 */
-extern const char *const g_num_hund_ord[10];
+extern const tv_ref g_num_hund_ord[10];
 /* @0x1006a2a8 */
-extern const char *const g_num_scale[4];
+extern const tv_ref g_num_scale[4];
 /* @0x1006a2b8 */
-extern const char *const g_num_scale_pl[4];
+extern const tv_ref g_num_scale_pl[4];
 /* @0x1006a2c8 */
-extern const char *const g_num_scale_ord[4];
+extern const tv_ref g_num_scale_ord[4];
 /* @0x1006a2d8 */
-extern const char *const g_num_scale_ord_pl[4];
+extern const tv_ref g_num_scale_ord_pl[4];
 
 /* @0x1006ae2c */
 extern const char g_str_una[];
@@ -119,20 +119,20 @@ int32_t TV_CDECL Number_WordsEx(char *digits, char *out, int32_t style,
          * index running 0..3 rather than 0..2 shows through. */
         if (sty == 1) {
             if (above == 1)
-                strcat(out, g_num_scale_ord[level % 4]);
+                strcat(out, TV_REF(char, g_num_scale_ord[level % 4]));
             else if (above > 1 || level % 4 == 3)
-                strcat(out, g_num_scale_ord_pl[level % 4]);
+                strcat(out, TV_REF(char, g_num_scale_ord_pl[level % 4]));
             /* "mil millonesimos".  Unlike the cardinal case below, this one
              * does not ask whether there was anything above it. */
             if (level == 2 && value == 0)
-                strcat(out, g_num_scale_ord_pl[1]);
+                strcat(out, TV_REF(char, g_num_scale_ord_pl[1]));
         } else {
             if (above == 1)
-                strcat(out, g_num_scale[level % 4]);
+                strcat(out, TV_REF(char, g_num_scale[level % 4]));
             else if (above > 1 || level % 4 == 3)
-                strcat(out, g_num_scale_pl[level % 4]);
+                strcat(out, TV_REF(char, g_num_scale_pl[level % 4]));
             if (level == 2 && above != 0 && value == 0)
-                strcat(out, g_num_scale_pl[1]);      /* "mil millones" */
+                strcat(out, TV_REF(char, g_num_scale_pl[1]));      /* "mil millones" */
         }
     } else {
         memcpy(group, digits, len + 1);
@@ -168,7 +168,7 @@ int32_t TV_CDECL Number_WordsEx(char *digits, char *out, int32_t style,
         }
     } else if (sty == 3) {
         if (n < 0x15) {
-            strcat(out, g_num_frac[n]);
+            strcat(out, TV_REF(char, g_num_frac[n]));
             return value;
         }
     } else if (sty == 1) {
@@ -177,8 +177,8 @@ int32_t TV_CDECL Number_WordsEx(char *digits, char *out, int32_t style,
     }
 
     if (n / 100 != 0) {
-        strcat(out, (sty == 1 || sty == 3) ? g_num_hund_ord[n / 100]
-                                           : g_num_hund[n / 100]);
+        strcat(out, (sty == 1 || sty == 3) ? TV_REF(char, g_num_hund_ord[n / 100])
+                                           : TV_REF(char, g_num_hund[n / 100]));
         if (mode == 1) {
             char *p = out + strlen(out) - 2;
             if (*p == 's')
@@ -194,7 +194,7 @@ int32_t TV_CDECL Number_WordsEx(char *digits, char *out, int32_t style,
         if (n == 0 && level == 0 && only_group != 0)
             strcat(out, g_str_cero);
         if (sty == 1) {
-            strcat(out, g_num_units_ord[tens]);
+            strcat(out, TV_REF(char, g_num_units_ord[tens]));
             if (mode == 1)
                 out[strlen(out) - 1] = 'a';
             return value;
@@ -202,21 +202,21 @@ int32_t TV_CDECL Number_WordsEx(char *digits, char *out, int32_t style,
         if (n == 1 && mode == 1)
             strcat(out, g_str_una);
         else
-            strcat(out, g_num_units[tens]);
+            strcat(out, TV_REF(char, g_num_units[tens]));
         return value;
     }
 
     if (sty == 1) {
-        strcat(out, g_num_tens_ord[tens / 10]);
+        strcat(out, TV_REF(char, g_num_tens_ord[tens / 10]));
         if (mode == 1)
             out[strlen(out) - 2] = 'a';
-        strcat(out, g_num_units_ord[tens % 10]);
+        strcat(out, TV_REF(char, g_num_units_ord[tens % 10]));
         if (mode == 1)
             out[strlen(out) - 1] = 'a';
         return value;
     }
 
-    strcat(out, g_num_tens[tens / 10]);
+    strcat(out, TV_REF(char, g_num_tens[tens / 10]));
     if (tens > 0x1e && tens % 10 != 0)
         strcat(out, g_str_y);
     if (tens % 10 == 1) {
@@ -227,7 +227,7 @@ int32_t TV_CDECL Number_WordsEx(char *digits, char *out, int32_t style,
         else
             strcat(out, g_str_un);
     } else {
-        strcat(out, g_num_units[tens % 10]);
+        strcat(out, TV_REF(char, g_num_units[tens % 10]));
     }
     if (sty == 3) {
         char *p = out + strlen(out) - 1;

@@ -121,7 +121,7 @@ static int on_event(const tvtts_event *ev, void *user)
 
 int main(int argc, char **argv)
 {
-    int voice = 0, phone = 0, i, verbose = 0;
+    int voice = 0, phone = 0, i, verbose = 0, textin_mode = 0;
     int nuls = 2, opt_preformat = 1, opt_textin = 1;
     long opt_pitch = -1, opt_speed = -1, opt_volume = -1;
     int hifi = 0;
@@ -140,6 +140,8 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "-8")) phone = 1;
         else if (!strcmp(argv[i], "-H")) hifi = 1;
         else if (!strcmp(argv[i], "-m")) verbose = 1;
+        else if (!strcmp(argv[i], "-M") && i + 1 < argc)
+            textin_mode = atoi(argv[++i]);
         else if (!strcmp(argv[i], "-z") && i + 1 < argc) nuls = atoi(argv[++i]);
         else if (!strcmp(argv[i], "-p") && i + 1 < argc) opt_pitch = strtol(argv[++i], NULL, 0);
         else if (!strcmp(argv[i], "-s") && i + 1 < argc) opt_speed = strtol(argv[++i], NULL, 0);
@@ -154,7 +156,7 @@ int main(int argc, char **argv)
         else { fprintf(stderr, "unknown option %s\n", argv[i]); return 2; }
     }
     if (argc - i != 2 || voice < 0 || voice >= tvtts_voice_count()) {
-        fprintf(stderr, "usage: tv [-v 0-9] [-8] [-H] [-m] [-p pitch] [-s wpm]"
+        fprintf(stderr, "usage: tv [-v 0-9] [-8] [-H] [-m] [-M mode] [-p pitch] [-s wpm]"
                         " [-V volume] [-C] [-X mask] [-P0] [-T0] [-z nuls]"
                         " [-L word=phonemes] <text|@file> <out.wav>\n");
         return 2;
@@ -187,6 +189,8 @@ int main(int argc, char **argv)
         return 1;
     }
     tvtts_set_compat(s, opt_preformat, opt_textin, nuls);
+    if (textin_mode != 0)
+        tvtts_set_textin_mode(s, textin_mode);
     tvtts_set_voice(s, voice);
     tvtts_set_pitch(s, opt_pitch >= 0 ? (int)opt_pitch : tvtts_voice_pitch(voice));
     tvtts_set_rate(s, opt_speed >= 0 ? (int)opt_speed : tvtts_voice_rate(voice));

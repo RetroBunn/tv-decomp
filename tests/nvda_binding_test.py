@@ -275,7 +275,9 @@ def binding_tests(_truvoice):
 	check(player.kw.get("channels") == 1 and player.kw.get("bitsPerSample") == 16,
 	      "player opened as 16-bit mono")
 
-	check(_truvoice.voiceCount() == 10, "ten voices")
+	nlang = _truvoice.languageCount()
+	check(_truvoice.voiceCount() == 10 * nlang,
+	      "ten voices for every language the library carries")
 	want = ["Peter", "Sidney", "Eager Eddie", "Deep Douglas", "Biff",
 	        "Grandpa Amos", "Melvin", "Alex", "Wanda", "Julia"]
 	got = [_truvoice.voiceName(i) for i in range(10)]
@@ -284,6 +286,29 @@ def binding_tests(_truvoice):
 		print("     got: %s" % ", ".join(got))
 	check(_truvoice.voiceRate(0) == 150 and _truvoice.voiceRate(5) == 120,
 	      "the elderly voice has its own slower default")
+
+	# Every language says what it is called, and every voice which it speaks.
+	codes = [_truvoice.language(k) for k in range(nlang)]
+	check(codes[0] == "en", "English comes first")
+	check(all(_truvoice.languageName(c) for c in codes),
+	      "every language has a name a person can read")
+	check(_truvoice.languageName("en") == "American English",
+	      "and English's is the name the project uses elsewhere")
+	table = _truvoice.voices()
+	check(len(table) == _truvoice.voiceCount(), "the voice table is complete")
+	check(all(t[1] in codes for t in table),
+	      "every voice names a language the library has")
+	check([t[2] for t in table[:10]] == list(range(10)),
+	      "the index within a language counts from zero")
+	if nlang > 1:
+		want_es = ["Pedro", "Jorge", "Ricardo", "Paco", "Luis",
+		           "Ezequiel", "Rogelio", "Carlos", "Josefa", "Isabel"]
+		got_es = [t[3] for t in table if t[1] == "es"]
+		check(got_es == want_es, "and so are the Spanish voices")
+		if got_es != want_es:
+			print("     got: %s" % ", ".join(got_es))
+		check([t[2] for t in table if t[1] == "es"] == list(range(10)),
+		      "Spanish counts from zero as well")
 
 	# --- a plain utterance ---
 	_truvoice.speak("Hello world.")
@@ -517,11 +542,18 @@ def driver_tests(_truvoice, commands):
 	# ids are prefixed now so that adding one later does not renumber anyone's
 	# saved voice, and so NVDA can pick a voice by language.
 	voices = synth.availableVoices
-	check(list(voices) == ["en:%d" % i for i in range(10)],
-		"voices are keyed language:index")
-	check(all(v.language == "en" for v in voices.values()),
+	codes = [_truvoice.language(k) for k in range(_truvoice.languageCount())]
+	want = ["%s:%d" % (c, k) for c in codes for k in range(10)]
+	check(list(voices) == want, "voices are keyed language:index")
+	check(all(v.language in codes for v in voices.values()),
 		"and each carries its language for automatic switching")
-	check(voices["en:8"].displayName == "Wanda", "with the right names")
+	check(voices["en:8"].displayName == "Wanda (American English)",
+		"the name a person reads says which language it speaks")
+	if "es" in codes:
+		check(voices["es:0"].displayName == "Pedro (Castilian Spanish)",
+			"and so does a voice of the second language")
+		check(voices["es:0"].language == "es",
+			"which is tagged for automatic language switching")
 
 	# A setting saved before the prefix existed is a bare index and means
 	# English; migrating it keeps people on the voice they chose.
@@ -531,6 +563,15 @@ def driver_tests(_truvoice, commands):
 		"and really selects that voice")
 	synth.voice = "en:5"
 	check(synth.voice == "en:5", "a prefixed id is taken as it is")
+	# A voice of another language is a different index to the library than
+	# the number in its id, which is what the map in the driver is for.
+	if "es" in codes:
+		synth.voice = "es:2"
+		check(synth.voice == "es:2", "a voice of another language selects")
+		check(synth._voiceIndex("es:2") == 12,
+			"and reaches the library's own index for it")
+		check(synth._voiceRate() == _truvoice.voiceRate(12),
+			"so its defaults come from the right engine")
 	synth.voice = "zz:99"
 	check(synth.voice == "en:0", "an unknown voice falls back to the first")
 

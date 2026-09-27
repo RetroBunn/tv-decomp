@@ -115,7 +115,7 @@ void TV_THISCALL Track_Set(Engine *self, int32_t a, int32_t b, int32_t c,
  * and decays 255, ..., 1 before a terminating zero, so TCon is both the
  * shape and the number of samples the glide takes. */
 /* @0x10058368 */
-extern const uint8_t *const g_10058368[21];
+extern const tv_ref g_10058368[21];
 
 /*
  * Glide a track from `to` back to `from` over `tcon` samples, then hold at
@@ -145,7 +145,7 @@ void TV_THISCALL Extend(Engine *self, uint8_t *buf, int32_t start,
         Engine_Trace(self, "ERROR: Arith.c Extend():   TCon=%d \n", tcon);
         tcon = 0x14;
     }
-    shape = g_10058368[tcon];
+    shape = TV_REF(uint8_t, g_10058368[tcon]);
 
     for (v = (int32_t)shape[0] << 7; v != 0; v = (int32_t)shape[0] << 7) {
         k = left;
@@ -351,7 +351,7 @@ void TV_THISCALL Track_BlendDelta(Engine *self, uint8_t *buf, int32_t mode,
                                   int32_t pos, int32_t tcon, int32_t n,
                                   int32_t delta)
 {
-    const uint8_t *s = g_10058368[tcon];
+    const uint8_t *s = TV_REF(uint8_t, g_10058368[tcon]);
     int32_t p = pos - 1;
     int32_t first = buf[p & 0xff];
     int32_t w;
@@ -430,7 +430,7 @@ void TV_THISCALL Track_Shorten(Engine *self)
 /* the same two tables Track_SetModes reads, and a third entry point into
  * the second one -- the original addresses it eight bytes along. */
 /* @0x10057e20 */
-extern const uint8_t *const g_10057e20t;
+extern const tv_ref g_10057e20t;
 /* @0x100581e8 */
 extern const uint8_t g_100581e8[256];
 
@@ -474,7 +474,7 @@ void TV_THISCALL Track_EmitPause(Engine *self)
         self->trans_len = 7;
 
     if (g_10058618[cls0_trk((uint8_t)c_cur)] & 0x20) {
-        int32_t d = g_100581e8[g_10057e20t[cls0_trk((uint8_t)c_cur)]];
+        int32_t d = g_100581e8[TV_REF(uint8_t, g_10057e20t)[cls0_trk((uint8_t)c_cur)]];
         int32_t wr2 = self->trk_wr[2];
 
         self->trans_len += d;

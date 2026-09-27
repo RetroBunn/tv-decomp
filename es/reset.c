@@ -120,6 +120,15 @@ void TV_THISCALL Synth_ResetTracks(Engine *self)
  * generations rather than a transcription slip, since English's own tables
  * were re-read out of CGRM_EN.DLL to check it.
  */
+/* OpenTV's third rate, shared with the English engine: see src/syn_hifi.h for
+ * why one copy serves both. */
+#include "syn_hifi.h"
+
+/* The name this engine gives that rate has to be the rate the tables were made
+ * for, or the filters would be built for one and the output stage run at the
+ * other. */
+typedef char tv_es_hifi_rate_agrees[(TV_SR_HIFI_ES == TV_SYNHIFI_RATE) ? 1 : -1];
+
 /* @0x10049cc0 */ extern const uint8_t g_syn8k_9[];
 /* @0x10049fd8 */ extern const uint8_t g_syn8k_6[];
 /* @0x1004a578 */ extern const uint8_t g_syn8k_7[];
@@ -159,6 +168,7 @@ static const int16_t filt_coef_11k[40] = {
 void TV_THISCALL Synth_InitFilters(Engine *self)
 {
     const int16_t *coef;
+    int hifi = 0;
     int i;
 
     self->synth_19ad = 0;
@@ -194,9 +204,29 @@ void TV_THISCALL Synth_InitFilters(Engine *self)
         self->syn_203c = 7521;
         self->syn_2040 = -6905;
         coef = filt_coef_11k;
+        /* OpenTV: the extra rate keeps the wideband tables above -- they are not
+         * 11.025-specific, they are what the engine uses whenever it is not at
+         * 8 kHz -- and swaps the three that really do depend on the rate.  The
+         * same three English swaps, from the same tables. */
+        if (self->sample_rate == TV_SR_HIFI_ES) {
+            self->syn_tab[6] = g_synhifi_6;
+            self->syn_tab[7] = g_synhifi_7;
+            self->syn_tab[8] = g_synhifi_8;
+            self->syn_2038 = g_synhifi_2038;
+            hifi = 1;
+        }
     }
     for (i = 0; i < 40; i++)
         self->filt_coef[i] = coef[i];
+    /* Three entries of that array are a fixed 242 Hz resonator rather than a
+     * starting value, and nothing rewrites them per frame, so at the extra rate
+     * they have to be replaced too or the filter keeps 11 kHz damping and the
+     * output rolls off far too steeply. */
+    if (hifi) {
+        self->filt_coef[12] = (int16_t)g_synhifi_c12;
+        self->filt_coef[13] = (int16_t)g_synhifi_c13;
+        self->filt_coef[33] = (int16_t)g_synhifi_c13;
+    }
 }
 
 /* The sample rate arrives as the engine's own int16 field and is divided by

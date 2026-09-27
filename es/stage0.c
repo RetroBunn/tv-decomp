@@ -14,10 +14,13 @@
 /* @0x1005fb88 */
 extern const uint8_t g_stage0_rules[];
 
-/* Word lists, one NULL-terminated array of strings per list number.  Each
- * string is the word, a NUL, and then the replacement text the rule uses. */
+/* Word lists, one list per list number, each a run of stored addresses ending
+ * in a zero.  Each string is the word, a NUL, and then the replacement text the
+ * rule uses.  Two levels of stored address, so two levels of tv_ref: see
+ * src/tv_ref.h, and Lts_MatchAffix in src/engine/stage1.c, which reads
+ * English's equivalent the same way. */
 /* @0x1005fb18 */
-extern const char *const *const g_stage0_words[];
+extern const tv_ref g_stage0_words[16];
 
 /* @0x1001427c */
 extern const uint8_t g_s0_class_index[16];
@@ -37,7 +40,7 @@ void TV_THISCALL Stage0_Reset(Engine *self)
 /* Is this character in that class?  The sixteen class numbers map onto six
  * tests through an index table, and the table is byte for byte the English
  * one.  What the tests do is not quite: the letter class here also accepts
- * '~' and '`' alongside the apostrophe, which is what FoldAccent leaves
+ * '~' and '`' alongside the apostrophe, which is what Accent_Split leaves
  * behind when it splits an accented character into a base and a mark. */
 /* @0x100141d0 */
 uint8_t TV_CDECL Stage0_CharClass(int32_t cls, uint8_t c)
@@ -75,14 +78,14 @@ uint8_t TV_CDECL Stage0_CharClass(int32_t cls, uint8_t c)
 uint8_t TV_THISCALL Stage0_MatchWord(Engine *self, uint8_t list, uint8_t fold_case)
 {
     StageCtx *st = &self->stage_ctx[0];
-    const char *const *words = g_stage0_words[list];
+    const tv_ref *words = TV_REF(tv_ref, g_stage0_words[list]);
     const char *w;
     Node *n;
 
     for (;;) {
-        w = *words;
-        if (w == NULL)
+        if (!TV_REF_OK(*words))
             return 0;
+        w = TV_REF(char, *words);
         words++;
         n = st->d14;
         for (;;) {
@@ -202,13 +205,13 @@ Node *TV_THISCALL Stage0_PrevVowel(Engine *self, Node *n)
 /* @0x10048840 */
 extern const char g_stress_two[34];
 /* The same for three to seven letters, as one run of fixed-width words per
- * length: g_stress_words[n] holds g_stress_len[n] bytes of n-letter words.
+ * length: TV_REF(char, g_stress_words[n]) holds g_stress_len[n] bytes of n-letter words.
  * Entries 0 to 2 are never read -- a one-letter word is left alone and a
  * two-letter one takes the pair table above. */
 /* @0x1004885c */
 extern const int32_t g_stress_len[12];
 /* @0x100577ec */
-extern const char *const g_stress_words[12];
+extern const tv_ref g_stress_words[12];
 
 /*
  * Which vowel of the word carries the stress.
@@ -288,7 +291,7 @@ void TV_THISCALL Stage0_Stress(Engine *self, uint8_t adverb)
                     (uint8_t)g_stress_two[i])
                 return;
     } else if (n_count <= 7) {
-        const char *words = g_stress_words[n_count];
+        const char *words = TV_REF(char, g_stress_words[n_count]);
         int32_t len = g_stress_len[n_count];
         int32_t off;
 

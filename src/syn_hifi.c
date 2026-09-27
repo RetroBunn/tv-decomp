@@ -5,13 +5,16 @@
  *
  * These are not Centigram's.  TruVoice shipped tables for 8 kHz and
  * 11.025 kHz only; these are computed from the formulas that reproduce
- * both of those exactly, evaluated at 16000.  See the generator and
- * docs/VOICES.md.
+ * both of those exactly, evaluated at 16000.  See the generator,
+ * src/syn_hifi.h and docs/VOICES.md.
+ *
+ * Every engine shares these, because the two generations' own tables are
+ * byte-identical and so their extension is too.
  */
-#include "engine.h"
+#include "syn_hifi.h"
 
-/* The rate these were generated for must match the engine's. */
-typedef char tv_hifi_rate_agrees[(TV_SR_HIFI == 16000) ? 1 : -1];
+/* The rate the header promises must be the rate these were made for. */
+typedef char tv_hifi_rate_agrees[(TV_SYNHIFI_RATE == 16000) ? 1 : -1];
 
 const int32_t g_synhifi_6[180] = {
     8192, 8186, 8179, 8173, 8166, 8160, 8153, 8147,

@@ -14,7 +14,9 @@
  * from the window pointer: stage_ctx[0] is at 0x754 and they are 0x44 apart,
  * so 0x754, 0x798, 0x7dc, 0x820 and 0x864 are stages 0 to 4.
  */
+#if defined(TV_HOOK_BUILD)
 #include <windows.h>
+#endif
 #include "es_engine.h"
 
 /* Per-voice defaults, three tables of ten int32 laid end to end. */
@@ -25,18 +27,38 @@ extern const int32_t g_voice_rate_index[10];
 /* @0x1004c878 */
 extern const int32_t g_voice_speed[10];
 
-/* Per-voice mode description handed to the host on a voice change. */
+/* Per-voice mode description handed to the host on a voice change.  Ten of
+ * them, which is what the size below is; it is in .bss and filled at load
+ * time, so the standalone build only needs the space. */
 #define MODE_INFO_SIZE 2800
 /* @0x10037dd0 */
-extern const uint8_t g_mode_info[];
+extern const uint8_t g_mode_info[28000];   /* 10 * MODE_INFO_SIZE */
 
-/* Every notification is a PostMessageA to the window the host registered.
- * English's decompilation does the same; under the harness the handle is
- * null, so the call is a no-op whichever copy of PostMessageA it reaches. */
+/*
+ * Every notification is a PostMessageA to the window the host registered.
+ * English's decompilation does the same; under the harness the handle is null,
+ * so the call is a no-op whichever copy of PostMessageA it reaches.
+ *
+ * The standalone library has no window and registers none -- it hands a caller
+ * its events through the callback instead -- so there the whole path is nothing,
+ * as src/engine/sapi.c makes it for English.  Keeping the call and relying on a
+ * null handle would drag user32 into a library that otherwise needs only the
+ * kernel.
+ */
+#if defined(TV_HOOK_BUILD)
 static void Sapi_Post(SapiCentral *s, uint32_t msg, uint32_t wp, uint32_t lp)
 {
     PostMessageA((HWND)s->hwnd, msg, (WPARAM)wp, (LPARAM)lp);
 }
+#else
+static void Sapi_Post(SapiCentral *s, uint32_t msg, uint32_t wp, uint32_t lp)
+{
+    (void)s;
+    (void)msg;
+    (void)wp;
+    (void)lp;
+}
+#endif
 
 /* pow(10.0, arg * -0.1) * 65535.0, truncated.
  *

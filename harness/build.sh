@@ -113,6 +113,11 @@ if [ -n "$(find es -name '*.c' 2>/dev/null)" ]; then
     gcc $CFLAGS -DTV_HOOK_BUILD -Ies -Isrc -I"$GEN" -c "$src" -o "$obj"
     ES_OBJS="$ES_OBJS $obj"
   done
+  # OpenTV's third sample rate is one set of tables for every engine, and the
+  # standalone build gets it from src/; the hook build links no src/ objects, so
+  # this is the one it needs.
+  gcc $CFLAGS -Isrc -I"$GEN" -c src/syn_hifi.c -o "$HOOKES/obj/syn_hifi.o"
+  ES_OBJS="$ES_OBJS $HOOKES/obj/syn_hifi.o"
   python tools/gen_hookmap.py es "$HOOKES/hooks_gen.c" "$HOOKES/defsyms.txt" $ES_OBJS
   gcc $CFLAGS -c "$HOOKES/hooks_gen.c" -o "$HOOKES/hooks_gen.o"
   gcc $CFLAGS -DTV_WITH_HOOKS -c harness/tvh.c -o "$HOOKES/tvh_hook.o"
@@ -142,8 +147,37 @@ for src in $(find src -name '*.c' | sort); do
 done
 python tools/gen_data.py "$DATA" src "$GEN/tvdata.s" $PORT_OBJS
 gcc $CFLAGS -c "$GEN/tvdata.s" -o "$PORT/obj/tvdata.o"
+PORT_OBJS="$PORT_OBJS $PORT/obj/tvdata.o"
+
+# --- the Spanish engine, in the same library ----------------------------------
+# One library carries every language, and the two decompilations give the same
+# names to the same jobs -- both engines have an Engine_Feed, and they are
+# different functions on different objects.  So Spanish is compiled with every
+# name of its own prefixed es_, from a header tools/gen_rename.py writes out of
+# the annotations, and its data is laid out under the same prefix.  src/port/api.c
+# is the only file that knows there is more than one engine.
+ES_DATA=${TV_DLL_ES:-${TV_DATA_ES:-data/es/engine.tvdata}}
+if [ -n "$(find es -name '*.c' 2>/dev/null)" ] && [ -f "$ES_DATA" ]; then
+  ESPORT=$OBJ/esport
+  mkdir -p "$ESPORT/obj"
+  python tools/gen_rename.py es,es_port es_ "$GEN/es_rename.h"
+  ES_LIB_OBJS=""
+  for src in $(find es es_port -name '*.c' | sort); do
+    obj="$ESPORT/obj/$(echo "$src" | sed 's|/|_|g; s|\.c$|.o|')"
+    gcc $CFLAGS -Ies -Isrc -Iinclude -I"$GEN" -include "$GEN/es_rename.h" \
+      -c "$src" -o "$obj"
+    ES_LIB_OBJS="$ES_LIB_OBJS $obj"
+  done
+  python tools/gen_data.py --prefix es_ "$ES_DATA" es,es_port \
+    "$GEN/tvdata_es.s" $ES_LIB_OBJS
+  gcc $CFLAGS -c "$GEN/tvdata_es.s" -o "$ESPORT/obj/tvdata_es.o"
+  PORT_OBJS="$PORT_OBJS $ES_LIB_OBJS $ESPORT/obj/tvdata_es.o"
+else
+  echo "no Spanish data at $ES_DATA: the library will carry English only" >&2
+fi
+
 RTLIBS="$RT_MIN"
-link "$CHECK/tv.exe" $PORT_OBJS "$PORT/obj/tvdata.o"
+link "$CHECK/tv.exe" $PORT_OBJS
 echo "built $CHECK/tv.exe"
 
 # --- library tests ------------------------------------------------------------
@@ -152,7 +186,7 @@ LIB_OBJS=$(echo "$PORT_OBJS" | tr ' ' '
 ' | grep -v 'port_main\.o$' | tr '
 ' ' ')
 gcc $CFLAGS -Isrc -Iinclude -I"$GEN" -c tests/api_test.c -o "$PORT/obj/api_test.o"
-link "$CHECK/api_test.exe" "$PORT/obj/api_test.o" $LIB_OBJS "$PORT/obj/tvdata.o"
+link "$CHECK/api_test.exe" "$PORT/obj/api_test.o" $LIB_OBJS
 echo "built $CHECK/api_test.exe"
 
 # --- the shared library -------------------------------------------------------
@@ -160,7 +194,7 @@ echo "built $CHECK/api_test.exe"
 # names in harness/rt/tvtts.def are exported, so the engine's own symbols stay
 # private; they are plain cdecl names, which is what ctypes and P/Invoke want.
 gcc $CFLAGS -c harness/rt/dllmain.c -o "$PORT/obj/dllmain.o"
-ld -m i386pe --shared --subsystem console -e _DllMainCRTStartup@12   --disable-dynamicbase --disable-reloc-section   --out-implib "$OUT/libtvtts.a" -o "$OUT/tvtts.dll"   "$PORT/obj/dllmain.o" $LIB_OBJS "$PORT/obj/tvdata.o"   "$RT/libgcc32.o" "$RT/chkstk.o" "$RT/libmsvcrt.a" "$RT/libkernel32.a"   harness/rt/tvtts.def
+ld -m i386pe --shared --subsystem console -e _DllMainCRTStartup@12   --disable-dynamicbase --disable-reloc-section   --out-implib "$OUT/libtvtts.a" -o "$OUT/tvtts.dll"   "$PORT/obj/dllmain.o" $LIB_OBJS   "$RT/libgcc32.o" "$RT/chkstk.o" "$RT/libmsvcrt.a" "$RT/libkernel32.a"   harness/rt/tvtts.def
 echo "built $OUT/tvtts.dll"
 
 # The same tests again, this time across the DLL boundary, so the exports and
@@ -185,15 +219,33 @@ for src in $(find src -name '*.c' | sort); do
 done
 python tools/gen_data.py "$DATA" src "$GEN/tvdata64.s" $OBJ64
 gcc -m64 -c "$GEN/tvdata64.s" -o "$P64/obj/tvdata.o"
-gcc -m64 -o "$CHECK/tv64.exe" $OBJ64 "$P64/obj/tvdata.o"
+OBJ64="$OBJ64 $P64/obj/tvdata.o"
+
+# Spanish, the same way as at 32 bits: every name of its own prefixed, and its
+# data laid out under the prefix.  A stored address is four bytes at either word
+# width -- that is what tv_ref is for -- so nothing about the data changes here.
+if [ -n "$(find es -name '*.c' 2>/dev/null)" ] && [ -f "$ES_DATA" ]; then
+  ES64=""
+  for src in $(find es es_port -name '*.c' | sort); do
+    obj="$P64/obj/$(echo "$src" | sed 's|/|_|g; s|\.c$|.o|')"
+    gcc $CF64 -Ies -include "$GEN/es_rename.h" -c "$src" -o "$obj"
+    ES64="$ES64 $obj"
+  done
+  python tools/gen_data.py --prefix es_ "$ES_DATA" es,es_port \
+    "$GEN/tvdata64_es.s" $ES64
+  gcc -m64 -c "$GEN/tvdata64_es.s" -o "$P64/obj/tvdata_es.o"
+  OBJ64="$OBJ64 $ES64 $P64/obj/tvdata_es.o"
+fi
+
+gcc -m64 -o "$CHECK/tv64.exe" $OBJ64
 echo "built $CHECK/tv64.exe"
 
 LIB64=$(echo "$OBJ64" | tr ' ' '\n' | grep -v 'port_main\.o$' | tr '\n' ' ')
 gcc $CF64 -c tests/api_test.c -o "$P64/obj/api_test.o"
-gcc -m64 -o "$CHECK/api_test64.exe" "$P64/obj/api_test.o" $LIB64 "$P64/obj/tvdata.o"
+gcc -m64 -o "$CHECK/api_test64.exe" "$P64/obj/api_test.o" $LIB64
 echo "built $CHECK/api_test64.exe"
 
-gcc -m64 -shared -o "$OUT/tvtts64.dll" $LIB64 "$P64/obj/tvdata.o" \
+gcc -m64 -shared -o "$OUT/tvtts64.dll" $LIB64 \
   -Wl,--out-implib,"$OUT/libtvtts64.a" harness/rt/tvtts.def
 echo "built $OUT/tvtts64.dll"
 

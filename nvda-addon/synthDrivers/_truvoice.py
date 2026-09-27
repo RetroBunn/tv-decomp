@@ -178,11 +178,49 @@ def pause(switch: bool):
 	player.pause(switch)
 
 
-#: The language this build speaks.  TruVoice shipped five, but only
-#: American English has been decompiled: the other four are a different,
-#: older engine -- see docs/VOICES.md.  Voice ids carry the language so
-#: that adding one later does not renumber anybody's saved voice.
-LANGUAGE = 'en'
+#: The language a voice belongs to when the library will not say, which
+#: happens only if the binding is older than the library it loaded.
+DEFAULT_LANGUAGE = 'en'
+
+
+def languageCount() -> int:
+	return dll.tvtts_language_count()
+
+
+def language(index: int) -> str:
+	code = dll.tvtts_language(index)
+	return code.decode('ascii') if code else ''
+
+
+def languageName(code: str) -> str:
+	"""A language as a person reads it: "American English"."""
+	name = dll.tvtts_language_name(code.encode('ascii'))
+	return name.decode('mbcs') if name else code
+
+
+def voiceLanguage(index: int) -> str:
+	code = dll.tvtts_voice_language(index)
+	return code.decode('ascii') if code else DEFAULT_LANGUAGE
+
+
+def voices() -> list:
+	"""Every voice the library carries, in its own order.
+
+	The library numbers voices across the languages -- English 0..9, then the
+	next -- and each one says which language it speaks.  What comes back is
+	(index, language code, index within that language, name, language name),
+	because the driver's voice ids are "<language>:<index within it>": that way
+	adding a language does not renumber anybody's saved voice, while the index
+	the library wants is still to hand.
+	"""
+	out = []
+	counts = {}
+	for i in range(voiceCount()):
+		code = voiceLanguage(i)
+		local = counts.get(code, 0)
+		counts[code] = local + 1
+		out.append((i, code, local, voiceName(i), languageName(code)))
+	return out
 
 
 #: The three output rates the engine has, as (index, hertz, label).  They are
@@ -322,6 +360,14 @@ def _bind(lib: CDLL):
 	lib.tvtts_set_volume.argtypes = [c_void_p, c_uint32]
 	lib.tvtts_voice_count.restype = c_int
 	lib.tvtts_voice_count.argtypes = []
+	lib.tvtts_language_count.restype = c_int
+	lib.tvtts_language_count.argtypes = []
+	lib.tvtts_language.restype = c_char_p
+	lib.tvtts_language.argtypes = [c_int]
+	lib.tvtts_language_name.restype = c_char_p
+	lib.tvtts_language_name.argtypes = [c_char_p]
+	lib.tvtts_voice_language.restype = c_char_p
+	lib.tvtts_voice_language.argtypes = [c_int]
 	lib.tvtts_voice_name.restype = c_char_p
 	lib.tvtts_voice_name.argtypes = [c_int]
 	for name in ("tvtts_voice_rate", "tvtts_voice_pitch"):

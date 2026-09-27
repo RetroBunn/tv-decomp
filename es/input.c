@@ -111,7 +111,7 @@ uint8_t TV_THISCALL Engine_InputStage(Engine *self)
  * has to be taken instead; the engine expands isalpha and friends inline and
  * only calls _isctype for a code page above 1. */
 /* @0x1006b638 */
-extern const uint16_t *const g_ctype;
+extern const tv_ref g_ctype;
 /* @0x1006b844 */
 extern int32_t g_mb_codepage;
 /* @0x10024093 */
@@ -125,7 +125,7 @@ static int32_t feed_ctype(int32_t c, int32_t mask)
 {
     if (g_mb_codepage > 1)
         return tv_isctype(c, mask);
-    return (int32_t)g_ctype[c] & mask;
+    return (int32_t)TV_REF(uint16_t, g_ctype)[c] & mask;
 }
 
 /*

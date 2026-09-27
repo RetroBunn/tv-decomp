@@ -3,10 +3,17 @@
 
 """Centigram TruVoice, as a native NVDA synthesizer.
 
-The engine is a decompilation of the 1997 SAPI 4 original, built as an
-ordinary DLL, so none of SAPI is in the way: no COM, no registry, no bridge
-process.  See the OpenTV project for what that means and how it is
-verified.
+The engine is a decompilation of the SAPI 4 original, built as an ordinary DLL,
+so none of SAPI is in the way: no COM, no registry, no bridge process.  See the
+OpenTV project for what that means and how it is verified.
+
+The library carries one engine per language it has been taught -- they are not
+variants of one engine but separate decompilations of separate DLLs, two years
+apart -- and it numbers the voices across them.  A voice is listed as its name
+and the language it speaks, "Peter (American English)", because twenty names
+with no language between them would say nothing about which is which.  The id
+stays "<language>:<index within that language>", so adding a language does not
+renumber anybody's saved voice.
 
 Rate, pitch and volume are the percentages NVDA hands every driver; the
 engine wants words per minute and its own pitch scale, so they are mapped
@@ -118,13 +125,22 @@ class SynthDriver(SynthDriver):
 	def __init__(self):
 		super().__init__()
 		_truvoice.initialize(self._onIndexReached)
-		self._voice = "%s:0" % _truvoice.LANGUAGE
+		# Voice id -> the index the library wants, and the ids in library order.
+		# Built once: what the library carries does not change under us.
+		self._voiceIds = {}
+		self._voiceOrder = []
+		for index, code, local, _name, _langName in _truvoice.voices():
+			vid = "%s:%d" % (code, local)
+			self._voiceIds[vid] = index
+			self._voiceOrder.append(vid)
+		self._voice = self._voiceOrder[0]
 		self._rate = 50
 		self._volume = 100
 		# The engine's own units, kept so a PitchCommand or RateCommand can
 		# scale from where the user actually is rather than from a default.
-		self._engineRate = _truvoice.voiceRate(0)
-		self._enginePitch = _truvoice.voicePitch(0)
+		first = self._voiceIds[self._voice]
+		self._engineRate = _truvoice.voiceRate(first)
+		self._enginePitch = _truvoice.voicePitch(first)
 		# Pitch is absolute, so the slider reads wherever the voice sits;
 		# setting the voice below overwrites both of these.
 		self._pitch = _pitchToPercent(self._enginePitch)
@@ -236,13 +252,14 @@ class SynthDriver(SynthDriver):
 		"""Voices keyed "<language>:<index>", each tagged with its language.
 
 		The tag is what lets NVDA pick a voice by language when automatic
-		language switching is on, and the prefix means a second language can
-		be added without renumbering the first one's voices.
+		language switching is on, and the prefix means a language can be added
+		without renumbering the first one's voices.  The name a person reads
+		carries the language too, because the list runs across all of them.
 		"""
 		voices = OrderedDict()
-		for i in range(_truvoice.voiceCount()):
-			vid = "%s:%d" % (_truvoice.LANGUAGE, i)
-			voices[vid] = VoiceInfo(vid, _truvoice.voiceName(i), _truvoice.LANGUAGE)
+		for _index, code, local, name, langName in _truvoice.voices():
+			vid = "%s:%d" % (code, local)
+			voices[vid] = VoiceInfo(vid, "%s (%s)" % (name, langName), code)
 		return voices
 
 	@staticmethod
@@ -254,11 +271,16 @@ class SynthDriver(SynthDriver):
 		rather than resetting keeps everyone on the voice they chose.
 		"""
 		value = str(value)
-		return value if ":" in value else "%s:%s" % (_truvoice.LANGUAGE, value)
+		return value if ":" in value else "%s:%s" % (
+			_truvoice.DEFAULT_LANGUAGE, value)
 
-	@staticmethod
-	def _voiceIndex(value: str) -> int:
-		return int(str(value).split(":")[-1])
+	def _voiceIndex(self, value: str) -> int:
+		"""The index the library wants for one of our ids.
+
+		Not the number in the id: that one counts within a language and the
+		library counts across all of them, so they part company at the second.
+		"""
+		return self._voiceIds.get(self._voiceId(value), 0)
 
 	def _get_voice(self) -> str:
 		return self._voice
@@ -266,7 +288,7 @@ class SynthDriver(SynthDriver):
 	def _set_voice(self, value: str):
 		value = self._voiceId(value)
 		if value not in self.availableVoices:
-			value = "%s:0" % _truvoice.LANGUAGE
+			value = self._voiceOrder[0]
 		self._voice = value
 		_truvoice.setVoice(self._voiceIndex(value))
 		# Rate is relative to the voice's own default, so re-apply the

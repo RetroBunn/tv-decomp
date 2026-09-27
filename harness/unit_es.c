@@ -8609,6 +8609,350 @@ static int unit_mode4(void)
     return bad != 0 || opened == 0 || closed == 0;
 }
 
+/* The seven rule opcodes nothing in the corpus reaches.
+ *
+ * Rule_Eval dispatches to them from the rule bytecode, and no input any of the
+ * 205 configurations carries takes one of those arms -- which is why they were
+ * the last Spanish functions written, and why this is the only thing that tests
+ * them.  Six of the seven put their answer in Token.text2, allocated from the
+ * DLL's heap, so the two sides hold different addresses and the tokens are
+ * compared by content; the TextIn itself is compared byte for byte once its
+ * internal pointers are offsets.
+ */
+typedef struct {
+    TextIn ti;
+    Token tok[6];
+    int16_t code[8];
+    char txt[6][32];
+    uint32_t want[3];
+} opblock;
+
+/* head = tok[0], then five tokens each with its own writable text -- writable
+ * because Number_Words truncates what it is given. */
+static void op_list(opblock *b, const char *const *texts, const int32_t *nums)
+{
+    int i;
+
+    memset(b, 0x5a, sizeof *b);
+    memset(&b->ti, 0, sizeof b->ti);
+    memset(b->want, 0, sizeof b->want);
+    for (i = 0; i < 6; i++) {
+        memset(&b->tok[i], 0, sizeof b->tok[i]);
+        memset(b->txt[i], 0, sizeof b->txt[i]);
+        b->tok[i].prev = i ? &b->tok[i - 1] : NULL;
+        b->tok[i].next = i < 5 ? &b->tok[i + 1] : NULL;
+        if (i == 0)
+            continue;
+        if (texts != NULL && texts[i - 1] != NULL) {
+            strcpy(b->txt[i], texts[i - 1]);
+            b->tok[i].text = b->txt[i];
+            b->tok[i].len = (int16_t)strlen(texts[i - 1]);
+        }
+        if (nums != NULL)
+            b->tok[i].num = nums[i - 1];
+        b->tok[i].trail = ' ';
+        b->tok[i].w34 = 1;
+    }
+    b->ti.head = &b->tok[0];
+    b->ti.tail = &b->tok[5];
+    b->ti.cur = &b->tok[0];
+    b->ti.count = 5;
+    for (i = 0; i < 8; i++)
+        b->code[i] = (int16_t)(i + 1);
+    b->ti.rule_ip = b->code;
+}
+
+/* The TextIn holds pointers into its own block -- head, tail, cur, rule_ip --
+ * so it is compared word by word with such a pointer read as an offset from the
+ * block it belongs to.  Nothing is rewritten in place, because the tokens are
+ * compared afterwards through the very strings a rewrite would destroy. */
+/* A replacement text has to come from the DLL's heap: AllocString frees what
+ * is already there, and the engine's free is the only one that knows its own
+ * heap.  Only Rule_Op77 is handed a token that already has one. */
+static char *op_heapstr(const char *s)
+{
+    char *p = (char *)tv_malloc(strlen(s) + 1);
+
+    strcpy(p, s);
+    return p;
+}
+
+static int ti_same(const opblock *a, const opblock *b)
+{
+    const uint32_t *pa = (const uint32_t *)&a->ti;
+    const uint32_t *pb = (const uint32_t *)&b->ti;
+    uintptr_t ba = (uintptr_t)a, bb = (uintptr_t)b;
+    size_t i;
+
+    for (i = 0; i < sizeof a->ti / 4; i++) {
+        uintptr_t x = pa[i], y = pb[i];
+
+        if (x == y)
+            continue;
+        if (x >= ba && x < ba + sizeof *a && y >= bb && y < bb + sizeof *b &&
+            x - ba == y - bb)
+            continue;
+        return 0;
+    }
+    return 1;
+}
+
+static int op_same(opblock *a, opblock *b, int32_t ra, int32_t rb)
+{
+    int i;
+
+    if (ra != rb)
+        return 0;
+    if (!ti_same(a, b))
+        return 0;
+    if (memcmp(a->want, b->want, sizeof a->want) != 0)
+        return 0;
+    for (i = 0; i < 6; i++)
+        if (!tok_same(&a->tok[i], &b->tok[i]))
+            return 0;
+    return 1;
+}
+
+static int unit_ruleops(void)
+{
+    typedef int32_t(TV_THISCALL * op60_t)(TextIn *, const uint32_t *, Token *,
+                                         int32_t);
+    typedef int32_t(TV_THISCALL * op1_t)(TextIn *, Token *, uint32_t);
+    typedef int32_t(TV_THISCALL * op78_t)(TextIn *, Token **, uint32_t);
+    typedef int32_t(TV_THISCALL * op64_t)(TextIn *, Token *, uint32_t, int32_t,
+                                         int32_t);
+    static opblock A, B;
+    int i, j, k, bad = 0, n = 0;
+    int spelled = 0, plural = 0, years = 0;
+
+    /* ---- 0x60: how far to the next token carrying one of these flags ---- */
+    for (i = 0; i < 16; i++)           /* which tokens are transparent (0x51) */
+        for (j = 0; j < 4; j++)        /* which is a wall (0x54) */
+            for (k = 0; k < 4; k++) {  /* the operand, and the direction */
+                int32_t dir = (k & 1) ? 1 : -1;
+                int32_t from = (k & 2) ? 4 : 2;
+                int32_t ra, rb, m;
+
+                op_list(&A, NULL, NULL);
+                op_list(&B, NULL, NULL);
+                for (m = 1; m <= 5; m++) {
+                    if ((i >> (m - 1)) & 1) {
+                        Bits_Set(0x51, A.tok[m].bits);
+                        Bits_Set(0x51, B.tok[m].bits);
+                    }
+                    if (j != 0 && m == j) {
+                        Bits_Set(0x54, A.tok[m].bits);
+                        Bits_Set(0x54, B.tok[m].bits);
+                    }
+                    A.tok[m].d1c = B.tok[m].d1c = (uint32_t)(m + 0x40);
+                }
+                /* the flag the walk is looking for: tok[3]'s d1c */
+                Bits_Set(0x43, A.want);
+                Bits_Set(0x43, B.want);
+                A.code[0] = B.code[0] = 2;
+                ra = ORIG(op60_t, 0x100211b0)(&A.ti, A.want, &A.tok[from], dir);
+                rb = Rule_Op60(&B.ti, B.want, &B.tok[from], dir);
+                n++;
+                if (!op_same(&A, &B, ra, rb)) {
+                    if (bad++ < 8)
+                        fprintf(stderr, "  Rule_Op60[%#x,%d,%d]: %d/%d "
+                                        "trail=%d/%d\n", i, j, k, ra, rb,
+                                (int)A.ti.rule_trail, (int)B.ti.rule_trail);
+                }
+            }
+
+    /* ---- 0x82: the ordinal, made plural by the count before it ---------- */
+    {
+        static const char *const T[5] = {"7", "1", "21", "100", "3"};
+        for (i = 0; i < 5; i++)
+            for (j = 0; j < 3; j++) {
+                static const int32_t PREV[] = {0, 1, 2};
+                int32_t nums[5] = {0, 0, 0, 0, 0};
+                int32_t ra, rb;
+
+                nums[i > 0 ? i - 1 : 0] = PREV[j];
+                op_list(&A, T, nums);
+                op_list(&B, T, nums);
+                ra = ORIG(op1_t, 0x10020950)(&A.ti, &A.tok[i + 1], 0x11u);
+                rb = Rule_Op82(&B.ti, &B.tok[i + 1], 0x11u);
+                n++;
+                if (PREV[j] > 1)
+                    plural++;
+                if (!op_same(&A, &B, ra, rb)) {
+                    if (bad++ < 8)
+                        fprintf(stderr, "  Rule_Op82[%d,%d]: %d/%d (%s/%s)\n",
+                                i, j, ra, rb,
+                                A.tok[i + 1].text2 ? A.tok[i + 1].text2 : "-",
+                                B.tok[i + 1].text2 ? B.tok[i + 1].text2 : "-");
+                }
+            }
+    }
+
+    /* ---- 0x78: a date, over the month range and both year forms -------- */
+    for (i = 0; i < 16; i++) {
+        static const char *const YEARS[4] = {"1997", "97", "50", "2100"};
+        static const int32_t YN[4] = {1997, 97, 50, 2100};
+        const char *T[5];
+        int32_t nums[5] = {0, 0, 0, 0, 0};
+        Token *pa, *pb;
+        int32_t ra, rb;
+        char day[8], month[8];
+
+        sprintf(day, "%d", (i & 3) + 1);
+        sprintf(month, "%d", (i >> 2) * 4 + 1);
+        T[0] = day;
+        T[1] = month;
+        T[2] = YEARS[i & 3];
+        T[3] = NULL;
+        T[4] = NULL;
+        nums[0] = (i & 3) + 1;
+        nums[1] = (i >> 2) * 4 + 1;
+        nums[2] = YN[i & 3];
+        op_list(&A, T, nums);
+        op_list(&B, T, nums);
+        A.tok[3].is_number = B.tok[3].is_number = 1;
+        pa = &A.tok[1];
+        pb = &B.tok[1];
+        ra = ORIG(op78_t, 0x10020a50)(&A.ti, &pa, 0x3au);
+        rb = Rule_Op78(&B.ti, &pb, 0x3au);
+        n++;
+        if (ra == 1 && A.tok[3].text2 != NULL)
+            years++;
+        if (!op_same(&A, &B, ra, rb) ||
+            (pa - &A.tok[0]) != (pb - &B.tok[0])) {
+            if (bad++ < 8)
+                fprintf(stderr, "  Rule_Op78[%d]: %d/%d (%s | %s)\n", i, ra, rb,
+                        A.tok[2].text2 ? A.tok[2].text2 : "-",
+                        B.tok[2].text2 ? B.tok[2].text2 : "-");
+        }
+    }
+
+    /* ---- 0x64: one of the interpreter's own words, singular and plural -- */
+    for (i = 0; i < 26; i++)
+        for (j = 0; j < 4; j++) {
+            static const uint8_t TRAIL[] = {0, ' ', '.', ','};
+            static const char *const T[5] = {"2", "x", "1", "y", "3"};
+            static const int32_t NUMS[5] = {2, 0, 1, 0, 3};
+            int32_t ra, rb;
+
+            op_list(&A, T, NUMS);
+            op_list(&B, T, NUMS);
+            A.tok[2].trail = B.tok[2].trail = TRAIL[j];
+            if (j == 3) {
+                Bits_Set(0x49, A.tok[2].bits);
+                Bits_Set(0x49, B.tok[2].bits);
+            }
+            ra = ORIG(op64_t, 0x10021470)(&A.ti, &A.tok[2], (uint32_t)(j == 2 ? 0xd : 7),
+                                          i, j & 1);
+            rb = Rule_Op64(&B.ti, &B.tok[2], (uint32_t)(j == 2 ? 0xd : 7), i,
+                           j & 1);
+            n++;
+            if (!op_same(&A, &B, ra, rb)) {
+                if (bad++ < 8)
+                    fprintf(stderr, "  Rule_Op64[%d,%d]: %d/%d (%s/%s)\n",
+                            i, j, ra, rb,
+                            A.tok[2].text2 ? A.tok[2].text2 : "-",
+                            B.tok[2].text2 ? B.tok[2].text2 : "-");
+            }
+        }
+
+    /* ---- 0x80: the count, and the spell-out past seven digits ----------- */
+    {
+        static const char *const NUMS[] = {
+            "0", "7", "42", "999", "1000", "1234567", "12345678", "123456789",
+        };
+        for (i = 0; i < (int)(sizeof NUMS / sizeof NUMS[0]); i++)
+            for (j = 0; j < 2; j++) {
+                const char *T[5] = {NUMS[i], NULL, NULL, NULL, NULL};
+                int32_t ra, rb;
+
+                op_list(&A, T, NULL);
+                op_list(&B, T, NULL);
+                if (j) {
+                    Bits_Set(0x4a, A.tok[1].bits);
+                    Bits_Set(0x4a, B.tok[1].bits);
+                }
+                A.tok[1].trail = B.tok[1].trail = (uint8_t)(j ? 0 : ' ');
+                ra = ORIG(op1_t, 0x10021960)(&A.ti, &A.tok[1], 0x14u);
+                rb = Rule_Op80(&B.ti, &B.tok[1], 0x14u);
+                n++;
+                if (strlen(NUMS[i]) > 7)
+                    spelled++;
+                if (!op_same(&A, &B, ra, rb)) {
+                    if (bad++ < 8)
+                        fprintf(stderr, "  Rule_Op80[%s,%d]: %d/%d (%s/%s)\n",
+                                NUMS[i], j, ra, rb,
+                                A.tok[1].text2 ? A.tok[1].text2 : "-",
+                                B.tok[1].text2 ? B.tok[1].text2 : "-");
+                }
+            }
+    }
+
+    /* ---- 0x85: digits in pairs, including the leading zero -------------- */
+    {
+        static const char *const RUNS[] = {
+            "", "5", "05", "42", "007", "1234", "90210", "0102030405",
+            "12345678901234567", "123456789012345678",
+        };
+        for (i = 0; i < (int)(sizeof RUNS / sizeof RUNS[0]); i++) {
+            const char *T[5] = {RUNS[i], NULL, NULL, NULL, NULL};
+            int32_t ra, rb;
+
+            op_list(&A, T, NULL);
+            op_list(&B, T, NULL);
+            ra = ORIG(op1_t, 0x10021fb0)(&A.ti, &A.tok[1], 0x15u);
+            rb = Rule_Op85(&B.ti, &B.tok[1], 0x15u);
+            n++;
+            if (!op_same(&A, &B, ra, rb)) {
+                if (bad++ < 8)
+                    fprintf(stderr, "  Rule_Op85[%s]: %d/%d (%s/%s)\n",
+                            RUNS[i], ra, rb,
+                            A.tok[1].text2 ? A.tok[1].text2 : "-",
+                            B.tok[1].text2 ? B.tok[1].text2 : "-");
+            }
+        }
+    }
+
+    /* ---- 0x77: join this token onto the one before it ------------------- */
+    for (i = 0; i < 4; i++)
+        for (j = 0; j < 4; j++) {
+            static const char *const T[5] = {"casa", "azul", "y", "no", "si"};
+            static const char *const EXTRA[] = {NULL, "uno", "dos", "ee"};
+            int32_t ra, rb;
+            int which;
+
+            op_list(&A, T, NULL);
+            op_list(&B, T, NULL);
+            for (which = 0; which < 2; which++) {
+                opblock *g = which ? &B : &A;
+
+                /* text2 on the first, the second, both or neither */
+                if (i & 1)
+                    g->tok[1].text2 = op_heapstr(EXTRA[j] ? EXTRA[j] : "aa");
+                if (i & 2)
+                    g->tok[2].text2 = op_heapstr("ee");
+                if (j == 0)
+                    g->tok[1].text = NULL;
+                g->tok[1].d1c = (uint32_t)(j == 1 ? 0 : 9);
+            }
+            ra = ORIG(op1_t, 0x100221f0)(&A.ti, &A.tok[2], 0x16u);
+            rb = Rule_Op77(&B.ti, &B.tok[2], 0x16u);
+            n++;
+            if (!op_same(&A, &B, ra, rb)) {
+                if (bad++ < 8)
+                    fprintf(stderr, "  Rule_Op77[%d,%d]: %d/%d (%s/%s)\n",
+                            i, j, ra, rb,
+                            A.tok[1].text2 ? A.tok[1].text2 : "-",
+                            B.tok[1].text2 ? B.tok[1].text2 : "-");
+            }
+        }
+
+    fprintf(stderr, "%-18s %d/%d identical\n", "rule opcodes", n - bad, n);
+    fprintf(stderr, "  (%d spelled out, %d made plural, %d years read)\n",
+            spelled, plural, years);
+    return bad != 0 || spelled == 0 || plural == 0 || years == 0;
+}
+
 int unit_run(const char *name)
 {
     if (alloc_engines())
@@ -8664,6 +9008,7 @@ int unit_run(const char *name)
     if (!strcmp(name, "stage2run")) return unit_stage2run();
     if (!strcmp(name, "stage01")) return unit_stage01();
     if (!strcmp(name, "mode4")) return unit_mode4();
+    if (!strcmp(name, "ruleops")) return unit_ruleops();
     if (!strcmp(name, "volumefull")) return unit_volume_full();
     if (!strcmp(name, "all"))
         return unit_rings() | unit_flush() | unit_putchar() | unit_input()
@@ -8704,7 +9049,8 @@ int unit_run(const char *name)
              | unit_stage2b()
              | unit_stage2run()
              | unit_stage01()
-             | unit_mode4();
+             | unit_mode4()
+             | unit_ruleops();
     fprintf(stderr, "unknown unit test %s\n", name);
     return 2;
 }

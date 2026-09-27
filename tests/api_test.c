@@ -200,7 +200,8 @@ static void test_voices(void)
     sink a, b;
     tvtts_synth *s;
 
-    check(n == 10, "ten voices");
+    check(n == 10 * tvtts_language_count(),
+          "ten voices for every language the library carries");
     for (i = 0; i < n; i++) {
         const char *nm = tvtts_voice_name(i);
         int j;
@@ -218,20 +219,56 @@ static void test_voices(void)
          * strings sit in memory.  Peter and Grandpa Amos land in the same
          * place under either order, so checking only those would have missed
          * the whole thing -- and did. */
-        static const char *const want[10] = {
+        static const char *const want_en[10] = {
             "Peter", "Sidney", "Eager Eddie", "Deep Douglas", "Biff",
             "Grandpa Amos", "Melvin", "Alex", "Wanda", "Julia"
+        };
+        /* Spanish's, in the order 0x1000830e registers them, which is likewise
+         * not the order they sit in memory.  Ezequiel is the 120 wpm voice,
+         * which is the slot English gives Grandpa Amos. */
+        static const char *const want_es[10] = {
+            "Pedro", "Jorge", "Ricardo", "Paco", "Luis",
+            "Ezequiel", "Rogelio", "Carlos", "Josefa", "Isabel"
         };
         int ok = 1;
 
         for (i = 0; i < 10; i++)
             if (tvtts_voice_name(i) == NULL ||
-                strcmp(tvtts_voice_name(i), want[i]) != 0)
+                strcmp(tvtts_voice_name(i), want_en[i]) != 0)
                 ok = 0;
-        check(ok, "the voices are named in the engine's own order");
+        check(ok, "the English voices are named in the engine's own order");
+        if (tvtts_language_count() > 1) {
+            ok = 1;
+            for (i = 0; i < 10; i++)
+                if (tvtts_voice_name(10 + i) == NULL ||
+                    strcmp(tvtts_voice_name(10 + i), want_es[i]) != 0)
+                    ok = 0;
+            check(ok, "and so are the Spanish ones");
+        }
     }
     check(tvtts_voice_name(-1) == NULL && tvtts_voice_name(n) == NULL,
           "out-of-range voices give no name");
+
+    /* Every voice says which language it speaks, and the languages are in
+     * voice order, so a voice number keeps its meaning when one is added. */
+    {
+        int ok = 1, j;
+
+        for (i = 0; i < n; i++) {
+            const char *lg = tvtts_voice_language(i);
+            int found = 0;
+
+            for (j = 0; j < tvtts_language_count(); j++)
+                if (lg != NULL && strcmp(lg, tvtts_language(j)) == 0)
+                    found = 1;
+            if (!found)
+                ok = 0;
+        }
+        check(ok, "every voice names a language the library has");
+        check(tvtts_voice_language(-1) == NULL &&
+              tvtts_voice_language(n) == NULL,
+              "out-of-range voices name no language");
+    }
 
     s = tvtts_create(11025);
     say(s, "Testing.", &a);
@@ -421,6 +458,56 @@ static void test_sample_rate(void)
     check(tvtts_set_sample_rate(s, 3) < 0 && tvtts_set_sample_rate(s, -1) < 0,
           "an unknown rate is refused");
     check(tvtts_set_sample_rate(NULL, TVTTS_SR_8K) < 0, "so is a null synth");
+
+    /*
+     * Every language has all three rates.  The original offered two and 16 kHz
+     * is OpenTV's, computed from the formulas that reproduce both of the
+     * original's sets exactly -- which they do for the 1995 engines as well as
+     * the 1997 one, all 2,120 values, the two being byte-identical here -- so
+     * the extension is not English's alone.  A rate that were quietly refused
+     * would leave the setting doing nothing, which is worse than failing.
+     */
+    {
+        int lang, which;
+
+        for (lang = 0; lang < tvtts_language_count(); lang++) {
+            const char *code = tvtts_language(lang);
+            char what[96];
+
+            for (which = 0; which < 3; which++) {
+                tvtts_synth *t = tvtts_create_lang(11025, code);
+                sink c = {0}, d = {0};
+                int ok;
+
+                _snprintf(what, sizeof what, "%s speaks at %u Hz",
+                          tvtts_language_name(code),
+                          tvtts_sample_rate_hz(which));
+                what[sizeof what - 1] = 0;
+                say(t, TEXT, &c);
+                ok = tvtts_set_sample_rate(t, which) == 0;
+                if (ok) {
+                    say(t, TEXT, &d);
+                    ok = d.n > 0;
+                }
+                check(ok, what);
+                /* The same words take the same time, so the samples go with
+                 * the rate and nothing else. */
+                if (ok && which != TVTTS_SR_11K) {
+                    double want = (double)c.n *
+                        (double)tvtts_sample_rate_hz(which) / 11025.0;
+                    _snprintf(what, sizeof what,
+                              "and at %u Hz takes the same time to say it",
+                              tvtts_sample_rate_hz(which));
+                    what[sizeof what - 1] = 0;
+                    check((double)d.n > want * 0.99 &&
+                          (double)d.n < want * 1.01, what);
+                }
+                sink_free(&c);
+                sink_free(&d);
+                tvtts_destroy(t);
+            }
+        }
+    }
     tvtts_destroy(s);
 
     /* Changing rate re-initialises the engine, which puts its own defaults

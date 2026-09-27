@@ -15,8 +15,16 @@
 #define TV_ES_ENGINE_H
 
 #include "tv_common.h"
+/* Stored addresses in the engine's data are four bytes whatever a pointer is
+ * on the host, so every table of them is a table of tv_ref.  See src/tv_ref.h. */
+#include "tv_ref.h"
 
 #include "es_engine_struct.h" /* generated from es/engine.fields */
+
+/* OpenTV's third output rate.  The original offered 8 kHz and 11.025 kHz; this
+ * one is an addition, and the tables for it are computed from the formulas that
+ * reproduce both of the original's exactly.  See src/syn_hifi.h. */
+#define TV_SR_HIFI_ES 16000
 
 /* in_ring and mid_ring are 0x1000; pre_ring is 0x100 (Preformat_Run masks
  * its index with 0xff). */
@@ -93,8 +101,6 @@ Node *TV_THISCALL Engine_InsertBefore(Engine *self, Node *n, Node *before);
 
 /* @0x10007810 */
 void TV_THISCALL Preformat_Run(Engine *self);
-/* @0x10014db0 */
-uint8_t TV_CDECL FoldAccent(uint8_t *c);
 void Engine_ZeroDwordIfMinus1(Engine *self, uint32_t off32);
 
 /* ---- leaf utilities (util.c) --------------------------------------------- */
@@ -234,6 +240,16 @@ int32_t TV_THISCALL TextIn_ReadLine(TextIn *self, char *buf,
 /* Reads the headers of a mail message, when mode 4 says the text is one. */
 /* @0x10022970 */
 int32_t TV_THISCALL TextIn_Mode4Reset(TextIn *self);
+/* The three headers mode 4 speaks.  Mode4_Header takes 1 for Subject, 2 for Cc
+ * and 3 for Bcc, and refuses anything else.  Both of the others write into the
+ * text they are given. */
+/* @0x10022cf0 */
+int32_t TV_THISCALL Mode4_From(TextIn *self, char *text);
+/* @0x10022e90 */
+int32_t TV_THISCALL Mode4_Header(TextIn *self, const char *text,
+                                 int32_t which);
+/* @0x10022f90 */
+int32_t TV_THISCALL Mode4_Date(TextIn *self, char *text);
 /* Which rule tables a token's flags select, and the ESC[nX mode change. */
 /* @0x1001e160 */
 int32_t TV_THISCALL Rule_Select(TextIn *self, Token *t, int32_t *bits,

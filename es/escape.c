@@ -15,6 +15,8 @@
  * bit having been added in 1997; and mode_I here has a companion flag that
  * ESC[..I sets and the text path consults, which English does not.
  */
+#include <stddef.h>          /* offsetof, for the one raw-offset write */
+
 #include "es_engine.h"
 
 /* @0x1004990c */
@@ -59,7 +61,7 @@ void TV_THISCALL Preformat_Run(Engine *self)
             Engine_MidPut(self, c);
             return;
         }
-        base = FoldAccent(&second);
+        base = Accent_Split(&second);
         if (base == 0)
             return;
         Engine_MidPut(self, base);
@@ -87,11 +89,24 @@ void TV_THISCALL Preformat_Run(Engine *self)
     }
 
     if (c >= '0' && c <= '9') {
-        /* The -1 test happens before the bounds test, so with more than
-         * sixteen parameters the original writes past the array into
-         * whatever engine field lies there.  Reproduced by offset rather
-         * than by indexing, as the English decompilation does it. */
-        Engine_ZeroDwordIfMinus1(self, 0x1f0u + 4u * self->esc_nparam);
+        /*
+         * The -1 test happens before the bounds test, so with more than
+         * sixteen parameters the original writes past the array into whatever
+         * engine field lies there.  Reproduced by offset rather than by
+         * indexing, as the English decompilation does it.
+         *
+         * The offset is taken from the field and not written as 0x1f0, which
+         * is where the field sits only while pointers are four bytes wide.
+         * This engine reaches here on every digit of every escape sequence --
+         * not just past the sixteenth parameter, the way English's does -- so a
+         * literal offset sends every ESC[<digit> into the wrong field on a
+         * 64-bit build, and sixteen corpus cases heard it.  Where it lands
+         * *past* the array still differs between the two word widths, because
+         * what follows the array is not the same distance away; nothing but
+         * more than sixteen parameters can reach that, and no input here does.
+         */
+        Engine_ZeroDwordIfMinus1(self, (uint32_t)offsetof(Engine, esc_param) +
+                                       4u * self->esc_nparam);
         if (self->esc_nparam >= 16)
             return;
         param[self->esc_nparam] = param[self->esc_nparam] * 10 + c - '0';

@@ -30,19 +30,19 @@
 
 /* per-vowel record tables: base, record count and header, vowels 0..2 ... */
 /* @0x100573a0 */
-extern const uint8_t *const g_100573a0[3];
+extern const tv_ref g_100573a0[3];
 /* @0x100573e0 */
 extern const int32_t g_100573e0[3];
 /* @0x100573f0 */
-extern const uint8_t *const g_100573f0[3];
+extern const tv_ref g_100573f0[3];
 /* ... and the same three for vowels 3 and 4.  The count table is the only
  * one of the six indexed by vowel - 3 rather than by vowel. */
 /* @0x1005f524 */
-extern const uint8_t *const g_1005f524[5];
+extern const tv_ref g_1005f524[5];
 /* @0x1005f528 */
 extern const int32_t g_1005f528[2];
 /* @0x1005f54c */
-extern const uint8_t *const g_1005f54c[5];
+extern const tv_ref g_1005f54c[5];
 /* consonant letter -> 0..22, or -1 */
 /* @0x100613c0 */
 extern const int8_t g_100613c0[128];
@@ -121,14 +121,14 @@ uint8_t TV_THISCALL Cluster_SetTracks(Engine *self, int32_t vowel)
     case 0:
     case 1:
     case 2:
-        base = g_100573a0[vowel];
-        hdr = g_100573f0[vowel];
+        base = TV_REF(uint8_t, g_100573a0[vowel]);
+        hdr = TV_REF(uint8_t, g_100573f0[vowel]);
         count = g_100573e0[vowel];
         break;
     case 3:
     case 4:
-        base = g_1005f524[vowel];
-        hdr = g_1005f54c[vowel];
+        base = TV_REF(uint8_t, g_1005f524[vowel]);
+        hdr = TV_REF(uint8_t, g_1005f54c[vowel]);
         count = g_1005f528[vowel - 3];
         break;
     default:

@@ -1,6 +1,6 @@
 """Generate the synthesiser tables for OpenTV's extra sample rate.
 
-Usage: python tools/gen_synth_hifi.py [--rate HZ] [src/engine/syn_hifi.c]
+Usage: python tools/gen_synth_hifi.py [--rate HZ] [src/syn_hifi.c]
 
 TruVoice shipped resonator tables for two sample rates, 8 kHz and 11.025
 kHz, chosen in Synth_InitFilters.  It has none for anything else because
@@ -113,13 +113,16 @@ def emit(path):
         " *",
         " * These are not Centigram's.  TruVoice shipped tables for 8 kHz and",
         " * 11.025 kHz only; these are computed from the formulas that reproduce",
-        " * both of those exactly, evaluated at %d.  See the generator and" % FS,
-        " * docs/VOICES.md.",
+        " * both of those exactly, evaluated at %d.  See the generator," % FS,
+        " * src/syn_hifi.h and docs/VOICES.md.",
+        " *",
+        " * Every engine shares these, because the two generations' own tables are",
+        " * byte-identical and so their extension is too.",
         " */",
-        '#include "engine.h"',
+        '#include "syn_hifi.h"',
         "",
-        "/* The rate these were generated for must match the engine's. */",
-        "typedef char tv_hifi_rate_agrees[(TV_SR_HIFI == %d) ? 1 : -1];" % FS,
+        "/* The rate the header promises must be the rate these were made for. */",
+        "typedef char tv_hifi_rate_agrees[(TV_SYNHIFI_RATE == %d) ? 1 : -1];" % FS,
         "",
         table("g_synhifi_6", t6(FS)),
         "",
@@ -155,7 +158,7 @@ def main():
     args = [a for a in argv if a != "--verify"]
     if "--verify" in sys.argv[1:]:
         sys.exit(verify())
-    out = args[0] if args else os.path.join(ROOT, "src", "engine", "syn_hifi.c")
+    out = args[0] if args else os.path.join(ROOT, "src", "syn_hifi.c")
     emit(out)
 
 

@@ -424,13 +424,22 @@ uint8_t TV_THISCALL Stage1_Phoneme(Engine *self)
     return 1;
 }
 
-/* The exception lexicon: pairs of pointers, the spelling and the phonemes to
- * say instead, sorted on the spelling.  Both the array and its count live in
- * .bss and are filled at load time, and a lock guards them because the host
- * may add to them while the engine is running. */
-typedef struct { const char *key; const char *value; } LexEntry;
+/* The exception lexicon: pairs of stored addresses, the spelling and the
+ * phonemes to say instead, sorted on the spelling.  Both the array and its
+ * count live in .bss and are filled at load time, and a lock guards them
+ * because the host may add to them while the engine is running.
+ *
+ * An entry is two tv_refs and not two pointers.  The engine hands tv_bsearch a
+ * width of 8 because 8 is what an entry takes in the image, and two real
+ * pointers would be sixteen bytes on a 64-bit host -- the same reason every
+ * other stored address in es/ is a tv_ref.
+ *
+ * 9996 is the space between the table and the count that follows it: 0x9c40
+ * bytes, which is 4998 entries exactly.  The size is declared because a build
+ * with no DLL has nowhere else to get it from. */
+typedef struct { tv_ref key, value; } LexEntry;
 /* @0x1002e000 */
-extern const LexEntry g_lex_table[];
+extern const tv_ref g_lex_table[9996];
 /* @0x10037c40 */
 extern int32_t g_lex_count;
 /* @0x10037c68 */
@@ -444,16 +453,40 @@ extern void *TV_CDECL tv_bsearch(const void *key, const void *base, size_t n,
                                  int (TV_CDECL *cmp)(const void *,
                                                      const void *));
 
+/* What the search is given, rather than what it searches: see lex_cmp. */
+typedef struct { const char *key; } LexProbe;
+
+/*
+ * The lexicon is shared between engine instances, so lookups are serialised --
+ * in the DLL, where the loader initialised the critical section at 0x10037c68
+ * and every engine in the process shared one table.  A standalone build has no
+ * one to have initialised it and no other instance to race with, so the lock is
+ * nothing there; src/engine/lexicon.c does the same for English.
+ */
+#if defined(TV_HOOK_BUILD)
 void TV_STDCALL EnterCriticalSection(void *cs);
 void TV_STDCALL LeaveCriticalSection(void *cs);
+#define Lexicon_Lock()    EnterCriticalSection(g_lex_cs)
+#define Lexicon_Unlock()  LeaveCriticalSection(g_lex_cs)
+#else
+#define Lexicon_Lock()    ((void)0)
+#define Lexicon_Unlock()  ((void)0)
+#endif
 
 /*: the comparison the lexicon is sorted by: the two elements' first member,
  * as strings, byte by byte unsigned.  The original unrolls it two bytes at a
- * time; the answer is the same. */
+ * time; the answer is the same.
+ *
+ * The two sides are not the same kind of thing.  bsearch passes the key it was
+ * given first and a table element second, and the key here is a probe this file
+ * built on its own stack, so its spelling is a plain pointer while the table's
+ * is a stored address.  Making the probe a stored address instead would mean
+ * turning a stack pointer into a 32-bit offset, which does not survive 64 bits.
+ */
 static int TV_CDECL lex_cmp(const void *a, const void *b)
 {
-    const uint8_t *p = (const uint8_t *)((const LexEntry *)a)->key;
-    const uint8_t *q = (const uint8_t *)((const LexEntry *)b)->key;
+    const uint8_t *p = (const uint8_t *)((const LexProbe *)a)->key;
+    const uint8_t *q = (const uint8_t *)TV_REF(char, *(const tv_ref *)b);
 
     while (*p == *q) {
         if (*p == 0)
@@ -482,10 +515,10 @@ static int TV_CDECL lex_cmp(const void *a, const void *b)
 uint8_t TV_THISCALL Stage1_Lexicon(Engine *self)
 {
     StageCtx *st = &self->stage_ctx[1];
-    LexEntry probe;
+    LexProbe probe;
     char repl[0x2c];
     char key[0x29];
-    const LexEntry *found;
+    const tv_ref *found;
     Node *end, *at, *last, *vowel = NULL;
     int32_t flag_ctl = 0, flag_cur = 0;
     int32_t n = 0, i, len;
@@ -510,13 +543,13 @@ uint8_t TV_THISCALL Stage1_Lexicon(Engine *self)
     }
 
     probe.key = key;
-    EnterCriticalSection(g_lex_cs);
+    Lexicon_Lock();
     key[n] = 0;
-    found = (const LexEntry *)tv_bsearch(&probe, g_lex_table,
-                                        (size_t)g_lex_count, 8, lex_cmp);
+    found = (const tv_ref *)tv_bsearch(&probe, g_lex_table,
+                                       (size_t)g_lex_count, 8, lex_cmp);
     if (found != NULL)
-        strcpy(repl, found->value);
-    LeaveCriticalSection(g_lex_cs);
+        strcpy(repl, TV_REF(char, found[1]));
+    Lexicon_Unlock();
     if (found == NULL)
         return 0;
 

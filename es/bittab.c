@@ -106,10 +106,10 @@ int32_t TV_STDCALL BitTable_Rank(int32_t a, int32_t b, int32_t kind)
 
 /* the variant table, one byte array per vowel: rows 0..2 here ... */
 /* @0x100577e8 */
-extern const uint8_t *const g_100577e8[3];
+extern const tv_ref g_100577e8[3];
 /* ... and rows 3..4 here, indexed by the same vowel number */
 /* @0x1005f7e4 */
-extern const uint8_t *const g_1005f7e4[5];
+extern const tv_ref g_1005f7e4[5];
 
 /*
  * The packed index of a context variant of record `rec`, or -1.
@@ -134,7 +134,8 @@ extern const uint8_t *const g_1005f7e4[5];
 int32_t TV_THISCALL Variant_Find(Engine *self, int32_t rec, int32_t vowel,
                                  int32_t ctx0, int32_t ctx1, int32_t nctx)
 {
-    const uint8_t *base = vowel <= 2 ? g_100577e8[vowel] : g_1005f7e4[vowel];
+    const uint8_t *base = vowel <= 2 ? TV_REF(uint8_t, g_100577e8[vowel])
+                                     : TV_REF(uint8_t, g_1005f7e4[vowel]);
     int32_t idx, off, want, found = 0, result = -1, i;
 
     (void)self;

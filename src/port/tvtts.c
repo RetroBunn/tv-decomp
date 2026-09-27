@@ -11,6 +11,14 @@
  * sequence the SAPI engine thread ran for one ITTSCentral::TextData call.
  * It is byte-exact against the original across the whole corpus, so it is
  * copied here rather than rewritten.
+ *
+ * It owns the English engine, and only that.  The library carries one of these
+ * per language -- es_port/tvtts_es.c is the Spanish one -- and the public names
+ * belong to src/port/api.c, which picks between them; what each language has to
+ * provide is the en_ and es_ contract in include/tvtts_port.h.  What is left
+ * public here is everything that touches no engine and so serves both: the
+ * escape sequences a caller can embed in text, the code page conversion, the
+ * extension flags and the user lexicon.
  */
 #include <stdlib.h>
 #include <string.h>
@@ -18,6 +26,7 @@
 #include "engine.h"
 #include "crt.h"
 #include "tvtts.h"
+#include "tvtts_port.h"
 #include "bytelist.h"
 
 /* Which OpenTV extensions are on; see tvtts_set_extensions.
@@ -42,7 +51,7 @@ extern uint8_t UserLex_Add(const char *word, const char *phonemes);
 
 #define TV_VOICES 10
 
-struct tvtts_synth {
+struct en_synth {
     /* First, so Sapi_QueuePush can get back here from Engine.sapi. */
     SapiCentral host;
     Engine     *eng;
@@ -61,11 +70,11 @@ struct tvtts_synth {
 };
 
 /* Sapi_QueuePush recovers the synth by casting; make that true. */
-typedef char tvtts_host_first[offsetof(struct tvtts_synth, host) == 0 ? 1 : -1];
+typedef char tvtts_host_first[offsetof(struct en_synth, host) == 0 ? 1 : -1];
 
 /* ---- the engine's upward calls ------------------------------------------ */
 
-static int emit(tvtts_synth *s, int32_t type, const int16_t *smp,
+static int emit(struct en_synth *s, int32_t type, const int16_t *smp,
                 uint32_t count, uint32_t mark, uint32_t pos)
 {
     tvtts_event ev;
@@ -98,7 +107,7 @@ static int emit(tvtts_synth *s, int32_t type, const int16_t *smp,
  * against a mark placed before the first word: it lands within one frame of
  * where speech actually starts.
  */
-static uint32_t mark_position(const tvtts_synth *s)
+static uint32_t mark_position(const struct en_synth *s)
 {
     const Engine *E = s->eng;
     int32_t lo = E->trk_wr[0];
@@ -118,7 +127,7 @@ static uint32_t mark_position(const tvtts_synth *s)
  * itself and split its audio buffer; delivering it in order means a caller
  * can feed what it is given and act on a mark when it sees one.
  */
-static void queue_mark(tvtts_synth *s, uint32_t mark, uint32_t pos)
+static void queue_mark(struct en_synth *s, uint32_t mark, uint32_t pos)
 {
     if (s->npending == s->cpending) {
         int cap = s->cpending ? s->cpending * 2 : 8;
@@ -135,7 +144,7 @@ static void queue_mark(tvtts_synth *s, uint32_t mark, uint32_t pos)
 }
 
 /* Hand over `n` samples, releasing any mark the stream passes on the way. */
-static void emit_audio(tvtts_synth *s, const int16_t *smp, uint32_t n)
+static void emit_audio(struct en_synth *s, const int16_t *smp, uint32_t n)
 {
     uint32_t done = 0;
 
@@ -174,7 +183,7 @@ static void emit_audio(tvtts_synth *s, const int16_t *smp, uint32_t n)
  */
 int32_t Sapi_QueuePush(SapiCentral *ctl, const void *data, uint32_t size)
 {
-    tvtts_synth *s = (tvtts_synth *)ctl;
+    struct en_synth *s = (struct en_synth *)ctl;
     uint32_t *rec;
 
     if (size != sizeof(void *) || data == NULL)
@@ -349,13 +358,13 @@ int TVTTS_CALL tvtts_rate_sequence(char *buf, size_t cap, int wpm)
 
 /* ---- lifetime ------------------------------------------------------------ */
 
-tvtts_synth *TVTTS_CALL tvtts_create(uint32_t sample_rate)
+void *en_create(uint32_t sample_rate)
 {
-    tvtts_synth *s;
+    struct en_synth *s;
 
     if (sample_rate != 11025 && sample_rate != 8000 && sample_rate != TV_SR_HIFI)
         return NULL;
-    s = (tvtts_synth *)calloc(1, sizeof *s);
+    s = (struct en_synth *)calloc(1, sizeof *s);
     if (s == NULL)
         return NULL;
     s->eng = (Engine *)calloc(1, ENGINE_ALLOC);
@@ -395,8 +404,10 @@ tvtts_synth *TVTTS_CALL tvtts_create(uint32_t sample_rate)
     return s;
 }
 
-void TVTTS_CALL tvtts_destroy(tvtts_synth *s)
+void en_destroy(void *vs)
 {
+    struct en_synth *s = (struct en_synth *)vs;
+
     if (s == NULL)
         return;
     free(s->eng);
@@ -407,14 +418,18 @@ void TVTTS_CALL tvtts_destroy(tvtts_synth *s)
 
 /* ---- settings ------------------------------------------------------------ */
 
-void TVTTS_CALL tvtts_set_voice(tvtts_synth *s, int voice)
+void en_set_voice(void *vs, int voice)
 {
+    struct en_synth *s = (struct en_synth *)vs;
+
     if (s != NULL && voice >= 0 && voice < TV_VOICES)
         s->host.voice = voice;
 }
 
-void TVTTS_CALL tvtts_set_rate(tvtts_synth *s, int wpm)
+void en_set_rate(void *vs, int wpm)
 {
+    struct en_synth *s = (struct en_synth *)vs;
+
     /* Engine_SetSpeed does (wpm - 46) >> 3 unsigned, so anything below
      * TVTTS_RATE_MIN wraps to a vast index and reads wildly out of the
      * rate table.  The original crashes there too, so there is no
@@ -426,30 +441,40 @@ void TVTTS_CALL tvtts_set_rate(tvtts_synth *s, int wpm)
         s->host.speed = wpm < TVTTS_RATE_MIN ? TVTTS_RATE_MIN : wpm;
 }
 
-void TVTTS_CALL tvtts_set_pitch(tvtts_synth *s, int pitch)
+void en_set_pitch(void *vs, int pitch)
 {
+    struct en_synth *s = (struct en_synth *)vs;
+
     if (s != NULL)
         s->host.pitch = (int16_t)pitch;
 }
 
-void TVTTS_CALL tvtts_set_volume(tvtts_synth *s, uint32_t volume)
+void en_set_volume(void *vs, uint32_t volume)
 {
+    struct en_synth *s = (struct en_synth *)vs;
+
     if (s != NULL)
         s->host.volume = (int32_t)volume;
 }
 
-int TVTTS_CALL tvtts_get_voice(const tvtts_synth *s)
+int en_get_voice(const void *vs)
 {
+    const struct en_synth *s = (const struct en_synth *)vs;
+
     return s != NULL ? s->host.voice : -1;
 }
 
-int TVTTS_CALL tvtts_get_rate(const tvtts_synth *s)
+int en_get_rate(const void *vs)
 {
+    const struct en_synth *s = (const struct en_synth *)vs;
+
     return s != NULL ? (int)s->host.speed : -1;
 }
 
-int TVTTS_CALL tvtts_get_pitch(const tvtts_synth *s)
+int en_get_pitch(const void *vs)
 {
+    const struct en_synth *s = (const struct en_synth *)vs;
+
     return s != NULL ? (int)(uint16_t)s->host.pitch : -1;
 }
 
@@ -470,36 +495,26 @@ uint32_t TVTTS_CALL tvtts_get_extensions(void)
 
 /* ---- output rate ---------------------------------------------------------- */
 
-static const uint32_t g_sr_hz[3] = { 8000u, 11025u, (uint32_t)TV_SR_HIFI };
-
-uint32_t TVTTS_CALL tvtts_sample_rate_hz(int which)
+/* Which rates exist is api.c's business; which of them this engine can be built
+ * for is this one's.  All three, the 16 kHz being OpenTV's own addition. */
+uint32_t en_get_rate_hz(const void *vs)
 {
-    return (which >= 0 && which < 3) ? g_sr_hz[which] : 0u;
+    const struct en_synth *s = (const struct en_synth *)vs;
+
+    return s != NULL ? s->rate : 0u;
 }
 
-int TVTTS_CALL tvtts_get_sample_rate(const tvtts_synth *s)
+int en_set_rate_hz(void *vs, uint32_t hz)
 {
-    int i;
+    struct en_synth *s = (struct en_synth *)vs;
 
-    if (s == NULL)
-        return -1;
-    for (i = 0; i < 3; i++)
-        if (g_sr_hz[i] == s->rate)
-            return i;
-    return -1;
-}
-
-int TVTTS_CALL tvtts_set_sample_rate(tvtts_synth *s, int which)
-{
-    uint32_t hz;
-
-    if (s == NULL || which < 0 || which >= 3)
+    if (s == NULL || (hz != 8000u && hz != 11025u &&
+                      hz != (uint32_t)TV_SR_HIFI))
         return -1;
     /* The filters and the output stage are rebuilt for the new rate, which
      * cannot be done to an utterance already part way through. */
     if (s->cb != NULL)
         return -1;
-    hz = g_sr_hz[which];
     if (hz == s->rate)
         return 0;
     s->rate = hz;
@@ -530,9 +545,10 @@ int TVTTS_CALL tvtts_set_sample_rate(tvtts_synth *s, int which)
     return 0;
 }
 
-void TVTTS_CALL tvtts_set_compat(tvtts_synth *s, int preformat, int textin,
-                                 int terminators)
+void en_set_compat(void *vs, int preformat, int textin, int terminators)
 {
+    struct en_synth *s = (struct en_synth *)vs;
+
     if (s == NULL)
         return;
     s->preformat = preformat ? 1 : 0;
@@ -540,7 +556,23 @@ void TVTTS_CALL tvtts_set_compat(tvtts_synth *s, int preformat, int textin,
     s->nuls = terminators < 0 ? 0 : terminators;
 }
 
-int TVTTS_CALL tvtts_voice_count(void)
+/*
+ * The tokenizer mode.  English's Engine_CreateTextIn builds its TextIn for mode
+ * 0 and never asks the host block, so this reaches the object and constructs it
+ * again in place: allocating another would leak the one already there, and
+ * before the first utterance it holds no tokens to lose.
+ */
+void en_set_textin_mode(void *vs, int mode)
+{
+    struct en_synth *s = (struct en_synth *)vs;
+
+    if (s == NULL || s->eng->textin == NULL)
+        return;
+    TextIn_Construct(s->eng->textin, mode);
+    s->eng->textin->engine = s->eng;
+}
+
+int en_voice_count(void)
 {
     return TV_VOICES;
 }
@@ -575,17 +607,17 @@ static const char *voice_entry(int voice)
     return p;
 }
 
-const char *TVTTS_CALL tvtts_voice_name(int voice)
+const char *en_voice_name(int voice)
 {
     return voice_entry(voice);
 }
 
-int TVTTS_CALL tvtts_voice_rate(int voice)
+int en_voice_rate(int voice)
 {
     return (voice >= 0 && voice < TV_VOICES) ? (int)g_voice_speed[voice] : -1;
 }
 
-int TVTTS_CALL tvtts_voice_pitch(int voice)
+int en_voice_pitch(int voice)
 {
     return (voice >= 0 && voice < TV_VOICES) ? (int)g_voice_pitch[voice] : -1;
 }
@@ -599,9 +631,10 @@ int TVTTS_CALL tvtts_add_lexicon(const char *word, const char *phonemes)
 
 /* ---- synthesis ----------------------------------------------------------- */
 
-int TVTTS_CALL tvtts_speak_bytes(tvtts_synth *s, const void *text, uint32_t len,
-                                 tvtts_callback cb, void *user)
+int en_speak_bytes(void *vs, const void *text, uint32_t len,
+                   tvtts_callback cb, void *user)
 {
+    struct en_synth *s = (struct en_synth *)vs;
     Engine *E;
     char *buf;
     uint32_t textlen, pos = 0;
@@ -733,9 +766,10 @@ static int TVTTS_CALL discard_audio(const tvtts_event *ev, void *user)
     return 0;
 }
 
-int TVTTS_CALL tvtts_speak_phonemes(tvtts_synth *s, const char *phonemes,
-                                    tvtts_callback cb, void *user)
+int en_speak_phonemes(void *vs, const char *phonemes,
+                      tvtts_callback cb, void *user)
 {
+    struct en_synth *s = (struct en_synth *)vs;
     /* tts_SpeakPhoneme in the 5.1 builds does exactly this: bracket the
      * caller's string with the two escapes and hand it to tts_Speak. */
     char open[8], close[8], *buf;
@@ -754,14 +788,15 @@ int TVTTS_CALL tvtts_speak_phonemes(tvtts_synth *s, const char *phonemes,
     memcpy(buf + no, phonemes, n);
     memcpy(buf + no + n, close, nc);
     buf[no + n + nc] = 0;
-    r = tvtts_speak_bytes(s, buf, (uint32_t)(no + n + nc), cb, user);
+    r = en_speak_bytes(s, buf, (uint32_t)(no + n + nc), cb, user);
     free(buf);
     return r;
 }
 
-int TVTTS_CALL tvtts_text_to_phonemes(tvtts_synth *s, const char *text,
-                                      char *buf, uint32_t cap)
+int en_text_to_phonemes(void *vs, const char *text,
+                        char *buf, uint32_t cap)
 {
+    struct en_synth *s = (struct en_synth *)vs;
     tv_bytelist list;
     uint32_t need;
     int r;
@@ -774,7 +809,7 @@ int TVTTS_CALL tvtts_text_to_phonemes(tvtts_synth *s, const char *text,
     memset(&list, 0, sizeof list);
     s->eng->s2_bytes = &list;
     s->eng->w_212c = 1;
-    r = tvtts_speak_bytes(s, text, (uint32_t)strlen(text), discard_audio, NULL);
+    r = en_speak_bytes(s, text, (uint32_t)strlen(text), discard_audio, NULL);
     s->eng->w_212c = 0;
     s->eng->s2_bytes = NULL;
 

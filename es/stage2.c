@@ -752,6 +752,7 @@ void TV_THISCALL Stage2_MergeBack(Engine *self)
 /* @0x10048a58 */
 extern const uint32_t g_pause_pattern[16];
 /* @0x10045894 */
+/* One int32, and the pause pattern walks it round a sixteen-step cycle. */
 extern int32_t g_pause_step;
 /* @0x10049910 */
 extern const uint32_t g_bit_mask[8];
@@ -1116,7 +1117,7 @@ extern const double g_dur_before_n;
 /* Ten times this is the phoneme's base length; the same table es/stage3seg.c
  * reads as a divisor. */
 /* @0x10057d50 */
-extern const uint8_t *const g_10057d50;
+extern const tv_ref g_10057d50;
 
 /*: v * num / 100, the signed divide the original uses throughout. */
 static int32_t dur_pct(int32_t v, int32_t num)
@@ -1188,7 +1189,7 @@ void TV_THISCALL Stage2_Duration(Engine *self)
         goto tail;
     }
 
-    v = (int32_t)g_10057d50[s2_cls0(c)] * 10;
+    v = (int32_t)TV_REF(uint8_t, g_10057d50)[s2_cls0(c)] * 10;
     ctl->arg = (uint32_t)v;
     /* the result is not used; the call is here because the original makes it */
     Engine_StageNext(self, st->ctl);

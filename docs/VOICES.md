@@ -348,6 +348,24 @@ Table 9 is the one approximation: mildly rate-dependent, 0.25% across the
 octave from 8 kHz to 11.025, with no exact formula found, so the wideband
 values are used.
 
+### And in the 1995 engine
+
+The section above says the formulas describe either generation, and the Spanish
+engine settled it: the same three formulas reproduce **all 2120 values of
+CGRM_ES's own two sets exactly**, as they do CGRM_EN's.  In fact all twenty
+tables the two engines select between are byte-identical, and so are the six
+resonator constants, so the extension is not merely the same design but the same
+numbers.  That is why there is one copy of the generated tables --
+`src/syn_hifi.c`, behind `src/syn_hifi.h` -- rather than one per language, and
+why each engine's `Synth_InitFilters` only has to point at them.
+
+The three things that are not tables had to be ported with it.  Leaving
+`filt_coef[12]`, `[13]` and `[33]` at the 11 kHz values is the same mistake in
+Spanish as it was in English, and measurably so: the high band (4-7 kHz) against
+the low (300 Hz-3 kHz) comes out at 1.14 with the 11 kHz resonator and 1.35 with
+the 16 kHz one, on the same Spanish sentence -- the roll-off the English note
+above describes, in the same direction.
+
 ### Does it work
 
 Measured rather than assumed.  Pitch tracks correctly (F0 within 2% of the

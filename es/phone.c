@@ -28,7 +28,7 @@
 extern const uint8_t g_10058618[0x200];
 /* the phoneme letter -> id selector, reached through a pointer variable */
 /* @0x10057ce8 */
-extern const uint8_t *const g_10057ce8p;
+extern const tv_ref g_10057ce8p;
 
 /* the eight per-track-group tables, 0x30 apart */
 /* @0x10057e28 */
@@ -50,24 +50,24 @@ extern const uint8_t g_10057f78[48];
 
 /* tracks 1 to 8, eight tables reached through pointer variables 0x20 apart */
 /* @0x100580f8 */
-extern const uint8_t *const g_100580f8;
+extern const tv_ref g_100580f8;
 /* @0x10058118 */
-extern const uint8_t *const g_10058118;
+extern const tv_ref g_10058118;
 /* @0x10058138 */
-extern const uint8_t *const g_10058138;
+extern const tv_ref g_10058138;
 /* @0x10058158 */
-extern const uint8_t *const g_10058158;
+extern const tv_ref g_10058158;
 /* @0x10058178 */
-extern const uint8_t *const g_10058178;
+extern const tv_ref g_10058178;
 /* @0x10058198 */
-extern const uint8_t *const g_10058198;
+extern const tv_ref g_10058198;
 /* @0x100581b8 */
-extern const uint8_t *const g_100581b8;
+extern const tv_ref g_100581b8;
 /* @0x100581d8 */
-extern const uint8_t *const g_100581d8;
+extern const tv_ref g_100581d8;
 /* track 16's, likewise */
 /* @0x10058430 */
-extern const uint8_t *const g_10058430;
+extern const tv_ref g_10058430;
 
 /* the low-id extras */
 /* @0x100580d0 */
@@ -125,7 +125,7 @@ static int32_t ph_cls180(uint8_t v)
 /* @0x1001b440 */
 void TV_THISCALL Stage3_LoadPhone(Engine *self)
 {
-    const uint8_t *sel = g_10057ce8p;
+    const uint8_t *sel = TV_REF(uint8_t, g_10057ce8p);
     Node *ctl = self->stage_ctx[3].ctl;
     Node *cur = self->stage_ctx[3].cur;
     int32_t voice = self->stage_ctx[3].voice;
@@ -165,14 +165,14 @@ void TV_THISCALL Stage3_LoadPhone(Engine *self)
     self->trk_param[21][6] = g_1004c818[voice];
 
     if (id >= 0x17) {
-        self->trk_param[1][6] = g_100580f8[id];
-        self->trk_param[2][6] = g_10058118[id];
-        self->trk_param[3][6] = g_10058138[id];
-        self->trk_param[4][6] = g_10058158[id];
-        self->trk_param[5][6] = g_10058178[id];
-        self->trk_param[6][6] = g_10058198[id];
-        self->trk_param[7][6] = g_100581b8[id];
-        self->trk_param[8][6] = g_100581d8[id];
+        self->trk_param[1][6] = TV_REF(uint8_t, g_100580f8)[id];
+        self->trk_param[2][6] = TV_REF(uint8_t, g_10058118)[id];
+        self->trk_param[3][6] = TV_REF(uint8_t, g_10058138)[id];
+        self->trk_param[4][6] = TV_REF(uint8_t, g_10058158)[id];
+        self->trk_param[5][6] = TV_REF(uint8_t, g_10058178)[id];
+        self->trk_param[6][6] = TV_REF(uint8_t, g_10058198)[id];
+        self->trk_param[7][6] = TV_REF(uint8_t, g_100581b8)[id];
+        self->trk_param[8][6] = TV_REF(uint8_t, g_100581d8)[id];
     } else {
         self->trk_param[1][6] = 0;
         self->trk_param[2][6] = 0;
@@ -192,7 +192,7 @@ void TV_THISCALL Stage3_LoadPhone(Engine *self)
     }
 
     if (id >= 0x27)
-        self->trk_param[16][6] = (int32_t)g_10058430[id] * 4 + 0xc0;
+        self->trk_param[16][6] = (int32_t)TV_REF(uint8_t, g_10058430)[id] * 4 + 0xc0;
     else
         self->trk_param[16][6] = 0xfa;
 
@@ -209,7 +209,7 @@ void TV_THISCALL Stage3_LoadPhone(Engine *self)
 
     /* and the same eight tables again for the following phoneme */
     {
-        int32_t nid = (int8_t)g_10057ce8p[
+        int32_t nid = (int8_t)TV_REF(uint8_t, g_10057ce8p)[
             ph_cls0(self->stage_ctx[3].scan->value)];
 
         self->trk_55c[9] = (int32_t)g_10057e28[nid] << 2;
@@ -330,35 +330,35 @@ void TV_THISCALL Stage3_VowelClass(Engine *self, int32_t mode)
  * x16 -- for the eighth and last time in this engine.
  */
 /* @0x10058454 */
-extern const uint8_t *const g_10058454;
+extern const tv_ref g_10058454;
 /* @0x10058474 */
-extern const uint8_t *const g_10058474;
+extern const tv_ref g_10058474;
 /* @0x10058494 */
-extern const uint8_t *const g_10058494;
+extern const tv_ref g_10058494;
 /* @0x100584b4 */
-extern const uint8_t *const g_100584b4;
+extern const tv_ref g_100584b4;
 /* @0x100584d4 */
-extern const uint8_t *const g_100584d4;
+extern const tv_ref g_100584d4;
 /* @0x100584f4 */
-extern const uint8_t *const g_100584f4;
+extern const tv_ref g_100584f4;
 /* @0x10058514 */
-extern const uint8_t *const g_10058514;
+extern const tv_ref g_10058514;
 /* @0x10058534 */
-extern const uint8_t *const g_10058534;
+extern const tv_ref g_10058534;
 /* @0x10058554 */
-extern const uint8_t *const g_10058554;
+extern const tv_ref g_10058554;
 /* @0x10058574 */
-extern const uint8_t *const g_10058574;
+extern const tv_ref g_10058574;
 /* @0x10058594 */
-extern const uint8_t *const g_10058594;
+extern const tv_ref g_10058594;
 /* @0x100585b4 */
-extern const uint8_t *const g_100585b4;
+extern const tv_ref g_100585b4;
 /* @0x100585d4 */
-extern const uint8_t *const g_100585d4;
+extern const tv_ref g_100585d4;
 /* @0x100585f4 */
-extern const uint8_t *const g_100585f4;
+extern const tv_ref g_100585f4;
 /* @0x10058614 */
-extern const uint8_t *const g_10058614;
+extern const tv_ref g_10058614;
 
 /*: one triple out of three tables, each scaled for its track */
 static void trip_load(int32_t *out, const uint8_t *t0, const uint8_t *t1,
@@ -374,11 +374,17 @@ static void trip_for(int cls, const uint8_t **t0, const uint8_t **t1,
                      const uint8_t **t2)
 {
     switch (cls) {
-    case 1: *t0 = g_100584d4; *t1 = g_10058534; *t2 = g_100585d4; break;
-    case 2: *t0 = g_10058494; *t1 = g_10058554; *t2 = g_100585f4; break;
-    case 3: *t0 = g_10058454; *t1 = g_10058574; *t2 = g_10058614; break;
-    case 4: *t0 = g_100584b4; *t1 = g_10058514; *t2 = g_100585b4; break;
-    default: *t0 = g_10058474; *t1 = g_100584f4; *t2 = g_10058594; break;
+    case 1: *t0 = TV_REF(uint8_t, g_100584d4); *t1 = TV_REF(uint8_t, g_10058534);
+             *t2 = TV_REF(uint8_t, g_100585d4); break;
+    case 2: *t0 = TV_REF(uint8_t, g_10058494); *t1 = TV_REF(uint8_t, g_10058554);
+             *t2 = TV_REF(uint8_t, g_100585f4); break;
+    case 3: *t0 = TV_REF(uint8_t, g_10058454); *t1 = TV_REF(uint8_t, g_10058574);
+             *t2 = TV_REF(uint8_t, g_10058614); break;
+    case 4: *t0 = TV_REF(uint8_t, g_100584b4); *t1 = TV_REF(uint8_t, g_10058514);
+             *t2 = TV_REF(uint8_t, g_100585b4); break;
+    default: *t0 = TV_REF(uint8_t, g_10058474);
+             *t1 = TV_REF(uint8_t, g_100584f4);
+             *t2 = TV_REF(uint8_t, g_10058594); break;
     }
 }
 
@@ -403,7 +409,7 @@ static void trip_for(int cls, const uint8_t **t0, const uint8_t **t1,
 /* @0x10016fe0 */
 void TV_THISCALL Stage3_LoadTriples(Engine *self)
 {
-    const uint8_t *sel = g_10057ce8p;
+    const uint8_t *sel = TV_REF(uint8_t, g_10057ce8p);
     Node *ctl;
     int32_t c_ctl, id, mode;
     const uint8_t *t0, *t1, *t2;
@@ -546,7 +552,7 @@ static void trip_fix_g(Engine *self)
 /* @0x10015b30 */
 void TV_THISCALL Stage3_BlendTriples(Engine *self)
 {
-    const uint8_t *sel = g_10057ce8p;
+    const uint8_t *sel = TV_REF(uint8_t, g_10057ce8p);
     Node *ctl = self->stage_ctx[3].ctl;
     int32_t c_ctl = ctl->value;
     int32_t c_cur = self->stage_ctx[3].cur->value;
@@ -703,7 +709,7 @@ static void stop_fix_tail(Engine *self)
 /* @0x10016460 */
 void TV_THISCALL Stage3_StopClosure(Engine *self)
 {
-    const uint8_t *sel = g_10057ce8p;
+    const uint8_t *sel = TV_REF(uint8_t, g_10057ce8p);
     int32_t c_ctl = self->stage_ctx[3].ctl->value;
     int32_t c_scan = self->stage_ctx[3].scan->value;
     int32_t closure, id, mode, wr;

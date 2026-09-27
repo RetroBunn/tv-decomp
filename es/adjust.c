@@ -475,7 +475,7 @@ void TV_THISCALL Track_AdjustGap(Engine *self)
 /*: two more byte tables reached through a pointer variable, the first
  * indexed by the phoneme and the second by its entry. */
 /* @0x10057e20 */
-extern const uint8_t *const g_10057e20;
+extern const tv_ref g_10057e20;
 /* @0x100581e0 */
 extern const uint8_t g_100581e0[256];
 
@@ -510,7 +510,7 @@ void TV_THISCALL Track_SetModes(Engine *self)
             self->trk_param[i][0] = 4;
     }
 
-    v = g_100581e0[g_10057e20[cls0((uint8_t)c_ctl)]];
+    v = g_100581e0[TV_REF(uint8_t, g_10057e20)[cls0((uint8_t)c_ctl)]];
     if (g_10058618[cls80((uint8_t)c_cur)] & 2)
         v = 5;
     for (i = 0; i < 8; i++)
@@ -577,7 +577,7 @@ void TV_THISCALL Track_SetShapes(Engine *self)
 
     for (i = 0; i < 8; i++)
         self->trk_param[9 + i][2] =
-            g_100581e0[g_10057e20[cls0((uint8_t)self->stage_ctx[3].cur->value)]];
+            g_100581e0[TV_REF(uint8_t, g_10057e20)[cls0((uint8_t)self->stage_ctx[3].cur->value)]];
     self->trk_param[9][2] = self->trk_param[9][2] / 2 + 1;
 
     for (i = 0; i < 9; i++)
