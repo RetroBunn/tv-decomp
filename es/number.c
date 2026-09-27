@@ -237,3 +237,109 @@ int32_t TV_CDECL Number_WordsEx(char *digits, char *out, int32_t style,
     }
     return value;
 }
+
+/*
+ * A Roman numeral's value, or -1 if the string is not one.
+ *
+ * One letter at a time, with a look at the next so that the subtractive pairs
+ * come out right: CD and CM, IV and IX, XL and XC.  Every letter also has a
+ * set of letters it is allowed to be followed by, and anything outside that
+ * set -- or outside C D I L M V X at all -- makes the whole string not a
+ * numeral.  So IL and VX are refused rather than added up, and the check is
+ * what makes "MIX" a number and "MIXED" a word.
+ *
+ * It does not check that the letters descend, so IXIX comes out as 18.
+ */
+/* @0x10022380 */
+int32_t TV_CDECL Roman_Value(const char *s)
+{
+    int32_t total = 0;
+    int32_t i = 1;
+    uint8_t c = (uint8_t)s[0];
+
+    for (;;) {
+        int32_t next = (int32_t)(int8_t)s[i];
+
+        /* the original bounds every look-ahead at 'X' before its table */
+        if (c == 'C' || c == 'D' || c == 'I' || c == 'L' || c == 'M' ||
+            c == 'X') {
+            if ((uint32_t)next > 0x58u)
+                return -1;
+        }
+        switch (c) {
+        case 'C':
+            if (next == 'D') {
+                total += 400;
+                i++;
+            } else if (next == 'M') {
+                total += 900;
+                i++;
+            } else if (next == 0 || next == 'C' || next == 'I' ||
+                       next == 'L' || next == 'V' || next == 'X') {
+                total += 100;
+            } else {
+                return -1;
+            }
+            break;
+        case 'D':
+            if (next == 0 || next == 'C' || next == 'I' || next == 'L' ||
+                next == 'V' || next == 'X')
+                total += 500;
+            else
+                return -1;
+            break;
+        case 'I':
+            if (next == 'V') {
+                total += 4;
+                i++;
+            } else if (next == 'X') {
+                total += 9;
+                i++;
+            } else if (next == 0 || next == 'I') {
+                total += 1;
+            } else {
+                return -1;
+            }
+            break;
+        case 'L':
+            if (next == 0 || next == 'I' || next == 'V' || next == 'X')
+                total += 50;
+            else
+                return -1;
+            break;
+        case 'M':
+            if (next == 0 || next == 'C' || next == 'D' || next == 'I' ||
+                next == 'L' || next == 'M' || next == 'V' || next == 'X')
+                total += 1000;
+            else
+                return -1;
+            break;
+        case 'V':
+            if (next == 0 || next == 'I')
+                total += 5;
+            else
+                return -1;
+            break;
+        case 'X':
+            if (next == 'C') {
+                total += 90;
+                i++;
+            } else if (next == 'L') {
+                total += 40;
+                i++;
+            } else if (next == 0 || next == 'I' || next == 'V' ||
+                       next == 'X') {
+                total += 10;
+            } else {
+                return -1;
+            }
+            break;
+        default:
+            return -1;
+        }
+        c = (uint8_t)s[i];
+        if (c == 0)
+            return total;
+        i++;
+    }
+}

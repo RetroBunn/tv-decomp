@@ -1974,42 +1974,229 @@ cheaper to take on, and every one of them is now decompiled.
 To reproduce any of this, disassemble it once with
 `python tools/disasm.py SPMtv160.dll work/spmtv160`.
 
+## The front end, and the end of the executing set
+
+The last cluster was the front end: the tokenizer, the classifier that
+decides what a token is, and mode 4.  Sixteen functions, and with them
+`python tools/covrun.py --lang es --full` reports **196 of 196 functions and
+87,277 of 87,277 bytes -- 100% -- of the code the corpus executes**, the C
+runtime excluded as always.
+
+They divide into four pieces.
+
+**The tokenizer.**  `TextIn_ReadToken` (`sub_1001c9e0`) reads up to a hundred
+characters and decides where the token ends.  It is a small state machine over
+one character table: whitespace ends a token, and so does any character that
+cannot follow what came before -- punctuation after a letter or a digit, a
+digit after a leading space run, a letter after one, a digit right after
+punctuation.  The character that ended it becomes the token's trailing
+character, unless it was a letter, a digit or one of `# $ % & @ ` ~`, in which
+case it is pushed back so the next token starts with it.  Trailing punctuation
+is given back to the input a character at a time, which is how `casa.` leaves
+the full stop to be read as a token of its own.
+
+Three marks come out of the walk, one per character, and `TextIn_Split`
+(`sub_1001d260`) divides the token on them afterwards: 1 for "no split", 2
+where a letter and a digit meet in either order, and 3 for one of `- . /`
+between two letters.  `TextIn_TokenizeText` (`sub_1001cd10`) is the same walk
+again over a string rather than the input ring -- character for character the
+same, with "putting one back" meaning the position goes back by one.
+
+**The classifier.**  `Rule_ClassifyToken` (`sub_1001f950`) clears a token's
+96-bit flag set and rebuilds it from one walk, counting what each character is:
+digits, letters, capitals, vowels, punctuation, arithmetic operators, Roman
+numeral letters, carriage returns, and the dots and letters that make up a
+dotted abbreviation.  A count equal to the length means every character was of
+that kind, and that is what most of the flags test -- all capitals is 0x19, all
+letters with no capital is 0x44, all punctuation is 0x51, a Roman numeral is
+0xf and 0x14 with its value in `Token.num`.  All digits is not a flag but a
+different question, so it hands the token to `Rule_ClassifyNumber`
+(`sub_1001fde0`), which reads what follows the number -- `ª` `º` `'` `,` `-`
+`.` `/` `:` -- and what came before it, and between two numbers in a row makes
+a date or a time: after a day comes a month, after a month a year, after an
+hour the minutes.  `Rule_MatchAbbrev` (`sub_1001de40`) is the third: it looks
+the word up in the abbreviation table, tries again with its accents folded if
+that failed, and tests each record that spells the same against the token.
+
+One thing `Rule_ClassifyToken` does is worth recording on its own.  Ten or more
+of the same character in a row -- a rule of dots, say -- is cut back to the four
+that came before them, and a token holding `etcetera.` is inserted after it.
+
+**Mode 4 is a mail reader.**  `TextIn_Mode4Reset` (`sub_10022970`) reads lines
+and looks the part before the first space up in two lists of mail headers.  One
+list decides whether the text is a message at all and is tried against the first
+line only:
+
+    #Received:#Return-Path:#X-Envelope-From:#Message-Id:#X-Received:
+    #X-Msxmtid:#X-Mscontent-Transfer-Encoding:#X-Msmail-Message-Id:
+    #X-Msmail-Conversation-Id:#Xref:#Path:#Newsgroups:#Mime-Version:
+    #NNTP-Posting-Host:#X-Newsreader:#Distribution:#
+
+The other is the headers that are spoken -- `#From:#Subject:#Date:#Cc:#Bcc#` --
+each with its own handler.  Every other header is passed over in silence, a
+blank line or a lone full stop ends them, and the body follows as ordinary text.
+`TextIn_Mode4` (`sub_1001d470`) is the other half: it tracks the run of `!` `@`
+`#` `%` `*` `+` `|` `>` `<` `:` that quoted text is marked out with, and once
+two tokens in a row carry the same run it silences them and announces the
+quotation.
+
+The announcements are in German.  `. Achtung: Anfang des eingesetzten textes.`
+and `. Achtung: Ende des eingesetzten textes.` are what a Spanish voice in
+mode 4 says around a quoted passage -- the strings were never translated, and
+since mode 4 is not reachable through the interface this build offers, nothing
+in the corpus ever hears them.
+
+**The announcements needed a unit case, and found an off-by-one.**
+`TextIn_Mode4` runs in all 205 configurations, but no input any of them carries
+has two tokens in a row beginning with the same marker run, so the two arms that
+announce a quotation never fire and `TextIn_InsertText` is never called at all.
+`unit_es -U mode4` builds the list directly instead: thirteen texts across four
+arrangements of the 0x53 flag and both states of `ti_6e`, each run through five
+tokens in turn so that the run one call remembers is what the next one sees.
+114 cases, 56 quotations opened and 60 closed, all identical -- and 26 of 114
+when `i - same == -1` is changed to `== 0`, which is the control that says the
+suite can tell.
+
+Building it turned up two things about the original.  It terminates its scratch
+buffer one byte *past* the last character it wrote, so for a token of five
+characters or more the sixth byte it copies into `ti_74` is whatever its stack
+held; nothing ever reads `ti_74[5]`, because the comparison against it only
+reaches index 4 and the index the trailing character uses is the token's length,
+which that case does not take.  `es/textin.c` clears the buffer, writes zero
+there, and the unit comparison leaves that byte out and says why.  And opening a
+quotation steps three tokens back through `t->prev->bits` with nothing checking
+for the end of the list: what keeps it standing is that mode 4 text ends every
+line with a newline and `Rule_ClassifyToken` flags a newline 0x53, so there are
+normally three of those behind any token.  A quotation opening within the first
+three lines of a message would read through the head node's null `prev`.
+
+**Two character tables with the same shape.**  `TextIn_ReadEscape` was written
+against `0x10061450` and the rule layer against `0x10069d08`, and both had been
+given the name `g_char_flags`.  They are different tables: the tokenizer's
+has punctuation at bit 1, the three separators `- . /` at bit 2, letters at 4,
+digits at 8 and `# $ % & @ ` ~` at 0x10, while the rule interpreter's has
+whitespace at 1, sentence marks at 2, letters at 4, digits at 8, capitals at
+0x10, punctuation at 0x20, operators at 0x40, vowels at 0x80 and the Roman
+numeral letters `C D I L M V X` at 0x200.  One C name meant one address, so
+`gen_hookmap.py` bound both uses to `0x10069d08` and `TextIn_ReadEscape` read
+the wrong table.  The corpus never caught it: the two agree on bit 2 for every
+character except `0x8c 0x9c 0xaa 0xba 0xd7 0xde 0xf7 0xfe`, and no corpus case
+ends a control sequence with one of those.  The tokenizer's is now
+`g_tok_class`.
+
+## A test that passed or failed by where the allocator put things
+
+`unit_es -U escape` began failing one run in ten, always the same eight cases
+of 156 -- `ESC[1I`, `ESC[1P`, `ESC[1g` and `ESC[1s`, each with index mode
+off and on.  Every field the message printed matched.  The differing word was
+`mid_ring[0]`: the original had `1b 49 00 00` where the decompiled side had
+`1b 49 01 01`, and `mid_wr` said 4 on both sides -- which no path through
+`Preformat_Run` can produce.  The third byte it writes *is* the count, so a
+third byte of zero means a count of zero, and a count of zero writes three
+bytes and stops.  For a fourth byte to have been written the count had to be
+positive, and positive with a low byte of zero means 256, which would have
+written 259.
+
+The bytes were right when they were written.  `normalize()` changed them
+afterwards.  It exists because the engine holds pointers into itself -- the
+node pool, the stage cursor, the per-track buffers -- so two engines at
+different addresses never compare equal byte for byte, and it rewrites every
+aligned word that falls inside the object as an offset.  `ESC[1I` emits
+`1b 49 01 01` into `mid_ring`, which read back as a little-endian dword is
+`0x0101491b`; an engine the allocator had put near `0x01010000` claimed that as
+a pointer into itself and subtracted its base, and the other engine, elsewhere,
+did not.  Two identical objects were rewritten into a difference.  The comment
+above the function had the hazard exactly backwards: it said a non-pointer that
+lands in range "is normalised on both sides, so it cannot turn a difference
+into a match", which is true, and missed that it can turn a match into a
+difference.
+
+The fix is one line: normalize only words that already differ from the other
+engine's.  A word that is equal cannot be a difference whatever it means, so
+skipping it costs no coverage, and what the two engines are worth comparing is
+now independent of where they landed.  `-U all` has been deterministic since,
+across twenty runs of the escape suite alone and eight of everything.
+
+Worth stating plainly, because the bug was in the test and not in the engine:
+a differential test that is not reproducible is not yet a test.  Every ES suite
+runs twenty times clean now, and that is part of the check from here on.
+
+## Three things the original does that are worth knowing
+
+**A computation nothing reads.**  `Stage2_Duration` scales a vowel's duration
+by the syllable count and then by two dozen tests on what the words either side
+of it start with, each a percentage between 79 and 180 -- and then throws the
+result away: the duration a vowel ends up with is one of a dozen small
+constants chosen on the phoneme, the stress and what two nodes ahead look like.
+A consonant keeps its scaled value.  `es/stage2.c` writes the whole vowel chain
+out anyway, because the unit suite requires the two builds to agree, not
+because it makes sense.
+
+**A branch that cannot be taken.**  Inside the same function, at
+`loc_10018d99`, one byte is tested against four different characters with `&&`
+where `||` was meant.  A byte cannot be four things at once, so the arm behind
+it has never run in any build that shipped.
+
+**The lowercase half of the phoneme set is the diphthongs.**
+`Stage2_Substitute` merges fourteen vowel pairs into single phonemes -- `I A`
+`I E` `I O` `I U` `U A` `U E` `U I` `U O` `A I` `A U` `E I` `E U` `O I` `O U`
+become `h i j k m p q t a v e w o u` with the second node going away.  Reading
+that arm is what the lowercase letters in the phoneme alphabet are for; nothing
+else produces them.
+
 ## What is next
 
-There are now three tests with different reach: `difftest --lang es` asks
-whether the engine still sounds the same, `unit_es` asks whether a function
-is the same function, and `es_reftest` asks whether the harness still
-reproduces a recording made through SAPI.  Work that is not covered by one
-of them is work that is not finished.
+There are three tests with different reach: `difftest --lang es` asks whether
+the engine still sounds the same, `unit_es` asks whether a function is the same
+function, and `es_reftest` asks whether the harness still reproduces a recording
+made through SAPI.  Work that is not covered by one of them is work that is not
+finished.
 
-Where it stands, counting only code the corpus actually executes and
-excluding the C runtime, which is bound rather than decompiled (the MSVC 4.2
-objects begin at 0x1002345a; everything below that address is the engine's
-own): **130 of 195 functions and 43,985 of 87,061 bytes, 50.5%.**  Rerun the
-measurement with `python tools/covrun.py --lang es --full`, which writes
-`work/cov_es_merged.txt`, and rank what is left with `tools/xmatch.py`.
+Where it stands, counting only code the corpus actually executes and excluding
+the C runtime, which is bound rather than decompiled (the MSVC 4.2 objects begin
+at 0x1002345a; everything below that address is the engine's own): **196 of 196
+functions and 87,277 of 87,277 bytes, 100%.**  Rerun the measurement with
+`python tools/covrun.py --lang es --full`, which writes
+`work/cov_es_merged.txt`.
 
-1. The leaves.  They call nothing at all, so they can be tested
-   exhaustively with no engine, which is the cheapest ground there is.
-   `Synth_Generate` was the biggest of them and is done.
-2. Take the 1995 core before the Spanish-only code: `xmatch --near`
-   against Italian and German makes those cheap to read, and each one
-   decompiled serves four languages.  The two subtrees with the most bytes
-   executing are `Stage3_Run` -> `sub_1001b880` -> `sub_10010ba0`,
-   `sub_10016460` and `sub_1001b440`.
-3. Follow the *other* rule bytecode, at `0x1005fb88`, which `Stage0_Reset`
-   points `s0_ip` at.  There are two machines, not one: `Rule_Eval` runs on
-   the `TextIn` and rewrites tokens, and this one runs in stage 0 and is
-   the doorway to the front end.  Whether they share an
-   encoding is not established -- `s0_ip` steps through its own stack of
-   frames and nothing has been read across yet.
-4. The rest of the `.bss` question.  `Abbrev_Init` and `Lexicon_Init` show
-   one shape it takes -- a table shipped read-only and duplicated into
-   `.bss` on first use so it can be added to -- but the two together
-   account for 2 KB of the 103 KB.
-5. Find the live SAPI object count, the last of the fifteen harness
-   addresses.  Nothing needs it, so it is the least urgent thing here.
+So the Spanish engine is done, in the sense the project has measured all along:
+every function the 205 corpus configurations reach is decompiled, and the whole
+of it is byte-exact -- 205 of 205 configurations, the `unit_es` suites with
+hooks off, and the SAPI recording.  202 functions are hooked in all, the six
+beyond the executing set being callees that were cheap to write while their
+callers were open.
 
-Two earlier items are done.  The escape-sequence gap is closed:
-`tests/corpus_es` now carries six `ESC [` inputs, 17 through 22.  The output
-block 0x0692..0x0700 is placed field by field, above.
+What is not decompiled is the code the corpus never reaches: 226 functions and
+44.5 KB below the CRT boundary, out of 428 and 130 KB.  Two thirds of those
+bytes -- 68 functions and 29.6 KB -- are in functions that call Win32 or COM
+directly, which is the DLL's own SAPI 4 plumbing and not the engine: the biggest
+are the wide-character text interface (`sub_1000c1d0`, `WideCharToMultiByte`),
+the engine thread and its message loop (`sub_1000b0e0`, `WaitForSingleObject`
+and `PostMessageA`, and no static caller) and a properties dialog
+(`sub_100051c0`, `SendDlgItemMessageA` and `WinHelpA`).  This project replaces
+that layer rather than reproducing it.  The remaining 158 functions and 14.9 KB
+import nothing and average 96 bytes -- thunks, accessors and the arms of the
+front end that no interface this harness offers can reach, the three mode 4
+header handlers among them.  Getting to those needs new ways in before it needs
+new C, so the honest next step is not more functions:
+
+1. **The three mode 4 header handlers** (`sub_10022cf0`, `sub_10022e90`,
+   `sub_10022f90`) are the only front-end code left with a caller that is
+   written.  `-U mode4` now covers `TextIn_Mode4` and `TextIn_InsertText` the
+   same way; the handlers need `TextIn_Mode4Reset` driven over a made-up message,
+   which means giving the test an engine with the message in its input ring,
+   because that is where `TextIn_ReadLine` reads from.
+2. **The other rule bytecode**, at `0x1005fb88`, which `Stage0_Reset` points
+   `s0_ip` at.  There are two machines, not one: `Rule_Eval` runs on the
+   `TextIn` and rewrites tokens, and this one runs in stage 0.  Both are now
+   decompiled, but whether they share an encoding is still not established.
+3. **The rest of the `.bss` question.**  `Abbrev_Init` and `Lexicon_Init` show
+   one shape it takes -- a table shipped read-only and duplicated into `.bss` on
+   first use so it can be added to -- but the two together account for 2 KB of
+   the 103 KB.
+4. **The live SAPI object count**, the last of the fifteen harness addresses.
+   Nothing needs it, so it is the least urgent thing here.
+
+Two earlier items are done.  The escape-sequence gap is closed: `tests/corpus_es`
+now carries six `ESC [` inputs, 17 through 22.  The output block 0x0692..0x0700
+is placed field by field, above.

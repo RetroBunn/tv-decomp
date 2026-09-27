@@ -2,17 +2,18 @@
  * Helpers of the rule interpreter.
  *
  * `TextIn_Advance` looks a token up, gets back a list of rules, and hands
- * each one to `sub_1001e5d0`, which is a recursive interpreter over a
- * bytecode: a stream of int16 words, one opcode per word, dispatched through
- * an 88-entry jump table for opcodes 4..0x5b.  Operands that are single
- * bytes occupy the low half of the following word, which is why every
- * handler here advances `rule_ip` by two and reads one byte.  The
- * interpreter's state lives on the `TextIn` at 0x68 onward -- the 0x3c this
- * object has and the English one does not.
+ * each one to `Rule_Eval`, a recursive interpreter over a bytecode: a stream
+ * of int16 words, one opcode per word, dispatched through an 88-entry jump
+ * table for opcodes 4..0x5b.  Operands that are single bytes occupy the low
+ * half of the following word, which is why every handler here advances
+ * `rule_ip` by two and reads one byte.  The interpreter's state lives on the
+ * `TextIn` at 0x68 onward -- the 0x3c this object has and the English one
+ * does not.
  *
- * The dispatcher itself is not written yet.  These are the pieces of it that
- * are separate functions, so they can be replaced and checked one at a time
- * while the arms that call them are still the original's.
+ * These are the arms of it that are separate functions, which is what let
+ * them be replaced and checked one at a time while the dispatcher was still
+ * the original's.  At the end of the file are the two classifiers that decide
+ * what a token is before any rule runs at all.
  */
 #include "es_engine.h"
 
@@ -765,6 +766,442 @@ int32_t TV_THISCALL Rule_SayGroupedNumber(TextIn *self, Token **first,
         while (*first != p)
             p = TextIn_RemoveToken(self, p, -1);
         *first = TextIn_RemoveToken(self, p, 1);
+    }
+    return 1;
+}
+
+/*
+ * What kind of number a numeric token is, as flags.
+ *
+ * The flag 0x14 says "a number" and goes on unconditionally; a leading zero
+ * adds 0x35 and five digits add 0xc.  What follows the number then decides the
+ * rest, and the interesting cases are the ones that make a date or a time out
+ * of two numbers in a row:
+ *
+ *   ª  an ordinal, feminine: 0x4a and 0x31, and nothing else
+ *   º  an ordinal, masculine: 0x31, and nothing else
+ *   '  0x40
+ *   ,  0x12 and 0xe
+ *   - . /  a day, if it is 1 to 31 in at most two digits: 0x39 and 0xa.  A
+ *          full stop also gets 0x11, and doubles as a month when the token
+ *          before it was not already one.
+ *   :  a time: 0x3e for the hour, or 0x3c for the minutes when the token
+ *          before was the hour
+ *
+ * and then, whatever the trailing character, the token before is looked at:
+ * after a day comes a month (0x3a), after a month a year (0x3b), and after an
+ * hour the minutes (0x3c).
+ */
+/* @0x1001fde0 */
+int32_t TV_STDCALL Rule_ClassifyNumber(Token *t)
+{
+    uint32_t *bits = t->bits;
+    uint32_t *prev = t->prev != NULL ? t->prev->bits : NULL;
+    uint8_t trail;
+
+    Bits_Set(0x14, bits);
+    t->w34 = 0;
+    if (t->text[0] == '0')
+        Bits_Set(0x35, bits);
+    if (t->len == 5)
+        Bits_Set(0xc, bits);
+
+    trail = t->trail;
+    switch (trail) {
+    case 0xaa:
+        Bits_Set(0x4a, bits);
+        Bits_Set(0x31, bits);
+        return 1;
+    case 0xba:
+        Bits_Set(0x31, bits);
+        return 1;
+    case '\'':
+        Bits_Set(0x40, bits);
+        break;
+    case ',':
+        Bits_Set(0x12, bits);
+        Bits_Set(0xe, bits);
+        break;
+    case '-':
+    case '.':
+    case '/':
+        if (!Bits_Test(0x39, prev) && t->num > 0 && t->num < 0x20 &&
+            t->len < 3) {
+            Bits_Set(0x39, bits);
+            Bits_Set(0xa, bits);
+        }
+        if (trail == '.') {
+            Bits_Set(0x11, bits);
+            if (!Bits_Test(0x3e, prev) && t->num >= 0 && t->num < 0x19 &&
+                t->len < 3) {
+                Bits_Set(0x3e, bits);
+                Bits_Set(0xb, bits);
+            }
+        }
+        break;
+    case ':':
+        if (Bits_Test(0x3e, prev)) {
+            if (t->len == 2 && t->num >= 0 && t->num < 0x3c) {
+                Bits_Set(0x3c, bits);
+                Bits_Set(0xb, bits);
+            }
+        } else if (t->len < 3 && t->num >= 0 && t->num < 0x19) {
+            Bits_Set(0x3e, bits);
+            Bits_Set(0xb, bits);
+        }
+        break;
+    default:
+        break;
+    }
+
+    if (Bits_Test(0x39, prev)) {
+        if (t->num > 0 && t->num < 0xd && t->len < 3) {
+            Bits_Set(0x3a, bits);
+            Bits_Set(0xa, bits);
+        }
+    } else if (Bits_Test(0x3a, prev)) {
+        if ((t->len == 2 && t->num > 0x14) ||
+            (t->len == 4 && t->num < 0x7e4)) {
+            Bits_Set(0x3b, bits);
+            Bits_Set(0xa, bits);
+        }
+    }
+    if (Bits_Test(0x3e, prev) && t->len == 2 && t->num >= 0 &&
+        t->num < 0x3c) {
+        Bits_Set(0x3c, bits);
+        Bits_Set(0xb, bits);
+    }
+    return 1;
+}
+
+/* The abbreviation records, 0x2c bytes ahead of the expansion text
+ * es/tables.c searches: two int16 for the token's w08 and w0a, three dwords of
+ * flags to be or-ed into it, the record's own flag set at +0x14, and the
+ * expansion at +0x2c. */
+/* @0x10062048 */
+extern const uint8_t g_abbrev_rec[];
+/* @0x10045898 */
+extern int32_t g_abbrev_index[507];
+
+/*
+ * Is this token an abbreviation, and if so which one.
+ *
+ * The text is looked up as it stands; failing that, and only when folding its
+ * accents actually changed it, the folded form is tried.  Abbrev_Find gives a
+ * run of records with the same spelling, and each is then tested against the
+ * token: the record carries a flag set of its own and every bit in it has to
+ * hold.  Most bits simply have to be set on the token as well.  Four --
+ * 25, 67, 68 and 70 -- and bit 69 form one group between them, of which any one
+ * passing is enough; bit 69 asks that the token's text equal the expansion
+ * exactly, and bit 71 asks for a trailing full stop.
+ *
+ * The first record that passes wins: its two int16 go into the token, its three
+ * flag words are or-ed into the token's, the record itself goes into d18 and
+ * flag 0x51 is cleared.  Returns whether one matched.
+ */
+/* @0x1001de40 */
+int32_t TV_CDECL Rule_MatchAbbrev(Token *t)
+{
+    char folded[0xb8];
+    const uint8_t *rec = NULL;
+    int32_t index = 0;
+    int32_t count;
+    int32_t changed = 0;
+    int32_t n = 0;
+    int32_t hit = 0;
+    int32_t group = 1;
+    int32_t ok = 1;
+    int32_t left;
+
+    if (t->text == NULL)
+        return 0;
+
+    count = Abbrev_Find(t->text, &index);
+    if (count == 0) {
+        const char *s = t->text;
+        uint8_t c = (uint8_t)*s;
+
+        while (c != 0) {
+            uint8_t out = Accent_Fold(&c);
+
+            if (out != 0) {
+                folded[n++] = (char)out;
+                if (c != 0) {
+                    n++;
+                    changed = 1;
+                    folded[n - 1] = (char)c;
+                }
+            }
+            c = (uint8_t)s[1];
+            s++;
+        }
+        folded[n] = 0;
+        if (changed)
+            count = Abbrev_Find(folded, &index);
+    }
+
+    left = count;
+    while (left-- > 0) {
+        const uint32_t *recbits;
+        int32_t bit = 0;
+
+        if (hit != 0)
+            goto apply;
+        rec = g_abbrev_rec + g_abbrev_index[index];
+        recbits = (const uint32_t *)(rec + 0x14);
+        hit = 1;
+        group = 1;
+        ok = 1;
+        for (;;) {
+            bit = Bits_Next(bit, recbits);
+            if (bit == 0) {
+                if (ok != 0) {
+                    hit = 1;
+                    if (group != 0)
+                        break;
+                }
+                hit = 0;
+                break;
+            }
+            if (ok == 0) {
+                hit = 0;
+                break;
+            }
+            if (bit == 25 || bit == 67 || bit == 68 || bit == 70) {
+                if (hit != 0 || group == 0)
+                    group = Bits_Test(bit, t->bits);
+                hit = 0;
+            } else if (bit == 69) {
+                if (hit != 0 || group == 0)
+                    group = strcmp(t->text,
+                                   (const char *)rec + 0x2c) == 0 ? 1 : 0;
+                hit = 0;
+            } else if (bit == 71) {
+                if (t->trail != '.')
+                    ok = 0;
+            } else if (!Bits_Test(bit, t->bits)) {
+                ok = 0;
+            }
+        }
+        index++;
+    }
+    if (hit == 0)
+        return 0;
+
+apply:
+    {
+        const uint32_t *w = (const uint32_t *)(rec + 8);
+        uint32_t *b = t->bits;
+        int k;
+
+        t->w08 = (int16_t)*(const int32_t *)rec;
+        t->w0a = (int16_t)*(const int32_t *)(rec + 4);
+        t->d18 = (void *)rec;
+        for (k = 0; k < 3; k++)
+            b[k] |= w[k];
+        Bits_Clear(0x51, b);
+    }
+    return 1;
+}
+
+/* The word Rule_ClassifyToken puts in place of ten or more of the same
+ * character in a row. */
+/* @0x1006ae00 */
+extern const char g_str_etcetera[];   /* "etcetera." */
+
+/*
+ * What kind of word a token is, as flags.
+ *
+ * The token's flag set is cleared and then built from one walk over its text,
+ * counting what each character is against the class table: digits, letters,
+ * capitals, vowels, punctuation, arithmetic operators, Roman numeral letters,
+ * carriage returns, and the dots and letters that make up a dotted
+ * abbreviation.  A count equal to the length means every character was of that
+ * kind, and that is what most of the flags below test.
+ *
+ *   0x43  a capital and only one, so the word is merely capitalised
+ *   0x19 / 0x46  all capitals, or not
+ *   0x18  more than one capital, or all capitals, or letters and no vowel at
+ *         all, or all dots and letters -- between them, "spell it out"
+ *   7     a dotted abbreviation
+ *   0xf, 0x14  a Roman numeral, with its value in Token.num; and 0x3a on top
+ *         of that when the number before it could be a day, so XII becomes a
+ *         month
+ *   0x44  letters throughout and not one capital
+ *   0x51, 2, 0x54  all punctuation: 0x51 unless it is one sentence mark,
+ *         0x54 once past six of them or if a carriage return was among them
+ *   0x13  all operators, or a trailing one
+ *   0x1a  trailing punctuation
+ *   0x31, 0xf, 0x14  a Roman numeral with an 'e' after it
+ *
+ * All digits is not a flag but a different question, so it hands the token to
+ * Rule_ClassifyNumber with its value in Token.num, and so does a token that
+ * arrives already marked as a number.  A newline in the first two characters
+ * is 0x53 and 0x54 and nothing else.
+ *
+ * Ten or more of the same character in a row -- a rule of dots, say -- is cut
+ * back to the four that came before them and "etcetera." is inserted after it
+ * as a token of its own.
+ *
+ * The trailing character is looked up with its sign kept, so a trailing
+ * character above 0x7f reads the class table at a negative index -- 0x200
+ * bytes before the table for 0x80, four bytes before it for 0xff.  Faithful
+ * to the original, which does the same, and the reason the flags do not have
+ * to make sense there.
+ */
+/* @0x1001f950 */
+int32_t TV_THISCALL Rule_ClassifyToken(TextIn *self, Token *t)
+{
+    const char *s;
+    uint32_t *bits = t->bits;
+    uint32_t cls = 0;             /* the class word of the character before */
+    int32_t dotted = 0, upper = 0, roman = 0, letters = 0, digits = 0;
+    int32_t ops = 0, crs = 0, punct = 0, vowels = 0, starts_upper = 0;
+    uint8_t prev = 0, prev2 = 0;
+    int32_t run = 0;              /* how many of the same character in a row */
+    int32_t n = 0;
+
+    bits[0] = 0;
+    bits[1] = 0;
+    bits[2] = 0;
+    if (t->is_number != 0) {
+        Rule_ClassifyNumber(t);
+        return 1;
+    }
+    s = t->text;
+    if (s == NULL) {
+        if ((g_char_flags[(int32_t)(int8_t)t->trail] & 0x40) == 0)
+            Bits_Set(0x51, bits);
+        return 1;
+    }
+    if (s[0] == '\n' || s[1] == '\n') {
+        Bits_Set(0x53, bits);
+        Bits_Set(0x54, bits);
+        return 1;
+    }
+
+    if (s[0] != 0) {
+        for (;;) {
+            uint8_t c = (uint8_t)s[n];
+            uint32_t k = g_char_flags[c];
+
+            if (c == '\r')
+                crs++;
+            if (k & 8)
+                digits++;
+            if (k & 0x40)
+                ops++;
+            if (k & 0x200)
+                roman++;
+            if (k & 4) {
+                letters++;
+                if (prev == '.')
+                    dotted++;
+            }
+            if (k & 0x10) {
+                upper++;
+                if (n == 0)
+                    starts_upper = 1;
+            }
+            if (k & 0x80)
+                vowels++;
+            if (k & 0x20)
+                punct++;
+            if (c == '.' && (cls & 4))
+                dotted++;
+            if ((k & 0x20) == 0) {
+                if (prev == c)
+                    run++;
+                else if (prev2 == c)
+                    run++;
+                else
+                    run = 0;
+                if (run >= 10) {
+                    Token *tok;
+
+                    /* the four before the run stay, and everything from there
+                     * on becomes a token of its own */
+                    t->text[n - 6] = 0;
+                    t->trail = ' ';
+                    t->len = (int16_t)(t->len - 6);
+                    tok = TextIn_InsertAfter(self, t);
+                    AllocString(&tok->text, 10);
+                    strcpy(tok->text, g_str_etcetera);
+                    tok->len = 9;
+                    tok->trail = ' ';
+                    break;
+                }
+            }
+            prev2 = prev;
+            n++;
+            prev = c;
+            cls = k;
+            if (s[n] == 0)
+                break;
+        }
+    }
+
+    if (starts_upper && upper == 1)
+        Bits_Set(0x43, bits);
+    Bits_Set(n == upper ? 0x19 : 0x46, bits);
+    if (upper > 1 || n == upper)
+        Bits_Set(0x18, bits);
+    if (vowels == 0 && letters > 0)
+        Bits_Set(0x18, bits);
+    if (n == dotted) {
+        Bits_Set(7, bits);
+        Bits_Set(0x18, bits);
+    }
+    if (n == roman) {
+        int32_t v = Roman_Value(t->text);
+
+        if (v > 0) {
+            Bits_Set(0xf, bits);
+            Bits_Set(0x14, bits);
+            if (t->prev != NULL && t->prev->num > 1 && t->prev->num < 0x20 &&
+                v < 0xd)
+                Bits_Set(0x3a, bits);
+            t->num = v;
+        }
+    }
+    if (upper == 0 && n == letters)
+        Bits_Set(0x44, bits);
+    if (n == punct) {
+        if (n == 1 && s[0] == '\'')
+            t->w08 = 0x212;
+        if (n > 1 || (cls & 0x42) == 0)
+            Bits_Set(0x51, bits);
+        if (n > 3)
+            Bits_Set(2, bits);
+        if (n > 6 || crs != 0)
+            Bits_Set(0x54, bits);
+    }
+    if (n == ops && n <= 2)
+        Bits_Set(0x13, bits);
+    if (g_char_flags[(int32_t)(int8_t)t->trail] & 0x40)
+        Bits_Set(0x13, bits);
+    if (g_char_flags[(int32_t)(int8_t)t->trail] & 0x20)
+        Bits_Set(0x1a, bits);
+    if (n == digits) {
+        int32_t v = tv_atol(t->text);
+
+        t->w34 = 0;
+        t->num = v;
+        t->is_number = 1;
+        Rule_ClassifyNumber(t);
+        return 1;
+    }
+
+    n--;
+    if (s[n] == 'e' && n > 0 && n == roman) {
+        int32_t v = Roman_Value(t->text);
+
+        if (v > 0) {
+            Bits_Set(0x31, bits);
+            Bits_Set(0xf, bits);
+            Bits_Set(0x14, bits);
+            t->num = v;
+        }
     }
     return 1;
 }

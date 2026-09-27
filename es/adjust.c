@@ -761,3 +761,296 @@ tail:
         c_cur == 'S')
         self->trk_param[0][0] = 4;
 }
+
+/*
+ * The phoneme boundary: whether to emit a pause, and what to set after it.
+ *
+ * Three parts.  The first is a gauntlet of tests that has to be passed
+ * before Track_EmitPause runs at all -- the control phoneme must not be
+ * flagged either of two ways nor be 'I', the current one must not be a
+ * voiceless stop, and 'S' takes its own exit that zeroes two levels instead.
+ * Note that an 'S' whose control phoneme is not flagged falls through into
+ * the second test rather than skipping, so it is checked twice.
+ *
+ * The second sets the blend shape on tracks 9 to 16 to 7, or 11 for a 'Y'
+ * after a flagged control phoneme, and full blend weight on tracks 9 to 11.
+ *
+ * The third is a block of eleven levels for 'y', the palatal glide, and a
+ * final bump to track 10's shape.
+ */
+/* @0x10015540 */
+void TV_THISCALL Track_AdjustBoundary(Engine *self)
+{
+    Node *ctl = self->stage_ctx[3].ctl;
+    int32_t c_ctl = ctl->value;
+    Node *cur;
+    int32_t c_cur;
+    int32_t i;
+
+    if (!(g_10058618[cls180((uint8_t)c_ctl)] & 0x20) &&
+        !(g_10058618[cls100((uint8_t)c_ctl)] & 0x40) &&
+        c_ctl != 'I') {
+        cur = self->stage_ctx[3].cur;
+        c_cur = cur->value;
+        if (c_cur != 'P' && c_cur != 'T' && c_cur != 'K' && c_cur != 'C') {
+            int done = 0;
+
+            if (c_cur == 'S' && (g_10058618[cls0((uint8_t)c_ctl)] & 4)) {
+                self->trk_param[1][6] = 0;
+                self->trk_param[2][6] = 0;
+                done = 1;
+            }
+            if (!done && !(g_10058618[cls0((uint8_t)c_cur)] & 4) &&
+                c_cur != ' ' && !(cur->flags & 0x40))
+                Track_EmitPause(self);
+        }
+    }
+
+    c_cur = self->stage_ctx[3].cur->value;
+    if (c_cur == 'C')
+        self->trk_param[1][0] = 4;
+
+    if (g_10058618[cls180((uint8_t)c_cur)] & 1) {
+        int32_t v = 7;
+
+        if ((g_10058618[cls180((uint8_t)self->stage_ctx[3].ctl->value)] & 0x20)
+            && c_cur == 'Y')
+            v = 0xb;
+        for (i = 0; i < 8; i++)
+            self->trk_param[9 + i][2] = v;
+    }
+
+    if (g_10058618[cls180((uint8_t)c_cur)] & 0x40) {
+        self->trk_4e8[9] = 0x2cd8;
+        self->trk_4e8[10] = 0x2cd8;
+        self->trk_4e8[11] = 0x2cd8;
+    }
+
+    c_ctl = self->stage_ctx[3].ctl->value;
+    if (c_ctl == 'y') {
+        self->trk_param[3][6] = 0x37;
+        self->trk_param[5][6] = 0x2e;
+        self->trk_param[1][6] = 0x19;
+        self->trk_param[6][6] = 0x2e;
+        self->trk_param[8][6] = 0x37;
+        self->trk_param[2][6] = 0x1e;
+        self->trk_param[4][6] = 0x34;
+        self->trk_param[7][6] = 0x3c;
+        self->trk_param[13][6] = 0xb4;
+        self->trk_param[14][6] = 0x12c;
+        self->trk_param[15][6] = 0x15e;
+    }
+
+    if ((g_10058618[cls180((uint8_t)c_ctl)] & 0x20) &&
+        (g_10058618[cls180((uint8_t)c_cur)] & 4))
+        self->trk_param[10][2] += 5;
+}
+
+/*
+ * The stop burst.
+ *
+ * The seven phonemes this dispatches on -- B C D G K P T -- are exactly the
+ * stops, and what it does is write a fixed value into a track s3_460 samples
+ * back from where that track's cursor now is.  So it is patching the release
+ * into audio the earlier stages have already laid down.
+ *
+ * Which track and what value depend on the pair: 'D' takes its value from
+ * the following vowel (A and O give 0x32, I gives 0x35, a tap gives 0x41,
+ * anything else 0x37), 'C' writes seven bytes rather than one, 'K' writes
+ * nothing at all, and the rest are fixed.  Track 1 and track 8 are the two
+ * that get written, sometimes both.
+ */
+/* @0x100150f0 */
+void TV_THISCALL Track_StopBurst(Engine *self)
+{
+    int32_t c_ctl = self->stage_ctx[3].ctl->value;
+    int32_t c_cur = self->stage_ctx[3].cur->value;
+    int32_t back = self->s3_460;
+
+    switch ((int8_t)c_cur) {
+    case 'B':
+        Track_Fill(self->trk_buf[1], self->trk_wr[1] - back, 1, 0x37);
+        return;
+    case 'C':
+        Track_Fill(self->trk_buf[8], self->trk_wr[8] - back - 1, 7, 0x42);
+        return;
+    case 'D': {
+        int32_t v;
+
+        switch ((int8_t)c_ctl) {
+        case 'A': case 'O': v = 0x32; break;
+        case 'I':           v = 0x35; break;
+        case 'r':           v = 0x41; break;
+        default:            v = 0x37; break;
+        }
+        Track_Fill(self->trk_buf[1], self->trk_wr[1] - self->s3_460, 1,
+                   (uint8_t)v);
+        if (c_ctl == 'U')
+            Track_Fill(self->trk_buf[0], self->trk_wr[0] - self->s3_460, 1,
+                       0x2e);
+        return;
+    }
+    case 'G':
+        if (c_ctl == 'O' || c_ctl == 'U') {
+            Track_Fill(self->trk_buf[1], self->trk_wr[1] - back, 1, 0x32);
+            Track_Fill(self->trk_buf[8], self->trk_wr[8] - back, 1, 0x37);
+        } else {
+            Track_Fill(self->trk_buf[1], self->trk_wr[1] - back, 1, 0x37);
+        }
+        return;
+    case 'K':
+        return;
+    case 'P':
+        if (c_ctl == 'A') {
+            Track_Fill(self->trk_buf[1], self->trk_wr[1] - back, 1, 0x32);
+        } else if (c_ctl == 'r') {
+            Track_Fill(self->trk_buf[8], self->trk_wr[8] - back, 1, 0x32);
+            Track_Fill(self->trk_buf[1], self->trk_wr[1] - back, 1, 0x2d);
+        } else {
+            Track_Fill(self->trk_buf[8], self->trk_wr[8] - back, 1, 0x3c);
+            Track_Fill(self->trk_buf[1], self->trk_wr[1] - back, 1, 0x37);
+        }
+        return;
+    case 'T':
+        if (c_ctl == 'r') {
+            Track_Fill(self->trk_buf[1], self->trk_wr[1] - back, 1, 0x3f);
+        } else {
+            Track_Fill(self->trk_buf[8], self->trk_wr[8] - back, 1, 0x3c);
+            Track_Fill(self->trk_buf[1], self->trk_wr[1] - back, 1, 0x37);
+        }
+        return;
+    default:
+        Track_Fill(self->trk_buf[8], self->trk_wr[8] - back, 1, 0x37);
+        return;
+    }
+}
+
+/*: swap the three level pairs and complement the three weights.  This is
+ * its own inverse, which is why sub_10010630 calls it twice. */
+static void adj_flip(Engine *self)
+{
+    int32_t i;
+
+    for (i = 9; i <= 11; i++) {
+        int32_t t = self->trk_490[i];
+
+        self->trk_490[i] = self->trk_param[i][6];
+        self->trk_param[i][6] = t;
+    }
+    for (i = 9; i <= 11; i++)
+        self->trk_4e8[i] = 0x7ffe - self->trk_4e8[i];
+}
+
+/*
+ * Corrections for the transition between two phonemes, in whichever
+ * direction it runs.
+ *
+ * The two phonemes are stage 3's current and control nodes, and which of
+ * them counts as the start of the transition depends on s3_44c against
+ * s3_448 -- the class of this segment against the class of the last one.
+ * When the new class is the higher, the roles are exchanged: the three level
+ * pairs are swapped, the three blend weights are complemented, and the
+ * control node takes the near role.  The same flip runs again at the end,
+ * which puts everything back, so the flip is a way of writing the body once
+ * for both directions rather than a lasting change.
+ *
+ * A space in the current node skips the whole thing, flip included.
+ */
+/* @0x10010630 */
+void TV_THISCALL Track_AdjustTransition(Engine *self)
+{
+    Node *cur = self->stage_ctx[3].cur;
+    Node *pa, *pb;
+    int flipped;
+    int32_t i;
+
+    if (cur->value == ' ')
+        return;
+
+    flipped = self->s3_44c > self->s3_448;
+    if (flipped) {
+        pa = self->stage_ctx[3].ctl;
+        pb = cur;
+        adj_flip(self);
+    } else {
+        pa = cur;
+        pb = self->stage_ctx[3].ctl;
+    }
+
+    if ((g_10058618[cls180(pa->value)] & 4) &&
+        !(g_10058618[cls0(pa->value)] & 2)) {
+        self->trk_4e8[10] = 0x19a0;
+        self->trk_param[10][2] += 3;
+    }
+
+    if ((g_10058618[cls180(pb->value)] & 4) &&
+        (g_10058618[cls80(pa->value)] & 8))
+        self->trk_param[11][6] += 0x12c;
+
+    if ((pa->value == 'd' || pa->value == 'b' || pa->value == 'g') &&
+        (g_10058618[cls100(pb->value)] & 2))
+        for (i = 0; i < 5; i++)
+            self->trk_param[3 + i][0] = 4;
+
+    if ((pb->value == 'd' || pb->value == 'b' || pb->value == 'g') &&
+        pa->value == 'r')
+        for (i = 0; i < 5; i++)
+            self->trk_param[3 + i][0] = 4;
+
+    if (!(g_10058618[cls100(pb->value)] & 1) &&
+        (g_10058618[cls100(pa->value)] & 1)) {
+        self->trk_4e8[9] = 0x4010;
+        self->trk_4e8[11] = 0;
+        self->trk_4e8[10] = 0;
+
+        if (g_10058618[cls0(pa->value)] & 0x10) {
+            self->trk_4e8[9] = 0;
+            self->trk_param[16][0] = 6;
+        }
+        if (g_10058618[cls100(pa->value)] & 0x10) {
+            self->trk_4e8[10] = 0x19a0;
+            self->trk_4e8[11] = 0x59b0;
+            if (g_10058618[cls100(pb->value)] & 0x20) {
+                self->trk_4e8[10] = 0x5348;
+                self->trk_4e8[11] = 0x19a0;
+            }
+        }
+        if (g_10058618[cls100(pa->value)] & 4) {
+            self->trk_490[10] = 0x640;
+            self->trk_490[11] = 0xa3c;
+            if (pa->value == 'N')
+                self->trk_490[10] = 0x578;
+            if (g_10058618[cls100(pb->value)] & 0x40)
+                self->trk_490[10] = 0x41a;
+        }
+        if (g_10058618[cls100(pa->value)] & 0x80) {
+            int32_t f2 = self->trk_param[10][6];
+            int32_t f1 = self->trk_param[9][6];
+            int32_t lo = f2 + f1 * 2 - 0x258;
+            int32_t hi = f2 + f1 * 2 - 0xc8;
+
+            self->trk_490[10] = lo;
+            self->trk_490[11] = hi;
+            if (g_10058618[cls100(pb->value)] & 0x10) {
+                hi += 0x190;
+                self->trk_490[11] = hi;
+            }
+            if (pa->value == '~') {
+                self->trk_490[10] = (lo + f2) / 2;
+                self->trk_490[11] =
+                    (self->trk_param[11][6] + self->trk_490[11]) / 2;
+            }
+            if (pb->value == 'I' || pb->value == 'a') {
+                self->trk_490[10] += 0xfa;
+                self->trk_490[11] = self->trk_param[11][6] + 0x32;
+            }
+        }
+    }
+
+    if (!(g_10058618[cls0(pb->value)] & 0x10) &&
+        (g_10058618[cls0(pa->value)] & 0x10))
+        self->trk_4e8[16] = 0;
+
+    if (self->s3_44c > self->s3_448)
+        adj_flip(self);
+}

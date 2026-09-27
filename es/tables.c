@@ -79,3 +79,93 @@ int32_t TV_CDECL Lexicon_Init(void)
     g_lex_loaded = 1;
     return 0;
 }
+
+/* The two blobs the two indexes point into.  Each entry is a word followed by
+ * what to say instead of it. */
+/* @0x1006afb6 */
+extern const char g_lex_text[];
+/* @0x10062074 */
+extern const char g_abbrev_text[];
+
+/*
+ * The comparison both searches use.  The original calls the CRT's _stricmp,
+ * which folds only A to Z -- not the accented letters the abbreviation table
+ * is full of -- and compares the bytes unsigned, so it is written out here
+ * rather than handed to a library function that might do either differently.
+ */
+static int32_t word_cmp(const char *a, const char *b)
+{
+    for (;;) {
+        uint8_t ca = (uint8_t)*a++;
+        uint8_t cb = (uint8_t)*b++;
+
+        if (ca == cb) {
+            if (ca == 0)
+                return 0;
+            continue;
+        }
+        if ((uint8_t)(ca - 'A') < 26u)
+            ca = (uint8_t)(ca + 0x20);
+        if ((uint8_t)(cb - 'A') < 26u)
+            cb = (uint8_t)(cb + 0x20);
+        if (ca == cb)
+            continue;
+        return ca < cb ? -1 : 1;
+    }
+}
+
+/*
+ * The search both lookups are: a binary search over `top` + 1 sorted entries,
+ * a walk back to the first one that matches, and a count of how many do.
+ *
+ * The last entry of each index is an empty string, which is why `top` is one
+ * less than the array length and why the count loop -- which reads one index
+ * past the last match -- stays inside the array for any non-empty word.  The
+ * original writes this out twice, once per table, with the same dead arm for
+ * a span of 1 in each; it works out the same `lo` that span / 2 does.
+ */
+static int32_t word_find(const char *word, const int32_t *index,
+                         const char *text, int32_t top, int32_t *first)
+{
+    int32_t lo = 0, hi = top, mid = top, span, cmp = -1, count;
+
+    if (word == NULL)
+        return 0;
+
+    for (;;) {
+        if (cmp < 0)
+            hi = mid;
+        else
+            lo = mid;
+        span = hi - lo;
+        mid = lo + span / 2;
+        cmp = word_cmp(word, text + index[mid]);
+        if (cmp == 0)
+            break;
+        if (span <= 1)
+            return 0;
+    }
+
+    while (mid > 0 && word_cmp(word, text + index[mid - 1]) == 0)
+        mid--;
+    *first = mid;
+    if (word_cmp(word, text + index[mid]) != 0)
+        return 0;
+    count = 0;
+    do {
+        count++;
+    } while (word_cmp(word, text + index[mid + count]) == 0);
+    return count;
+}
+
+/* @0x10023160 */
+int32_t TV_CDECL Lexicon_Find(const char *word, int32_t *first)
+{
+    return word_find(word, g_lex_index, g_lex_text, 0x4d, first);
+}
+
+/* @0x1001dd50 */
+int32_t TV_CDECL Abbrev_Find(const char *word, int32_t *first)
+{
+    return word_find(word, g_abbrev_index, g_abbrev_text, 0x1fa, first);
+}

@@ -37,17 +37,49 @@ static Engine *g_a, *g_b;
  * the per-track buffers -- so two engines at different addresses never
  * compare equal byte for byte however identically they were built.  Rewrite
  * every aligned word that points inside the object as its offset, and the
- * comparison becomes about content again.  A non-pointer that happens to
- * land in the object's address range is normalised on both sides, so it
- * cannot turn a difference into a match. */
+ * comparison becomes about content again.
+ *
+ * Only words that already differ from the other engine's are touched, and
+ * that is not a refinement but the whole correctness of it.  A word of plain
+ * data can look like an address: ESC[1I emits 1b 49 01 01 into mid_ring,
+ * which read back as a little-endian dword is 0x0101491b, and an engine the
+ * allocator had put near 0x01010000 claimed it as a pointer into itself while
+ * the other engine did not -- so two identical objects were rewritten into a
+ * difference, and the suite passed or failed from one run to the next
+ * depending on where the two engines had landed.  Words that are already
+ * equal cannot be a difference whatever they mean, so skipping them costs no
+ * coverage and makes the comparison independent of the addresses. */
 static void normalize(Engine *e)
 {
     uintptr_t base = (uintptr_t)e;
     uint32_t *w = (uint32_t *)e;
+    const uint32_t *o = (const uint32_t *)(e == g_a ? g_b : e == g_b ? g_a : NULL);
     size_t i;
-    for (i = 0; i < sizeof *e / 4; i++)
+    for (i = 0; i < sizeof *e / 4; i++) {
+        if (o != NULL && w[i] == o[i])
+            continue;
         if ((uintptr_t)w[i] >= base && (uintptr_t)w[i] < base + sizeof *e)
             w[i] = (uint32_t)((uintptr_t)w[i] - base);
+    }
+}
+
+/* Where the two objects first stop matching: the offset of the first dword
+ * that differs and what each of them holds there, in one static buffer, so a
+ * whole-object comparison can say where it went wrong and not only that it
+ * did. */
+static const char *diff_at(void)
+{
+    static char buf[64];
+    const uint32_t *a = (const uint32_t *)g_a, *b = (const uint32_t *)g_b;
+    size_t i;
+
+    for (i = 0; i < sizeof *g_a / 4; i++)
+        if (a[i] != b[i]) {
+            sprintf(buf, "%#lx %#lx/%#lx", (unsigned long)(i * 4),
+                    (unsigned long)a[i], (unsigned long)b[i]);
+            return buf;
+        }
+    return "nowhere";
 }
 
 static void setup(int32_t rd, int32_t wr, int mid)
@@ -551,8 +583,9 @@ static int unit_escape(void)
             if (memcmp(g_a, g_b, sizeof *g_a) != 0) {
                 if (bad++ < 8)
                     fprintf(stderr, "  Preformat_Run[modeI=%d %s]: state differs "
-                                    "(mid_wr=%#x/%#x esc_state=%d/%d)\n",
-                            m, t, (unsigned)g_a->mid_wr, (unsigned)g_b->mid_wr,
+                                    "at %s (mid_wr=%#x/%#x esc_state=%d/%d)\n",
+                            m, t, diff_at(),
+                            (unsigned)g_a->mid_wr, (unsigned)g_b->mid_wr,
                             (int)g_a->esc_state, (int)g_b->esc_state);
             }
         }
@@ -1546,14 +1579,22 @@ typedef struct {
                                 * depend on the struct being right */
 } rblock;
 
-static void norm_block(void *p, size_t n)
+/* The same as normalize(), and for the same reason: only words that already
+ * differ from the other block's are rewritten, so a word of plain data that
+ * happens to look like an address into one block and not the other cannot turn
+ * two identical blocks into a difference. */
+static void norm_block(void *p, const void *other, size_t n)
 {
     uintptr_t base = (uintptr_t)p;
     uint32_t *w = (uint32_t *)p;
+    const uint32_t *o = (const uint32_t *)other;
     size_t i;
-    for (i = 0; i < n / 4; i++)
+    for (i = 0; i < n / 4; i++) {
+        if (w[i] == o[i])
+            continue;
         if ((uintptr_t)w[i] >= base && (uintptr_t)w[i] < base + n)
             w[i] = (uint32_t)((uintptr_t)w[i] - base);
+    }
 }
 
 /* head <-> tok[1] <-> tok[2] <-> tok[3], with tok[0] standing in for the
@@ -1782,8 +1823,8 @@ static int unit_rule(void)
             A.tok[1].trail = B.tok[1].trail = (uint8_t)j;
             ra = ORIG(set_t, 0x10021600)(&A.ti, &A.tok[1], 0xdeadbeefu);
             rb = Rule_SetTrail(&B.ti, &B.tok[1], 0xdeadbeefu);
-            norm_block(&A, sizeof A);
-            norm_block(&B, sizeof B);
+            norm_block(&A, &B, sizeof A);
+            norm_block(&B, &A, sizeof B);
             n++;
             if (ra != rb || memcmp(&A, &B, sizeof A) != 0) {
                 if (bad++ < 8)
@@ -1797,8 +1838,8 @@ static int unit_rule(void)
             A.tok[1].trail = B.tok[1].trail = (uint8_t)j;
             ra = ORIG(match_t, 0x100215d0)(&A.ti, &A.tok[1]);
             rb = Rule_MatchTrail(&B.ti, &B.tok[1]);
-            norm_block(&A, sizeof A);
-            norm_block(&B, sizeof B);
+            norm_block(&A, &B, sizeof A);
+            norm_block(&B, &A, sizeof B);
             n++;
             if (ra != rb || memcmp(&A, &B, sizeof A) != 0) {
                 if (bad++ < 8)
@@ -1819,8 +1860,8 @@ static int unit_rule(void)
         {
             uintptr_t oa = ra ? (uintptr_t)ra - (uintptr_t)&A : 0;
             uintptr_t ob = rb ? (uintptr_t)rb - (uintptr_t)&B : 0;
-            norm_block(&A, sizeof A);
-            norm_block(&B, sizeof B);
+            norm_block(&A, &B, sizeof A);
+            norm_block(&B, &A, sizeof B);
             if (oa != ob || (ra == NULL) != (rb == NULL) ||
                 memcmp(&A, &B, sizeof A) != 0) {
                 if (bad++ < 8)
@@ -1855,8 +1896,8 @@ static int unit_rule(void)
                                     &A.ti, want[w], &A.tok[2], d, cnt, 1);
                                 rb = Rule_Scan(&B.ti, want[w], &B.tok[2],
                                                d, cnt, 1);
-                                norm_block(&A, sizeof A);
-                                norm_block(&B, sizeof B);
+                                norm_block(&A, &B, sizeof A);
+                                norm_block(&B, &A, sizeof B);
                                 n++;
                                 if (ra != rb || memcmp(&A, &B, sizeof A) != 0) {
                                     if (bad++ < 8)
@@ -1874,8 +1915,8 @@ static int unit_rule(void)
             rb_scan(&B, 5, 0, 0xf);
             ra = ORIG(scan_t, 0x10021080)(&A.ti, want[0], &A.tok[2], 1, 2, cnt);
             rb = Rule_Scan(&B.ti, want[0], &B.tok[2], 1, 2, cnt);
-            norm_block(&A, sizeof A);
-            norm_block(&B, sizeof B);
+            norm_block(&A, &B, sizeof A);
+            norm_block(&B, &A, sizeof B);
             n++;
             if (ra != rb || memcmp(&A, &B, sizeof A) != 0) {
                 if (bad++ < 8)
@@ -1898,8 +1939,8 @@ static int unit_rule(void)
             rb_scan(&B, 0, 0, 0xf);
             ra = ORIG(scan_t, 0x10021080)(&A.ti, want[0], &A.tok[2], 1, cnt, 0);
             rb = Rule_Scan(&B.ti, want[0], &B.tok[2], 1, cnt, 0);
-            norm_block(&A, sizeof A);
-            norm_block(&B, sizeof B);
+            norm_block(&A, &B, sizeof A);
+            norm_block(&B, &A, sizeof B);
             n++;
             if (ra != rb || memcmp(&A, &B, sizeof A) != 0) {
                 if (bad++ < 8)
@@ -4855,6 +4896,3498 @@ static int unit_average(void)
     return bad != 0;
 }
 
+/*
+ * Track_EmitPause and Track_AdjustBoundary.
+ *
+ * Both read Node.flags as well as the value -- 0x20 and 0x40 -- so the sweep
+ * covers those, and the durations tracks 0 and 2 have left are seeded small,
+ * since they are what the pause length gets clamped against.
+ */
+typedef void(__thiscall *bp_t)(Engine *);
+
+static Node g_bp_cur, g_bp_ctl, g_bp_scan;
+
+static void bp_seed(Engine *e, int ccur, int cctl, int flags, int seed)
+{
+    int i, j;
+    uint32_t r = (uint32_t)(seed * 2654435761u + 37u);
+
+    memset(e, 0, sizeof *e);
+    for (i = 0; i < 22; i++) {
+        e->trk_buf[i] = e->trk_data[i];
+        for (j = 0; j < 256; j++) {
+            r = r * 1103515245u + 12345u;
+            e->trk_data[i][j] = (uint8_t)(r >> 16);
+        }
+        e->trk_wr[i] = 70 + i;
+        e->trk_rd[i] = 30 + i;
+        r = r * 1103515245u + 12345u;
+        e->trk_490[i] = (int32_t)((r >> 16) & 0x7ff);
+        r = r * 1103515245u + 12345u;
+        e->trk_4e8[i] = (int32_t)((r >> 16) & 0x7fff);
+        for (j = 0; j < 7; j++) {
+            r = r * 1103515245u + 12345u;
+            e->trk_param[i][j] = (int32_t)((r >> 16) & 0x1ff);
+        }
+        /* the two durations the pause length is clamped against */
+        e->trk_param[i][3] = (int32_t)(seed % 3) * 9 - 4;
+    }
+    e->s3_478 = 30 + seed * 5;
+    g_bp_cur.value = (uint8_t)ccur;
+    g_bp_cur.flags = (uint32_t)flags;
+    g_bp_ctl.value = (uint8_t)cctl;
+    g_bp_ctl.flags = (uint32_t)flags;
+    g_bp_scan.value = 'A';
+    e->stage_ctx[3].cur = &g_bp_cur;
+    e->stage_ctx[3].ctl = &g_bp_ctl;
+    e->stage_ctx[3].scan = &g_bp_scan;
+}
+
+static int unit_pausebound(void)
+{
+    bp_t o_ep = (bp_t)(uintptr_t)0x10017f90;
+    bp_t o_ab = (bp_t)(uintptr_t)0x10015540;
+    static const char SET[] = "AEIOULMNnRrZCKGDSyY~ pmtUbdgTXP";
+    static const int FLAGS[] = {0, 0x20, 0x40, 0x60};
+    int w, li, ui, fi, sd, bad = 0, n = 0, shown = 0;
+    char d[80];
+
+    if (alloc_engines())
+        return 2;
+
+    for (w = 0; w < 2; w++) {
+        bp_t orig = w == 0 ? o_ep : o_ab;
+        void (TV_THISCALL *mine)(Engine *) =
+            w == 0 ? Track_EmitPause : Track_AdjustBoundary;
+
+        for (li = 0; SET[li]; li++)
+            for (ui = 0; SET[ui]; ui++)
+                for (fi = 0; fi < 4; fi++)
+                    for (sd = 0; sd < 3; sd++) {
+                        int k, differ;
+                        void *pa[22], *pb[22];
+
+                        bp_seed(g_a, SET[ui], SET[li], FLAGS[fi], sd);
+                        orig(g_a);
+                        bp_seed(g_b, SET[ui], SET[li], FLAGS[fi], sd);
+                        mine(g_b);
+                        n++;
+                        for (k = 0; k < 22; k++) {
+                            pa[k] = g_a->trk_buf[k];
+                            pb[k] = g_b->trk_buf[k];
+                            g_a->trk_buf[k] = NULL;
+                            g_b->trk_buf[k] = NULL;
+                        }
+                        g_a->stage_ctx[3].cur = NULL;
+                        g_b->stage_ctx[3].cur = NULL;
+                        g_a->stage_ctx[3].ctl = NULL;
+                        g_b->stage_ctx[3].ctl = NULL;
+                        g_a->stage_ctx[3].scan = NULL;
+                        g_b->stage_ctx[3].scan = NULL;
+                        differ = memcmp(g_a, g_b, sizeof *g_a) != 0;
+                        for (k = 0; k < 22; k++) {
+                            g_a->trk_buf[k] = (uint8_t *)pa[k];
+                            g_b->trk_buf[k] = (uint8_t *)pb[k];
+                        }
+                        if (differ) {
+                            if (shown++ < 6) {
+                                sprintf(d, "cur %c ctl %c flags 0x%x seed %d",
+                                        SET[ui], SET[li], FLAGS[fi], sd);
+                                fprintf(stderr, "  %s(%s) differs\n",
+                                        w == 0 ? "Track_EmitPause"
+                                               : "Track_AdjustBoundary", d);
+                            }
+                            bad++;
+                        }
+                    }
+    }
+
+    /* the control: the duration lookup scales the pause, so moving that
+     * table has to change the answer */
+    {
+        uint8_t *t = (uint8_t *)(uintptr_t)0x100581e8;
+        int caught, k;
+
+        /* 'B' is one of the eight phonemes whose class flag opens the
+         * duration lookup, and the two durations are set high so the pause
+         * length is not clamped back before the change can show. */
+        bp_seed(g_a, 'B', 'K', 0x20, 2);
+        g_a->trk_param[0][3] = 100;
+        g_a->trk_param[2][3] = 100;
+        o_ep(g_a);
+        for (k = 0; k < 256; k++)
+            t[k] = (uint8_t)(t[k] + 2);
+        bp_seed(g_b, 'B', 'K', 0x20, 2);
+        g_b->trk_param[0][3] = 100;
+        g_b->trk_param[2][3] = 100;
+        o_ep(g_b);
+        for (k = 0; k < 256; k++)
+            t[k] = (uint8_t)(t[k] - 2);
+        caught = g_a->trans_len != g_b->trans_len ||
+                 memcmp(g_a->trk_data[2], g_b->trk_data[2], 256) != 0;
+        g_a->stage_ctx[3].cur = NULL;
+        g_b->stage_ctx[3].cur = NULL;
+        n++;
+        if (!caught) {
+            fprintf(stderr, "  the pause harness does not see a moved "
+                            "duration table -- it is proving nothing\n");
+            bad++;
+        }
+    }
+
+    fprintf(stderr, "%-18s %d/%d identical\n", "pause+boundary", n - bad, n);
+    return bad != 0;
+}
+
+/*: Track_StopBurst writes into tracks 0, 1 and 8 a fixed distance back from
+ * their cursors, so the sweep is over the phoneme pair that picks the track
+ * and value, and over that distance including values that wrap. */
+static int unit_stopburst(void)
+{
+    bp_t orig = (bp_t)(uintptr_t)0x100150f0;
+    static const char CUR[] = "BCDGKPTAEIOULMNnRrSZXY ~";
+    static const char CTL[] = "AEIOUrLMNKS ";
+    static const int BACK[] = {0, 1, 5, 70, 100, 300, -3};
+    int ui, li, bi, sd, bad = 0, n = 0, shown = 0;
+
+    if (alloc_engines())
+        return 2;
+
+    for (ui = 0; CUR[ui]; ui++)
+        for (li = 0; CTL[li]; li++)
+            for (bi = 0; bi < 7; bi++)
+                for (sd = 0; sd < 2; sd++) {
+                    int k, differ;
+                    void *pa[22], *pb[22];
+
+                    bp_seed(g_a, CUR[ui], CTL[li], 0, sd);
+                    g_a->s3_460 = BACK[bi];
+                    orig(g_a);
+                    bp_seed(g_b, CUR[ui], CTL[li], 0, sd);
+                    g_b->s3_460 = BACK[bi];
+                    Track_StopBurst(g_b);
+                    n++;
+                    for (k = 0; k < 22; k++) {
+                        pa[k] = g_a->trk_buf[k];
+                        pb[k] = g_b->trk_buf[k];
+                        g_a->trk_buf[k] = NULL;
+                        g_b->trk_buf[k] = NULL;
+                    }
+                    g_a->stage_ctx[3].cur = NULL;
+                    g_b->stage_ctx[3].cur = NULL;
+                    g_a->stage_ctx[3].ctl = NULL;
+                    g_b->stage_ctx[3].ctl = NULL;
+                    g_a->stage_ctx[3].scan = NULL;
+                    g_b->stage_ctx[3].scan = NULL;
+                    differ = memcmp(g_a, g_b, sizeof *g_a) != 0;
+                    for (k = 0; k < 22; k++) {
+                        g_a->trk_buf[k] = (uint8_t *)pa[k];
+                        g_b->trk_buf[k] = (uint8_t *)pb[k];
+                    }
+                    if (differ) {
+                        if (shown++ < 6)
+                            fprintf(stderr,
+                                    "  Track_StopBurst(cur %c ctl %c back %d "
+                                    "seed %d) differs\n", CUR[ui], CTL[li],
+                                    BACK[bi], sd);
+                        bad++;
+                    }
+                }
+
+    /* the control: the distance back decides where the burst lands, so two
+     * different distances have to leave different buffers */
+    {
+        int caught;
+
+        bp_seed(g_a, 'C', 'A', 0, 1);
+        g_a->s3_460 = 5;
+        orig(g_a);
+        bp_seed(g_b, 'C', 'A', 0, 1);
+        g_b->s3_460 = 9;
+        orig(g_b);
+        caught = memcmp(g_a->trk_data[8], g_b->trk_data[8], 256) != 0;
+        g_a->stage_ctx[3].cur = NULL;
+        g_b->stage_ctx[3].cur = NULL;
+        n++;
+        if (!caught) {
+            fprintf(stderr, "  the stopburst harness does not see a changed "
+                            "offset -- it is proving nothing\n");
+            bad++;
+        }
+    }
+
+    fprintf(stderr, "%-18s %d/%d identical\n", "stop burst", n - bad, n);
+    return bad != 0;
+}
+
+/*
+ * Stage3_LoadPhone is all table reads, so the sweep is over the three
+ * phonemes whose ids index them, the voice that indexes the per-voice
+ * tables, and the two carried fields it reads before writing.
+ *
+ * The 44 letters below are exactly those whose selector entry is not 255.
+ * The other 51 make the original sign-extend to -1 and index every table
+ * one byte before its base; none of them is a phoneme the engine emits, so
+ * they are left out rather than compared against an out-of-bounds read.
+ */
+static Node g_lp_cur, g_lp_ctl, g_lp_scan;
+
+static int unit_loadphone(void)
+{
+    bp_t orig = (bp_t)(uintptr_t)0x1001b440;
+    static const char PH[] = " ABCDEFGIKLMNOPRSTUXYZabdeghijklmnopqrtuvwy~";
+    int li, ui, ci, vi, sd, bad = 0, n = 0, shown = 0;
+    int i, j;
+
+    if (alloc_engines())
+        return 2;
+
+    for (li = 0; PH[li]; li++)
+        for (ui = 0; PH[ui]; ui += 3)
+            for (ci = 0; PH[ci]; ci += 7)
+                for (vi = 0; vi < 3; vi++)
+                    for (sd = 0; sd < 2; sd++) {
+                        int differ;
+                        Engine *e;
+                        int w;
+
+                        for (w = 0; w < 2; w++) {
+                            e = w ? g_b : g_a;
+                            memset(e, 0, sizeof *e);
+                            for (i = 0; i < 22; i++)
+                                for (j = 0; j < 7; j++)
+                                    e->trk_param[i][j] = 0x111 * (i + j) + sd;
+                            e->s3_44c = sd % 4;
+                            e->s3_454 = 0x1234 + sd;
+                            g_lp_cur.value = (uint8_t)PH[ui];
+                            g_lp_ctl.value = (uint8_t)PH[li];
+                            g_lp_ctl.b15 = (uint8_t)(0x20 + sd * 7);
+                            g_lp_ctl.arg = (uint32_t)(30 + sd);
+                            g_lp_scan.value = (uint8_t)PH[ci];
+                            e->stage_ctx[3].cur = &g_lp_cur;
+                            e->stage_ctx[3].ctl = &g_lp_ctl;
+                            e->stage_ctx[3].scan = &g_lp_scan;
+                            e->stage_ctx[3].voice = vi;
+                            if (w)
+                                Stage3_LoadPhone(e);
+                            else
+                                orig(e);
+                            e->stage_ctx[3].cur = NULL;
+                            e->stage_ctx[3].ctl = NULL;
+                            e->stage_ctx[3].scan = NULL;
+                        }
+                        n++;
+                        differ = memcmp(g_a, g_b, sizeof *g_a) != 0;
+                        if (differ) {
+                            if (shown++ < 6)
+                                fprintf(stderr,
+                                        "  Stage3_LoadPhone(ctl %c cur %c "
+                                        "scan %c voice %d seed %d) differs\n",
+                                        PH[li], PH[ui], PH[ci], vi, sd);
+                            bad++;
+                        }
+                    }
+
+    /* the control: track 9 comes straight out of the first of the eight
+     * per-track tables, so moving it has to change the answer */
+    {
+        uint8_t *t = (uint8_t *)(uintptr_t)0x10057e28;
+        int caught, k;
+        int32_t before;
+
+        memset(g_a, 0, sizeof *g_a);
+        g_lp_cur.value = 'A';
+        g_lp_ctl.value = 'K';
+        g_lp_scan.value = 'S';
+        g_a->stage_ctx[3].cur = &g_lp_cur;
+        g_a->stage_ctx[3].ctl = &g_lp_ctl;
+        g_a->stage_ctx[3].scan = &g_lp_scan;
+        orig(g_a);
+        before = g_a->trk_param[9][6];
+        for (k = 0; k < 48; k++)
+            t[k] = (uint8_t)(t[k] ^ 0x11);
+        orig(g_a);
+        caught = g_a->trk_param[9][6] != before;
+        for (k = 0; k < 48; k++)
+            t[k] = (uint8_t)(t[k] ^ 0x11);
+        g_a->stage_ctx[3].cur = NULL;
+        g_a->stage_ctx[3].ctl = NULL;
+        g_a->stage_ctx[3].scan = NULL;
+        n++;
+        if (!caught) {
+            fprintf(stderr, "  the loadphone harness does not see a moved "
+                            "track table -- it is proving nothing\n");
+            bad++;
+        }
+    }
+
+    fprintf(stderr, "%-18s %d/%d identical\n", "load phone", n - bad, n);
+    return bad != 0;
+}
+
+/*
+ * The three stage-3 helpers that interlock: BlendMode makes a two-bit mode
+ * out of the two phonemes, and the other two act on it.  Every phoneme
+ * letter is swept for the two that classify, and the mode is swept past its
+ * range for the two that switch on it.
+ */
+typedef int32_t(__thiscall *bm_t)(Engine *);
+typedef void(__thiscall *st_t)(Engine *, int32_t, int32_t, int32_t, int32_t,
+                              int32_t, int32_t, int32_t);
+typedef void(__thiscall *vc_t)(Engine *, int32_t);
+
+static Node g_h3_cur, g_h3_scan;
+
+static void h3_seed(Engine *e, int ccur, int cscan, int seed)
+{
+    int i, j;
+
+    memset(e, 0, sizeof *e);
+    for (i = 0; i < 22; i++)
+        for (j = 0; j < 7; j++)
+            e->trk_param[i][j] = 0x101 * (i + 1) + j + seed;
+    e->s3_8788 = 0x55 + seed;
+    e->s3_87a4 = 0x66 + seed;
+    e->s3_87a8 = 0x77 + seed;
+    g_h3_cur.value = (uint8_t)ccur;
+    g_h3_scan.value = (uint8_t)cscan;
+    e->stage_ctx[3].cur = &g_h3_cur;
+    e->stage_ctx[3].scan = &g_h3_scan;
+}
+
+static int h3_cmp(int *shown, const char *what, const char *d)
+{
+    int differ;
+
+    g_a->stage_ctx[3].cur = NULL;
+    g_b->stage_ctx[3].cur = NULL;
+    g_a->stage_ctx[3].scan = NULL;
+    g_b->stage_ctx[3].scan = NULL;
+    differ = memcmp(g_a, g_b, sizeof *g_a) != 0;
+    if (differ && (*shown)++ < 6)
+        fprintf(stderr, "  %s(%s) differs\n", what, d);
+    return differ;
+}
+
+static int unit_helpers3(void)
+{
+    bm_t o_bm = (bm_t)(uintptr_t)0x10017550;
+    st_t o_st = (st_t)(uintptr_t)0x10017630;
+    vc_t o_vc = (vc_t)(uintptr_t)0x100176c0;
+    static const char PH[] = " ABCDEFGIKLMNOPRSTUXYZabdeghijklmnopqrtuvwy~";
+    static const int TRIP[] = {-300, 0, 7, 0x7ff};
+    int ui, ci, mi, ai, sd, bad = 0, n = 0, shown = 0;
+    char d[80];
+
+    if (alloc_engines())
+        return 2;
+
+    for (ui = 0; PH[ui]; ui++)
+        for (ci = 0; PH[ci]; ci++)
+            for (sd = 0; sd < 2; sd++) {
+                int32_t ra, rb;
+
+                h3_seed(g_a, PH[ui], PH[ci], sd);
+                ra = o_bm(g_a);
+                h3_seed(g_b, PH[ui], PH[ci], sd);
+                rb = Stage3_BlendMode(g_b);
+                n++;
+                sprintf(d, "cur %c scan %c seed %d", PH[ui], PH[ci], sd);
+                if (ra != rb) {
+                    if (shown++ < 6)
+                        fprintf(stderr, "  Stage3_BlendMode(%s) = %d, ours %d\n",
+                                d, (int)ra, (int)rb);
+                    bad++;
+                } else {
+                    bad += h3_cmp(&shown, "Stage3_BlendMode", d);
+                }
+
+                for (mi = 0; mi <= 4; mi++) {
+                    h3_seed(g_a, PH[ui], PH[ci], sd);
+                    o_vc(g_a, mi);
+                    h3_seed(g_b, PH[ui], PH[ci], sd);
+                    Stage3_VowelClass(g_b, mi);
+                    n++;
+                    sprintf(d, "cur %c scan %c mode %d seed %d", PH[ui],
+                            PH[ci], mi, sd);
+                    bad += h3_cmp(&shown, "Stage3_VowelClass", d);
+                }
+            }
+
+    for (mi = 0; mi <= 4; mi++)
+        for (ai = 0; ai < 4; ai++)
+            for (sd = 0; sd < 2; sd++) {
+                int32_t v = TRIP[ai];
+
+                h3_seed(g_a, 'A', 'S', sd);
+                o_st(g_a, v, v + 3, v - 5, v * 2, 9, -9, mi);
+                h3_seed(g_b, 'A', 'S', sd);
+                Track_SetTriple(g_b, v, v + 3, v - 5, v * 2, 9, -9, mi);
+                n++;
+                sprintf(d, "mode %d v %d seed %d", mi, (int)v, sd);
+                bad += h3_cmp(&shown, "Track_SetTriple", d);
+            }
+
+    /* the control: BlendMode keys on bit 1 of the 0x100 flag block, so
+     * moving that block has to change the mode somewhere */
+    {
+        uint8_t *fl = (uint8_t *)(uintptr_t)0x10058618;
+        int caught, k;
+        int32_t before;
+
+        h3_seed(g_a, 'A', 'S', 0);
+        before = o_bm(g_a);
+        for (k = 0x100; k < 0x180; k++)
+            fl[k] ^= 0x02;
+        h3_seed(g_b, 'A', 'S', 0);
+        caught = o_bm(g_b) != before;
+        for (k = 0x100; k < 0x180; k++)
+            fl[k] ^= 0x02;
+        g_a->stage_ctx[3].cur = NULL;
+        g_b->stage_ctx[3].cur = NULL;
+        n++;
+        if (!caught) {
+            fprintf(stderr, "  the helpers3 harness does not see a flipped "
+                            "flag bit -- it is proving nothing\n");
+            bad++;
+        }
+    }
+
+    fprintf(stderr, "%-18s %d/%d identical\n", "stage3 helpers", n - bad, n);
+    return bad != 0;
+}
+
+/*
+ * Track_AdjustTransition runs its body in one of two directions depending on
+ * s3_44c against s3_448, so both orderings are swept, and the three level
+ * pairs and three weights are seeded distinctly so the flip-and-flip-back
+ * would show if it were not its own inverse.
+ */
+static int unit_transition(void)
+{
+    bp_t orig = (bp_t)(uintptr_t)0x10010630;
+    static const char PH[] = " ABCDEFGIKLMNOPRSTUXYZabdeghijklmnopqrtuvwy~";
+    int li, ui, ci, sd, bad = 0, n = 0, shown = 0;
+    int i, j;
+
+    if (alloc_engines())
+        return 2;
+
+    for (ui = 0; PH[ui]; ui++)
+        for (li = 0; PH[li]; li++)
+            for (ci = 0; ci < 3; ci++)
+                for (sd = 0; sd < 2; sd++) {
+                    int w, differ;
+                    Engine *e;
+
+                    for (w = 0; w < 2; w++) {
+                        e = w ? g_b : g_a;
+                        memset(e, 0, sizeof *e);
+                        for (i = 0; i < 22; i++) {
+                            e->trk_490[i] = 0x200 + i * 17 + sd;
+                            e->trk_4e8[i] = 0x400 + i * 31 + sd;
+                            for (j = 0; j < 7; j++)
+                                e->trk_param[i][j] = 0x90 * (i + 1) + j * 3 + sd;
+                        }
+                        /* the three orderings of the two class numbers */
+                        e->s3_448 = 1;
+                        e->s3_44c = ci;
+                        g_h3_cur.value = (uint8_t)PH[ui];
+                        g_h3_scan.value = (uint8_t)PH[li];
+                        e->stage_ctx[3].cur = &g_h3_cur;
+                        e->stage_ctx[3].ctl = &g_h3_scan;
+                        if (w)
+                            Track_AdjustTransition(e);
+                        else
+                            orig(e);
+                        e->stage_ctx[3].cur = NULL;
+                        e->stage_ctx[3].ctl = NULL;
+                    }
+                    n++;
+                    differ = memcmp(g_a, g_b, sizeof *g_a) != 0;
+                    if (differ) {
+                        if (shown++ < 6)
+                            fprintf(stderr,
+                                    "  Track_AdjustTransition(cur %c ctl %c "
+                                    "class %d seed %d) differs\n",
+                                    PH[ui], PH[li], ci, sd);
+                        bad++;
+                    }
+                }
+
+    /* the control: the direction flip is what the class comparison picks, so
+     * the two directions have to give different answers somewhere */
+    {
+        int caught, k;
+
+        for (k = 0; k < 2; k++) {
+            Engine *e = k ? g_b : g_a;
+
+            memset(e, 0, sizeof *e);
+            for (i = 0; i < 22; i++) {
+                e->trk_490[i] = 0x200 + i * 17;
+                e->trk_4e8[i] = 0x400 + i * 31;
+                for (j = 0; j < 7; j++)
+                    e->trk_param[i][j] = 0x90 * (i + 1) + j * 3;
+            }
+            e->s3_448 = 1;
+            e->s3_44c = k ? 3 : 0;
+            g_h3_cur.value = 'N';
+            g_h3_scan.value = 'A';
+            e->stage_ctx[3].cur = &g_h3_cur;
+            e->stage_ctx[3].ctl = &g_h3_scan;
+            orig(e);
+            e->stage_ctx[3].cur = NULL;
+            e->stage_ctx[3].ctl = NULL;
+        }
+        caught = memcmp(g_a, g_b, sizeof *g_a) != 0;
+        n++;
+        if (!caught) {
+            fprintf(stderr, "  the transition harness does not see the "
+                            "direction change -- it is proving nothing\n");
+            bad++;
+        }
+    }
+
+    fprintf(stderr, "%-18s %d/%d identical\n", "transition", n - bad, n);
+    return bad != 0;
+}
+
+/*
+ * Stage3_LoadTriples calls BlendMode and VowelClass itself, so the two class
+ * numbers cannot be set independently -- they come from the two phonemes.
+ * They are still seeded, because VowelClass leaves a field alone when its
+ * phoneme matches nothing, and seeds outside 1..5 exercise the guard.
+ *
+ * The control phoneme is restricted to the 44 letters whose selector entry
+ * is not 255, for the same reason as the loadphone sweep.
+ */
+static Node g_lt_ctl;
+
+static int unit_loadtriples(void)
+{
+    bp_t orig = (bp_t)(uintptr_t)0x10016fe0;
+    static const char PH[] = " ABCDEFGIKLMNOPRSTUXYZabdeghijklmnopqrtuvwy~";
+    int ui, ci, li, kk, bad = 0, n = 0, shown = 0;
+    int i, j;
+
+    if (alloc_engines())
+        return 2;
+
+    for (ui = 0; PH[ui]; ui++)
+        for (ci = 0; PH[ci]; ci++)
+            for (li = 0; PH[li]; li += 5)
+                for (kk = 0; kk < 3; kk++) {
+                    int w, differ;
+                    Engine *e;
+
+                    for (w = 0; w < 2; w++) {
+                        e = w ? g_b : g_a;
+                        memset(e, 0, sizeof *e);
+                        for (i = 0; i < 22; i++) {
+                            e->trk_4e8[i] = 0x300 + i * 13;
+                            for (j = 0; j < 7; j++)
+                                e->trk_param[i][j] = 0x70 * (i + 1) + j + kk;
+                        }
+                        e->s3_87a4 = kk * 3;
+                        e->s3_87a8 = 6 - kk * 3;
+                        for (i = 0; i < 3; i++) {
+                            e->s3_cur_trip[i] = 0x1000 + i;
+                            e->s3_next_trip[i] = 0x2000 + i;
+                        }
+                        g_h3_cur.value = (uint8_t)PH[ui];
+                        g_h3_scan.value = (uint8_t)PH[ci];
+                        g_lt_ctl.value = (uint8_t)PH[li];
+                        e->stage_ctx[3].cur = &g_h3_cur;
+                        e->stage_ctx[3].scan = &g_h3_scan;
+                        e->stage_ctx[3].ctl = &g_lt_ctl;
+                        if (w)
+                            Stage3_LoadTriples(e);
+                        else
+                            orig(e);
+                        e->stage_ctx[3].cur = NULL;
+                        e->stage_ctx[3].scan = NULL;
+                        e->stage_ctx[3].ctl = NULL;
+                    }
+                    n++;
+                    differ = memcmp(g_a, g_b, sizeof *g_a) != 0;
+                    if (differ) {
+                        if (shown++ < 6)
+                            fprintf(stderr,
+                                    "  Stage3_LoadTriples(cur %c scan %c ctl %c"
+                                    " cls %d) differs\n", PH[ui], PH[ci],
+                                    PH[li], kk);
+                        bad++;
+                    }
+                }
+
+    /* the control: the first of the fifteen class tables feeds track 9, so
+     * moving it has to change the answer for a case that reaches it */
+    {
+        uint8_t *t = *(uint8_t **)(uintptr_t)0x100584d4;
+        int caught, k, w;
+        int32_t before = 0;
+
+        for (w = 0; w < 2; w++) {
+            Engine *e = w ? g_b : g_a;
+
+            memset(e, 0, sizeof *e);
+            e->s3_87a4 = 1;
+            e->s3_87a8 = 1;
+            g_h3_cur.value = 'A';
+            g_h3_scan.value = 'S';
+            g_lt_ctl.value = 'K';
+            e->stage_ctx[3].cur = &g_h3_cur;
+            e->stage_ctx[3].scan = &g_h3_scan;
+            e->stage_ctx[3].ctl = &g_lt_ctl;
+            if (w)
+                for (k = 0; k < 48; k++)
+                    t[k] = (uint8_t)(t[k] ^ 0x25);
+            orig(e);
+            if (w)
+                for (k = 0; k < 48; k++)
+                    t[k] = (uint8_t)(t[k] ^ 0x25);
+            e->stage_ctx[3].cur = NULL;
+            e->stage_ctx[3].scan = NULL;
+            e->stage_ctx[3].ctl = NULL;
+            if (!w)
+                before = g_a->s3_cur_trip[0];
+        }
+        /* 'A' is flagged and 'S' is not, so the mode is 2 and only the
+         * current phoneme's triple gets filled; checking the other one
+         * would compare two untouched seeds. */
+        caught = g_b->s3_cur_trip[0] != before;
+        n++;
+        if (!caught) {
+            fprintf(stderr, "  the loadtriples harness does not see a moved "
+                            "class table -- it is proving nothing\n");
+            bad++;
+        }
+    }
+
+    fprintf(stderr, "%-18s %d/%d identical\n", "load triples", n - bad, n);
+    return bad != 0;
+}
+
+/*
+ * Stage3_BlendTriples has ten class arms with different corrections in each,
+ * plus a prologue that keys on both phonemes.  The control phoneme drives
+ * most of the arms -- it is the one tested against g, b, d, L and R -- so it
+ * is swept over every valid letter, and the two class numbers are seeded past
+ * their range as well as inside it.
+ */
+static int unit_blendtriples(void)
+{
+    bp_t orig = (bp_t)(uintptr_t)0x10015b30;
+    static const char PH[] = " ABCDEFGIKLMNOPRSTUXYZabdeghijklmnopqrtuvwy~";
+    int li, ui, ci, kk, bad = 0, n = 0, shown = 0;
+    int i, j;
+
+    if (alloc_engines())
+        return 2;
+
+    for (li = 0; PH[li]; li++)
+        for (ui = 0; PH[ui]; ui += 2)
+            for (ci = 0; PH[ci]; ci += 3)
+                for (kk = 0; kk < 4; kk++) {
+                    int w, differ;
+                    Engine *e;
+
+                    for (w = 0; w < 2; w++) {
+                        e = w ? g_b : g_a;
+                        memset(e, 0, sizeof *e);
+                        for (i = 0; i < 22; i++) {
+                            e->trk_4e8[i] = 0x300 + i * 13;
+                            for (j = 0; j < 7; j++)
+                                e->trk_param[i][j] = 0x70 * (i + 1) + j + kk;
+                        }
+                        e->s3_87a4 = kk == 3 ? 7 : kk + 1;
+                        e->s3_87a8 = kk == 3 ? 0 : 5 - kk;
+                        for (i = 0; i < 3; i++) {
+                            e->s3_cur_trip[i] = 0x1000 + i;
+                            e->s3_next_trip[i] = 0x2000 + i;
+                        }
+                        g_h3_cur.value = (uint8_t)PH[ui];
+                        g_h3_scan.value = (uint8_t)PH[ci];
+                        g_lt_ctl.value = (uint8_t)PH[li];
+                        e->stage_ctx[3].cur = &g_h3_cur;
+                        e->stage_ctx[3].scan = &g_h3_scan;
+                        e->stage_ctx[3].ctl = &g_lt_ctl;
+                        if (w)
+                            Stage3_BlendTriples(e);
+                        else
+                            orig(e);
+                        e->stage_ctx[3].cur = NULL;
+                        e->stage_ctx[3].scan = NULL;
+                        e->stage_ctx[3].ctl = NULL;
+                    }
+                    n++;
+                    differ = memcmp(g_a, g_b, sizeof *g_a) != 0;
+                    if (differ) {
+                        if (shown++ < 8) {
+                            size_t off;
+                            fprintf(stderr,
+                                    "  Stage3_BlendTriples(ctl %c cur %c scan %c"
+                                    " cls %d):", PH[li], PH[ui], PH[ci], kk);
+                            for (off = 0; off < sizeof *g_a; off++)
+                                if (((uint8_t *)g_a)[off] !=
+                                    ((uint8_t *)g_b)[off]) {
+                                    size_t d = off & ~3u;
+                                    fprintf(stderr, " 0x%04x(%d/%d)",
+                                            (unsigned)d,
+                                            *(int32_t *)((uint8_t *)g_a + d),
+                                            *(int32_t *)((uint8_t *)g_b + d));
+                                    off = (d | 3);
+                                }
+                            fprintf(stderr, "\n");
+                        }
+                        bad++;
+                    }
+                }
+
+    /* the control: the blend shape in the prologue comes off two flag bits,
+     * so moving that block has to change tracks 9 to 16 */
+    {
+        uint8_t *fl = (uint8_t *)(uintptr_t)0x10058618;
+        int caught, k, w;
+        int32_t before = 0;
+
+        for (w = 0; w < 2; w++) {
+            Engine *e = w ? g_b : g_a;
+
+            memset(e, 0, sizeof *e);
+            e->s3_87a4 = 1;
+            e->s3_87a8 = 1;
+            g_h3_cur.value = 'A';
+            g_h3_scan.value = 'S';
+            g_lt_ctl.value = 'K';
+            e->stage_ctx[3].cur = &g_h3_cur;
+            e->stage_ctx[3].scan = &g_h3_scan;
+            e->stage_ctx[3].ctl = &g_lt_ctl;
+            if (w)
+                for (k = 0x180; k < 0x200; k++)
+                    fl[k] ^= 0x01;
+            orig(e);
+            if (w)
+                for (k = 0x180; k < 0x200; k++)
+                    fl[k] ^= 0x01;
+            e->stage_ctx[3].cur = NULL;
+            e->stage_ctx[3].scan = NULL;
+            e->stage_ctx[3].ctl = NULL;
+            if (!w)
+                before = g_a->trk_param[12][2];
+        }
+        caught = g_b->trk_param[12][2] != before;
+        n++;
+        if (!caught) {
+            fprintf(stderr, "  the blendtriples harness does not see a moved "
+                            "flag block -- it is proving nothing\n");
+            bad++;
+        }
+    }
+
+    fprintf(stderr, "%-18s %d/%d identical\n", "blend triples", n - bad, n);
+    return bad != 0;
+}
+
+/*
+ * Stage3_StopClosure: the prologue keys on the control phoneme naming a stop
+ * and on what follows it, so both are swept, and track 1's duration is seeded
+ * across and below the closure lengths so the pad-with-zero path is reached
+ * both ways.  Ten class arms follow, most of them keyed on the control
+ * phoneme again.
+ */
+static int unit_stopclosure(void)
+{
+    bp_t orig = (bp_t)(uintptr_t)0x10016460;
+    static const char PH[] = " ABCDEFGIKLMNOPRSTUXYZabdeghijklmnopqrtuvwy~";
+    static const int DUR[] = {0, 1, 3, 7, 20};
+    int li, ci, di, kk, bad = 0, n = 0, shown = 0;
+    int i, j;
+
+    if (alloc_engines())
+        return 2;
+
+    for (li = 0; PH[li]; li++)
+        for (ci = 0; PH[ci]; ci += 2)
+            for (di = 0; di < 5; di++)
+                for (kk = 0; kk < 3; kk++) {
+                    int w, differ, k;
+                    Engine *e;
+                    void *pa[22], *pb[22];
+
+                    for (w = 0; w < 2; w++) {
+                        e = w ? g_b : g_a;
+                        memset(e, 0, sizeof *e);
+                        for (i = 0; i < 22; i++) {
+                            e->trk_buf[i] = e->trk_data[i];
+                            memset(e->trk_data[i], (uint8_t)(0x20 + i), 256);
+                            e->trk_wr[i] = 80 + i;
+                            e->trk_rd[i] = 50 + i;
+                            e->trk_490[i] = 0x100 + i * 11;
+                            e->trk_4e8[i] = 0x300 + i * 13;
+                            for (j = 0; j < 7; j++)
+                                e->trk_param[i][j] = 0x70 * (i + 1) + j + kk;
+                        }
+                        e->trk_param[1][3] = DUR[di];
+                        e->s3_87a4 = kk + 1;
+                        e->s3_87a8 = 5 - kk;
+                        for (i = 0; i < 3; i++) {
+                            e->s3_cur_trip[i] = 0x1000 + i;
+                            e->s3_next_trip[i] = 0x2000 + i;
+                        }
+                        g_h3_cur.value = 'A';
+                        g_h3_scan.value = (uint8_t)PH[ci];
+                        g_lt_ctl.value = (uint8_t)PH[li];
+                        e->stage_ctx[3].cur = &g_h3_cur;
+                        e->stage_ctx[3].scan = &g_h3_scan;
+                        e->stage_ctx[3].ctl = &g_lt_ctl;
+                        if (w)
+                            Stage3_StopClosure(e);
+                        else
+                            orig(e);
+                        e->stage_ctx[3].cur = NULL;
+                        e->stage_ctx[3].scan = NULL;
+                        e->stage_ctx[3].ctl = NULL;
+                    }
+                    n++;
+                    for (k = 0; k < 22; k++) {
+                        pa[k] = g_a->trk_buf[k];
+                        pb[k] = g_b->trk_buf[k];
+                        g_a->trk_buf[k] = NULL;
+                        g_b->trk_buf[k] = NULL;
+                    }
+                    differ = memcmp(g_a, g_b, sizeof *g_a) != 0;
+                    for (k = 0; k < 22; k++) {
+                        g_a->trk_buf[k] = (uint8_t *)pa[k];
+                        g_b->trk_buf[k] = (uint8_t *)pb[k];
+                    }
+                    if (differ) {
+                        if (shown++ < 8) {
+                            size_t off;
+                            fprintf(stderr,
+                                    "  Stage3_StopClosure(ctl %c scan %c dur %d"
+                                    " cls %d):", PH[li], PH[ci], DUR[di], kk);
+                            for (off = 0; off < sizeof *g_a; off++)
+                                if (off >= 0x7130 && off < 0x7188)
+                                    continue;
+                                else if (((uint8_t *)g_a)[off] !=
+                                         ((uint8_t *)g_b)[off]) {
+                                    size_t d = off & ~3u;
+                                    fprintf(stderr, " 0x%04x(%d/%d)",
+                                            (unsigned)d,
+                                            *(int32_t *)((uint8_t *)g_a + d),
+                                            *(int32_t *)((uint8_t *)g_b + d));
+                                    off = (d | 3);
+                                }
+                            fprintf(stderr, "\n");
+                        }
+                        bad++;
+                    }
+                }
+
+    /* the control: the closure length is what the padding is measured
+     * against, so two stops with different lengths have to differ */
+    {
+        int caught, w, k;
+
+        for (w = 0; w < 2; w++) {
+            Engine *e = w ? g_b : g_a;
+
+            memset(e, 0, sizeof *e);
+            for (k = 0; k < 22; k++) {
+                e->trk_buf[k] = e->trk_data[k];
+                memset(e->trk_data[k], (uint8_t)(0x20 + k), 256);
+                e->trk_wr[k] = 80 + k;
+                e->trk_rd[k] = 50 + k;
+            }
+            e->trk_param[1][3] = 20;
+            g_h3_cur.value = 'A';
+            g_h3_scan.value = 'A';
+            g_lt_ctl.value = w ? 'C' : 'P';
+            e->stage_ctx[3].cur = &g_h3_cur;
+            e->stage_ctx[3].scan = &g_h3_scan;
+            e->stage_ctx[3].ctl = &g_lt_ctl;
+            orig(e);
+            e->stage_ctx[3].cur = NULL;
+            e->stage_ctx[3].scan = NULL;
+            e->stage_ctx[3].ctl = NULL;
+        }
+        caught = g_a->s3_460 != g_b->s3_460 ||
+                 g_a->trk_wr[1] != g_b->trk_wr[1];
+        n++;
+        if (!caught) {
+            fprintf(stderr, "  the stopclosure harness does not see a "
+                            "different closure -- it is proving nothing\n");
+            bad++;
+        }
+    }
+
+    fprintf(stderr, "%-18s %d/%d identical\n", "stop closure", n - bad, n);
+    return bad != 0;
+}
+
+/*
+ * Stage3_Build is the whole of stage 3 in one call, so the sweep is over
+ * what stage 3 is actually given: the three phonemes, the duration and the
+ * flags on the control node, and the voice and attenuation the host sets.
+ * Nearly everything else is overwritten by Stage3_LoadPhone from the
+ * phoneme tables before it is read, which is why the seed concentrates on
+ * the fields that survive it -- trk_490, trk_55c, columns 4 and 5 of
+ * trk_param, the buffers and their cursors, and the dozen s3_ fields.
+ *
+ * Only phonemes the id table knows are swept.  g_10057ce8 maps everything
+ * else to 255, which both implementations would then use as an index into
+ * the formant tables, and there is no reason to walk off the end of them.
+ *
+ * g_1004c7c0, the per-voice gain, is ten zeroes in the shipped DLL, so the
+ * three multiplications it feeds and the clamp after them would go
+ * untested.  Half the sweep patches it to a real gain, and one of the
+ * controls below is that patch.
+ */
+typedef void(__thiscall *bld_t)(Engine *);
+
+/* A ring rather than a chain: es/cluster.c walks scan->next four deep and
+ * es/adjust.c walks ctl->prev four back, and a ring cannot run out. */
+static Node g_bd_ring[12];
+
+/* every phoneme g_10057ce8 gives an id to */
+static const char BD_CTL[] = " ABCDEFGIKLMNOPRSTUXYZabdeghijklmnopqrtuvwy~";
+/* h is here because its id is 2, which is one of the few that makes
+ * s3_450 big enough and negative -- the coupling at the end needs that */
+static const char BD_CUR[] = "AEaehPDTKn ~";
+static const char BD_SCAN[] = "AaKn ~";
+
+static int32_t *bd_gain(void)
+{
+    return (int32_t *)(uintptr_t)0x1004c7c0;
+}
+
+static void bld_seed(Engine *e, int cctl, int ccur, int cscan, int flags,
+                     int seed)
+{
+    int i, j;
+    uint32_t r = (uint32_t)(seed * 2654435761u + 17u);
+
+    memset(e, 0, sizeof *e);
+    for (i = 0; i < 22; i++) {
+        e->trk_buf[i] = e->trk_data[i];
+        memset(e->trk_data[i], (uint8_t)(0x28 + i * 5), 256);
+        e->trk_wr[i] = 40 + i;
+        e->trk_rd[i] = 22 + i;
+        r = r * 1103515245u + 12345u;
+        e->trk_490[i] = (int32_t)((r >> 16) & 0x7ff);
+        r = r * 1103515245u + 12345u;
+        e->trk_55c[i] = (int32_t)((r >> 16) & 0x3ff);
+        for (j = 0; j < 7; j++) {
+            r = r * 1103515245u + 12345u;
+            e->trk_param[i][j] = (int32_t)((r >> 16) & 0x3ff);
+        }
+    }
+    for (i = 0; i < 3; i++) {
+        r = r * 1103515245u + 12345u;
+        e->trk_540[i] = (int32_t)((r >> 16) & 0x3ff);
+        e->s3_cur_trip[i] = 0x100 + i * 0x40 + seed;
+        e->s3_next_trip[i] = 0x200 + i * 0x40 + seed;
+    }
+    /* 0..3: the pair indexes g_10058200 as s3_448 * 4 + s3_44c */
+    e->s3_44c = seed & 3;
+    /* read as s3_450 whenever the current phoneme's id is 0xe or more */
+    e->s3_454 = ((seed & 1) ? -1 : 1) * (0x1800 + seed * 0x900);
+    e->s3_458 = 2 + seed;
+    e->s3_460 = 1 + (seed & 3);
+    e->s3_468 = 4 + seed;
+    e->s3_46c = 5;
+    e->s3_474 = 3 + seed;
+    e->s3_47c = 0x20 + seed;
+    e->s3_478 = 0x30;
+    e->s3_1fe8 = 4 + (seed % 9);
+    e->s3_1fb8 = 0x11 + seed;
+    e->s3_650 = (uint8_t)(seed & 2);
+    e->s3_1fdd = (uint8_t)(seed & 4);
+    e->s3_8788 = seed & 3;
+    e->s3_87a4 = 1 + seed % 5;
+    e->s3_87a8 = 1 + (seed + 2) % 5;
+    e->trans_len = 3;
+    e->seg_len = 12 + seed;
+    e->stage_ctx[3].voice = seed % 10;
+    e->stage_ctx[3].volume_atten = (seed * 3) % 17;
+
+    for (i = 0; i < 12; i++) {
+        g_bd_ring[i].next = &g_bd_ring[(i + 1) % 12];
+        g_bd_ring[i].prev = &g_bd_ring[(i + 11) % 12];
+        g_bd_ring[i].value = (uint8_t)"AKrLSnmObPtE"[i];
+        g_bd_ring[i].flags = 0;
+        g_bd_ring[i].arg = 20;
+        g_bd_ring[i].b15 = 0x32;
+    }
+    g_bd_ring[4].value = (uint8_t)ccur;
+    g_bd_ring[5].value = (uint8_t)cctl;
+    g_bd_ring[6].value = (uint8_t)cscan;
+    g_bd_ring[5].flags = (uint32_t)flags;
+    /* the duration every track starts with; kept well above zero so the
+     * Ramp_Fill at the end of a contour never gets a negative count, which
+     * spins for four billion steps in the original as readily as in ours */
+    g_bd_ring[5].arg = (uint32_t)(8 + seed * 6);
+    g_bd_ring[5].b15 = (uint8_t)((seed & 1) ? 0 : 0x32);
+    g_bd_ring[4].b15 = (uint8_t)((seed & 2) ? 0 : 0x20);
+    e->stage_ctx[3].cur = &g_bd_ring[4];
+    e->stage_ctx[3].ctl = &g_bd_ring[5];
+    e->stage_ctx[3].scan = &g_bd_ring[6];
+    /* Track_AdjustTrill reaches its neighbours through Engine_StageNext,
+     * which reads the window off self->stage, so both ends of the window
+     * have to be somewhere the walk will not reach */
+    e->stage_ctx[3].first = &g_bd_ring[0];
+    e->stage_ctx[3].last = &g_bd_ring[11];
+    e->stage = &e->stage_ctx[3];
+}
+
+/* the nodes are shared between the two engines and only ever read, so the
+ * three stage_ctx pointers compare equal; only trk_buf has to come out */
+static int bld_differ(void)
+{
+    void *pa[22], *pb[22], *sa, *sb;
+    int k, d;
+
+    for (k = 0; k < 22; k++) {
+        pa[k] = g_a->trk_buf[k];
+        pb[k] = g_b->trk_buf[k];
+        g_a->trk_buf[k] = NULL;
+        g_b->trk_buf[k] = NULL;
+    }
+    sa = g_a->stage;
+    sb = g_b->stage;
+    g_a->stage = NULL;
+    g_b->stage = NULL;
+    d = memcmp(g_a, g_b, sizeof *g_a) != 0;
+    for (k = 0; k < 22; k++) {
+        g_a->trk_buf[k] = (uint8_t *)pa[k];
+        g_b->trk_buf[k] = (uint8_t *)pb[k];
+    }
+    g_a->stage = (StageCtx *)sa;
+    g_b->stage = (StageCtx *)sb;
+    return d;
+}
+
+static void bld_report(const char *what)
+{
+    size_t off;
+
+    fprintf(stderr, "  Stage3_Build(%s):", what);
+    for (off = 0; off < sizeof *g_a; off++)
+        if (off >= 0x7130 && off < 0x7188)
+            continue;
+        else if (((uint8_t *)g_a)[off] != ((uint8_t *)g_b)[off]) {
+            size_t d = off & ~3u;
+
+            fprintf(stderr, " 0x%04x(%d/%d)", (unsigned)d,
+                    *(int32_t *)((uint8_t *)g_a + d),
+                    *(int32_t *)((uint8_t *)g_b + d));
+            off = (d | 3);
+        }
+    fprintf(stderr, "\n");
+}
+
+static int unit_build(void)
+{
+    bld_t orig = (bld_t)(uintptr_t)0x1001b880;
+    static const int FLAGS[] = {0, 0x40};
+    int32_t *gain = bd_gain();
+    int32_t saved[10];
+    int li, ui, si, fi, sd, bad = 0, n = 0, shown = 0;
+    int i;
+
+    if (alloc_engines())
+        return 2;
+    for (i = 0; i < 10; i++)
+        saved[i] = gain[i];
+
+    for (li = 0; BD_CTL[li]; li++)
+        for (ui = 0; BD_CUR[ui]; ui++)
+            for (si = 0; BD_SCAN[si]; si++)
+                for (fi = 0; fi < 2; fi++)
+                    for (sd = 0; sd < 4; sd++) {
+                        /* a real gain for half the sweep */
+                        for (i = 0; i < 10; i++)
+                            gain[i] = (sd & 1) ? 0 : 0x2000 + i * 0x400;
+
+                        bld_seed(g_a, BD_CTL[li], BD_CUR[ui], BD_SCAN[si],
+                                 FLAGS[fi], sd);
+                        orig(g_a);
+                        bld_seed(g_b, BD_CTL[li], BD_CUR[ui], BD_SCAN[si],
+                                 FLAGS[fi], sd);
+                        Stage3_Build(g_b);
+                        n++;
+                        if (bld_differ()) {
+                            if (shown++ < 6) {
+                                char d[80];
+
+                                sprintf(d, "ctl %c cur %c scan %c flags 0x%x"
+                                           " seed %d", BD_CTL[li], BD_CUR[ui],
+                                        BD_SCAN[si], FLAGS[fi], sd);
+                                bld_report(d);
+                            }
+                            bad++;
+                        }
+                    }
+    for (i = 0; i < 10; i++)
+        gain[i] = saved[i];
+
+    /* the first control: s3_650 with a vowel on either side cancels the
+     * coupling at the end outright, so with a pair that reaches it -- C
+     * gives s3_454 22960 and h gives s3_450 -6560, the one combination of
+     * signs the guard lets through -- the two runs have to differ */
+    {
+        int caught;
+
+        bld_seed(g_a, 'C', 'h', 'A', 0, 0);
+        g_a->s3_650 = 0;
+        orig(g_a);
+        bld_seed(g_b, 'C', 'h', 'A', 0, 0);
+        g_b->s3_650 = 1;
+        orig(g_b);
+        caught = bld_differ();
+        n++;
+        if (!caught) {
+            fprintf(stderr, "  the build harness does not reach the track "
+                            "coupling -- it is proving nothing\n");
+            bad++;
+        }
+    }
+
+    /* the second control: the per-voice gain.  It is zero in the DLL, so
+     * without this the three multiplications are never exercised and a
+     * wrong one would pass. */
+    {
+        int caught;
+
+        for (i = 0; i < 10; i++)
+            gain[i] = 0;
+        bld_seed(g_a, 'a', 'A', 'K', 0, 2);
+        orig(g_a);
+        for (i = 0; i < 10; i++)
+            gain[i] = 0x3000;
+        bld_seed(g_b, 'a', 'A', 'K', 0, 2);
+        orig(g_b);
+        for (i = 0; i < 10; i++)
+            gain[i] = saved[i];
+        caught = bld_differ();
+        n++;
+        if (!caught) {
+            fprintf(stderr, "  the build harness does not see the per-voice "
+                            "gain -- it is proving nothing\n");
+            bad++;
+        }
+    }
+
+    /* the third control: flag 0x40 on the control node asks for track 17 to
+     * be emitted a second time.  A is not a stop, so for this phoneme that
+     * flag does nothing else. */
+    {
+        int caught;
+
+        bld_seed(g_a, 'A', 'E', 'a', 0, 1);
+        orig(g_a);
+        bld_seed(g_b, 'A', 'E', 'a', 0x40, 1);
+        orig(g_b);
+        caught = bld_differ();
+        n++;
+        if (!caught) {
+            fprintf(stderr, "  the build harness does not see the second "
+                            "track 17 emit -- it is proving nothing\n");
+            bad++;
+        }
+    }
+
+    fprintf(stderr, "%-18s %d/%d identical\n", "stage 3 build", n - bad, n);
+    return bad != 0;
+}
+
+/*
+ * The pause path: Stage3_ResetParams, Stage3_FillFrames and Track_Commit.
+ *
+ * None of the three is reachable from the corpus in any interesting way.
+ * Every type 4 node this engine makes has the value ' ', so Stage3_FillFrames
+ * only ever takes its default arm there and the frame it writes is whatever
+ * the object was built with -- zeroes.  The sweep therefore drives all four
+ * modes, and for 't' it drives the flag combinations that pick the row,
+ * including one past the tenth and last row of the table.
+ *
+ * The b15 values bracket 0xb4 because that is what decides whether tracks 13
+ * to 15 take the fixed 0x2d, and the original reads that flag out of an
+ * uninitialised stack byte before its loop; the third control below is what
+ * shows the harness reaches it.
+ */
+typedef void(__thiscall *pf_void_t)(Engine *);
+typedef int32_t(__thiscall *pf_fill_t)(Engine *, uint32_t, int32_t, int32_t,
+                                      uint32_t);
+
+static Node g_pf_ctl;
+
+static void pf_seed(Engine *e, int flags, int b15, int seed)
+{
+    int i, j;
+    uint32_t r = (uint32_t)(seed * 2246822519u + 29u);
+
+    memset(e, 0, sizeof *e);
+    for (i = 0; i < 22; i++) {
+        e->trk_buf[i] = e->trk_data[i];
+        /* not a constant fill: Track_Commit reads one sample back from each
+         * new cursor, and a flat buffer would hide the cursor moving */
+        for (j = 0; j < 256; j++) {
+            r = r * 1103515245u + 12345u;
+            e->trk_data[i][j] = (uint8_t)(r >> 17);
+        }
+        e->trk_wr[i] = 30 + i * 3;
+        e->trk_rd[i] = 10 + i;
+        r = r * 1103515245u + 12345u;
+        e->trk_490[i] = (int32_t)((r >> 16) & 0x7ff);
+        for (j = 0; j < 7; j++) {
+            r = r * 1103515245u + 12345u;
+            e->trk_param[i][j] = (int32_t)((r >> 16) & 0x3ff);
+        }
+        e->s3_param_raw[i] = (uint8_t)(0x40 + i * 3);
+        e->s3_frame[i] = (uint8_t)(0x90 + i);
+        e->trk_14[i] = (uint8_t)(i * 3);
+        e->s3_1fbd[i] = (uint8_t)(i * 5);
+    }
+    e->trk_0c = 60 + seed * 90;
+    e->trk_10 = 55;
+    e->s3_1fe0 = 2 + seed;
+    e->s3_628 = 0x30 * seed;
+    e->stage_ctx[3].volume_atten = (seed * 5) % 17;
+    g_pf_ctl.flags = (uint32_t)flags;
+    g_pf_ctl.b15 = (uint8_t)b15;
+    g_pf_ctl.value = ' ';
+    g_pf_ctl.arg = 40;
+    e->stage_ctx[3].ctl = &g_pf_ctl;
+}
+
+static int pf_differ(void)
+{
+    void *pa[22], *pb[22];
+    int k, d;
+
+    for (k = 0; k < 22; k++) {
+        pa[k] = g_a->trk_buf[k];
+        pb[k] = g_b->trk_buf[k];
+        g_a->trk_buf[k] = NULL;
+        g_b->trk_buf[k] = NULL;
+    }
+    d = memcmp(g_a, g_b, sizeof *g_a) != 0;
+    for (k = 0; k < 22; k++) {
+        g_a->trk_buf[k] = (uint8_t *)pa[k];
+        g_b->trk_buf[k] = (uint8_t *)pb[k];
+    }
+    return d;
+}
+
+static int unit_pausefill(void)
+{
+    pf_void_t o_reset = (pf_void_t)(uintptr_t)0x1001bf10;
+    pf_fill_t o_fill = (pf_fill_t)(uintptr_t)0x1001b250;
+    pf_void_t o_commit = (pf_void_t)(uintptr_t)0x1001c040;
+    static const char MODE[] = " gstx";
+    static const int FLAGS[] = {0, 8, 0x10, 0x18, 0x20, 0x28, 0x40, 0x58};
+    static const int B15[] = {0, 0x10, 0xb4, 0xb5, 0xff};
+    static const int COUNT[] = {0, 1, 3, 40};
+    static const int ROOM[] = {0, 1, 2, 30};
+    int mi, fi, bi, ci, ri, sd, rb, bad = 0, n = 0, shown = 0;
+
+    if (alloc_engines())
+        return 2;
+
+    /* Stage3_ResetParams: only trk_0c and s3_1fe0 are inputs, so a small
+     * grid over them on top of a dirty object is the whole domain */
+    for (sd = 0; sd < 6; sd++)
+        for (fi = 0; fi < 8; fi++) {
+            pf_seed(g_a, FLAGS[fi], 0x32, sd);
+            g_a->trk_0c = (int32_t)(sd * 400) - 100;
+            o_reset(g_a);
+            pf_seed(g_b, FLAGS[fi], 0x32, sd);
+            g_b->trk_0c = (int32_t)(sd * 400) - 100;
+            Stage3_ResetParams(g_b);
+            n++;
+            if (pf_differ()) {
+                if (shown++ < 4)
+                    fprintf(stderr, "  Stage3_ResetParams(seed %d) differs\n",
+                            sd);
+                bad++;
+            }
+        }
+
+    for (mi = 0; MODE[mi]; mi++)
+        for (rb = 0; rb < 2; rb++)
+            for (fi = 0; fi < 8; fi++)
+                for (bi = 0; bi < 5; bi++)
+                    for (ci = 0; ci < 4; ci++)
+                        for (ri = 0; ri < 4; ri++)
+                            for (sd = 0; sd < 2; sd++) {
+                                int32_t ra, rb2;
+
+                                pf_seed(g_a, FLAGS[fi], B15[bi], sd);
+                                ra = o_fill(g_a, (uint32_t)(uint8_t)MODE[mi],
+                                            COUNT[ci], ROOM[ri],
+                                            (uint32_t)rb);
+                                pf_seed(g_b, FLAGS[fi], B15[bi], sd);
+                                rb2 = Stage3_FillFrames(g_b,
+                                          (uint8_t)MODE[mi], COUNT[ci],
+                                          ROOM[ri], (uint8_t)rb);
+                                n++;
+                                if (ra != rb2 || pf_differ()) {
+                                    if (shown++ < 6)
+                                        fprintf(stderr,
+                                                "  Stage3_FillFrames(mode %c "
+                                                "flags 0x%x b15 0x%x count %d "
+                                                "room %d rebuild %d) differs"
+                                                " (%d/%d)\n",
+                                                MODE[mi], FLAGS[fi], B15[bi],
+                                                COUNT[ci], ROOM[ri], rb,
+                                                (int)ra, (int)rb2);
+                                    bad++;
+                                }
+                            }
+
+    /* Track_Commit: the durations and the cursors are the whole input */
+    for (sd = 0; sd < 12; sd++) {
+        int i;
+
+        pf_seed(g_a, 0, 0x32, sd);
+        pf_seed(g_b, 0, 0x32, sd);
+        for (i = 0; i < 22; i++) {
+            int32_t d = (int32_t)((sd * 7 + i * 5) % 40) - 3;
+
+            g_a->trk_param[i][3] = d;
+            g_b->trk_param[i][3] = d;
+        }
+        o_commit(g_a);
+        Track_Commit(g_b);
+        n++;
+        if (pf_differ()) {
+            if (shown++ < 4)
+                fprintf(stderr, "  Track_Commit(seed %d) differs\n", sd);
+            bad++;
+        }
+    }
+
+    /* the first control: the 't' arm reads its frame out of g_pause_param,
+     * so moving that table has to change what comes out */
+    {
+        uint8_t *t = (uint8_t *)(uintptr_t)0x10048a98;
+        int caught, k;
+
+        pf_seed(g_a, 0x20, 0x40, 1);
+        o_fill(g_a, 't', 4, 8, 1);
+        for (k = 0; k < 220; k++)
+            if (t[k] != 0xff)
+                t[k] = (uint8_t)(t[k] + 3);
+        pf_seed(g_b, 0x20, 0x40, 1);
+        o_fill(g_b, 't', 4, 8, 1);
+        for (k = 0; k < 220; k++)
+            if (t[k] != 0xff)
+                t[k] = (uint8_t)(t[k] - 3);
+        caught = memcmp(g_a->s3_frame, g_b->s3_frame, 22) != 0;
+        n++;
+        if (!caught) {
+            fprintf(stderr, "  the pause harness does not see a moved "
+                            "parameter table -- it is proving nothing\n");
+            bad++;
+        }
+    }
+
+    /* the second control: the row that the node's flags pick */
+    {
+        int caught;
+
+        pf_seed(g_a, 0, 0x40, 0);
+        o_fill(g_a, 't', 2, 4, 1);
+        pf_seed(g_b, 0x28, 0x40, 0);
+        o_fill(g_b, 't', 2, 4, 1);
+        caught = memcmp(g_a->s3_frame, g_b->s3_frame, 22) != 0;
+        n++;
+        if (!caught) {
+            fprintf(stderr, "  the pause harness does not see the flags pick "
+                            "a different row -- it is proving nothing\n");
+            bad++;
+        }
+    }
+
+    /* the third control: row 0 gives tracks 13 to 15 0x0f, and the 0x2d
+     * override replaces it once s3_628 has gone over 0xb4.  If this does not
+     * fire, the uninitialised flag the original carries is untested. */
+    {
+        int caught;
+
+        pf_seed(g_a, 0, 0x10, 0);
+        o_fill(g_a, 't', 1, 1, 1);
+        pf_seed(g_b, 0, 0xb5, 0);
+        o_fill(g_b, 't', 1, 1, 1);
+        caught = g_a->s3_frame[13] != 0x2d && g_b->s3_frame[13] == 0x2d &&
+                 g_a->s3_frame[14] != 0x2d && g_b->s3_frame[14] == 0x2d &&
+                 g_a->s3_frame[15] != 0x2d && g_b->s3_frame[15] == 0x2d;
+        n++;
+        if (!caught) {
+            fprintf(stderr, "  the pause harness does not reach the 0x2d "
+                            "override (%02x/%02x) -- it is proving nothing\n",
+                            g_a->s3_frame[13], g_b->s3_frame[13]);
+            bad++;
+        }
+    }
+
+    /* the fourth control: Track_Commit's whole job is to move the cursors on
+     * by the durations, so two different durations have to move them apart */
+    {
+        int caught, i;
+
+        pf_seed(g_a, 0, 0x32, 3);
+        pf_seed(g_b, 0, 0x32, 3);
+        for (i = 0; i < 22; i++) {
+            g_a->trk_param[i][3] = 5;
+            g_b->trk_param[i][3] = 9;
+        }
+        o_commit(g_a);
+        o_commit(g_b);
+        caught = g_a->trk_0c != g_b->trk_0c && g_a->trk_10 != g_b->trk_10 &&
+                 memcmp(g_a->trk_490, g_b->trk_490, sizeof g_a->trk_490) != 0;
+        n++;
+        if (!caught) {
+            fprintf(stderr, "  the commit harness does not see the durations "
+                            "-- it is proving nothing\n");
+            bad++;
+        }
+    }
+
+    fprintf(stderr, "%-18s %d/%d identical\n", "pause frames", n - bad, n);
+    return bad != 0;
+}
+
+/*
+ * Stage3_Fill and Stage3_Pause, against a real node list.
+ *
+ * Both reach into the pipeline -- one frees a node, the other allocates them
+ * and calls Stage3_Insert -- so a poisoned object is not enough: each case
+ * builds a constructed engine and appends a script of nodes to it, then puts
+ * stage 3's window over part of that list.  The whole object is compared
+ * afterwards, node pool and free list included, so a node that came off the
+ * wrong end shows up.
+ *
+ * The scripts are what the look-ahead in Stage3_Pause is for: each ends in
+ * something different -- a 'C', an 'x', an 'i', a type 5, a pause that is
+ * already in place, and one that is just long enough to hit the ten-node
+ * limit -- and the sweep puts the window at three depths into each.
+ */
+typedef int32_t(__thiscall *ps_fill_t)(Engine *);
+typedef Node *(__thiscall *ps_pause_t)(Engine *);
+typedef Node *(TV_THISCALL *ps_append_t)(Engine *, int32_t, int32_t);
+
+typedef struct { int type; char value; unsigned xflags; } ps_node_t;
+
+static const ps_node_t PS_L0[] = {
+    {3, 'A', 0}, {3, 'K', 0}, {3, 'a', 0}, {0, 'C', 0}, {3, 'o', 0}, {3, '.', 0},
+};
+static const ps_node_t PS_L1[] = {
+    {3, 'e', 0}, {0, 'x', 0}, {3, 'm', 0}, {3, 'u', 0}, {5, ' ', 0}, {3, 'A', 0},
+};
+static const ps_node_t PS_L2[] = {
+    {3, 'p', 0}, {3, '.', 0}, {0, 'i', 0}, {3, 'r', 0}, {3, 'A', 0}, {3, 'S', 0},
+};
+static const ps_node_t PS_L3[] = {
+    {3, 'l', 0}, {4, ' ', 0x18}, {3, 'e', 0}, {5, ' ', 0}, {3, 'B', 0}, {3, 'o', 0},
+};
+static const ps_node_t PS_L4[] = {
+    {4, ' ', 8}, {3, ',', 0}, {3, 'i', 0}, {0, 'z', 0}, {3, 't', 0}, {3, 'E', 0},
+};
+static const ps_node_t PS_L5[] = {
+    {3, 'a', 0}, {3, 'b', 0}, {3, 'e', 0}, {3, 'd', 0}, {3, 'i', 0}, {3, 'g', 0},
+    {3, 'o', 0}, {3, 'k', 0}, {3, 'u', 0}, {3, 'm', 0}, {3, 'A', 0}, {3, 'S', 0},
+};
+static const struct { const ps_node_t *n; int len; } PS_LIST[] = {
+    {PS_L0, 6}, {PS_L1, 6}, {PS_L2, 6}, {PS_L3, 6}, {PS_L4, 6}, {PS_L5, 12},
+};
+#define PS_NLIST ((int)(sizeof PS_LIST / sizeof PS_LIST[0]))
+
+/* builds the engine and the list; returns the nodes in `out` */
+static void ps_build(Engine *g, uint8_t *shared, const ps_node_t *script,
+                     int len, int at, Node **out)
+{
+    ps_append_t append = (ps_append_t)(uintptr_t)0x10008b60;
+    int i;
+
+    fresh(g, shared);
+    for (i = 0; i < len; i++) {
+        out[i] = append(g, script[i].type, (uint8_t)script[i].value);
+        out[i]->flags |= script[i].xflags;
+        out[i]->arg = (uint32_t)(20 + i * 7);
+        out[i]->b15 = (uint8_t)(0x30 + i);
+    }
+    g->stage = &g->stage_ctx[3];
+    g->stage_ctx[3].first = out[0];
+    g->stage_ctx[3].last = out[len - 1];
+    g->stage_ctx[3].cur = out[at > 0 ? at - 1 : 0];
+    g->stage_ctx[3].ctl = out[at];
+    g->stage_ctx[3].scan = out[at + 1 < len ? at + 1 : len - 1];
+}
+
+static int unit_pausestage(void)
+{
+    ps_fill_t o_fill = (ps_fill_t)(uintptr_t)0x1001b170;
+    ps_pause_t o_pause = (ps_pause_t)(uintptr_t)0x1001c110;
+    static const int OWED[] = {0, 3, 100};
+    static const int AT[] = {0, 1, 3};
+    uint8_t *shared = (uint8_t *)VirtualAlloc(NULL, 0x4000,
+                          MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+    int li, ai, oi, ae, rb, rm, kd, sm, bad = 0, n = 0, shown = 0;
+    Node *na[16], *nb[16];
+
+    if (alloc_engines())
+        return 2;
+
+    /* Stage3_Fill */
+    for (li = 0; li < PS_NLIST; li++)
+        for (ai = 0; ai < 3; ai++)
+            for (oi = 0; oi < 3; oi++)
+                for (ae = 0; ae < 2; ae++)
+                    for (rb = 0; rb < 2; rb++)
+                        for (rm = 0; rm < 3; rm++) {
+                            int32_t ra, rb2;
+                            int w;
+
+                            for (w = 0; w < 2; w++) {
+                                Engine *g = w ? g_b : g_a;
+
+                                ps_build(g, shared, PS_LIST[li].n, PS_LIST[li].len,
+                                         AT[ai], w ? nb : na);
+                                g->s3_1fae = (uint8_t)ae;
+                                g->s3_60c = OWED[oi];
+                                g->s3_610 = (uint8_t)"t gs"[oi + rb];
+                                g->s3_611 = (uint8_t)rb;
+                                g->s3_1fe0 = 2;
+                                g->s3_1fe4 = 3;
+                                g->trk_04 = 200;
+                                g->trk_10 = 200 - rm * 60;
+                                g->trk_0c = 40;
+                            }
+                            ra = o_fill(g_a);
+                            rb2 = Stage3_Fill(g_b);
+                            normalize(g_a);
+                            normalize(g_b);
+                            n++;
+                            if (ra != rb2 ||
+                                memcmp(g_a, g_b, sizeof *g_a) != 0) {
+                                if (shown++ < 6)
+                                    fprintf(stderr,
+                                            "  Stage3_Fill(list %d at %d owed"
+                                            " %d 1fae %d 611 %d room %d)"
+                                            " differs (%d/%d)\n",
+                                            li, AT[ai], OWED[oi], ae, rb, rm,
+                                            (int)ra, (int)rb2);
+                                bad++;
+                            }
+                        }
+
+    /* Stage3_Pause */
+    for (li = 0; li < PS_NLIST; li++)
+        for (ai = 0; ai < 3; ai++)
+            for (kd = 0; kd < 6; kd++)
+                for (sm = 0; sm < 2; sm++)
+                    for (rb = 0; rb < 2; rb++) {
+                        Node *ra, *rb2;
+                        int w;
+
+                        for (w = 0; w < 2; w++) {
+                            Engine *g = w ? g_b : g_a;
+
+                            ps_build(g, shared, PS_LIST[li].n, PS_LIST[li].len, AT[ai],
+                                     w ? nb : na);
+                            g->s3_1fb0 = kd;
+                            g->s3_1fb4 = rb ? 4 : 1;
+                            g->stop_mark = (uint8_t)sm;
+                            /* Stage3_Insert needs somewhere to put the two
+                             * nodes it makes, and a cursor to work from */
+                            g->trk_0c = 64;
+                            g->s3_1fe0 = 2;
+                            if (rb)
+                                g->stage_ctx[3].cur = g->stage_ctx[3].ctl;
+                        }
+                        ra = o_pause(g_a);
+                        rb2 = Stage3_Pause(g_b);
+                        normalize(g_a);
+                        normalize(g_b);
+                        n++;
+                        if ((ra == NULL) != (rb2 == NULL) ||
+                            memcmp(g_a, g_b, sizeof *g_a) != 0) {
+                            if (shown++ < 6)
+                                fprintf(stderr,
+                                        "  Stage3_Pause(list %d at %d kind %d"
+                                        " stop %d cur=ctl %d) differs\n",
+                                        li, AT[ai], kd, sm, rb);
+                            bad++;
+                        }
+                    }
+
+    /* the first control: Stage3_Fill hands the frame count on, so two
+     * different amounts owed have to leave different track buffers */
+    {
+        int caught, w;
+
+        for (w = 0; w < 2; w++) {
+            Engine *g = w ? g_b : g_a;
+
+            ps_build(g, shared, PS_L0, 6, 1, w ? nb : na);
+            g->s3_1fae = 0;
+            g->s3_60c = w ? 30 : 4;
+            g->s3_610 = 't';
+            g->s3_611 = 1;
+            g->s3_1fe0 = 2;
+            g->s3_1fe4 = 3;
+            g->trk_04 = 400;
+            g->trk_10 = 100;
+            g->trk_0c = 40;
+        }
+        o_fill(g_a);
+        o_fill(g_b);
+        /* track 12, because row 0 of the table gives it 0xe1 -- most of
+         * the row is zero and writing zero over zero would prove nothing */
+        caught = g_a->trk_0c != g_b->trk_0c &&
+                 memcmp(g_a->trk_data[12], g_b->trk_data[12], 256) != 0;
+        n++;
+        if (!caught) {
+            fprintf(stderr, "  the fill harness does not write the tracks "
+                            "(cursor %d/%d) -- it is proving nothing\n",
+                    (int)g_a->trk_0c, (int)g_b->trk_0c);
+            bad++;
+        }
+    }
+
+    /* the second control: Stage3_Pause's whole job is to put a pause into
+     * the list, so the kind it settles on has to change the node pool */
+    {
+        int caught, w;
+
+        /* list 0 runs into a 'C' and so needs a pause; list 3 already has
+         * one two nodes along and must leave the pool alone */
+        for (w = 0; w < 2; w++) {
+            Engine *g = w ? g_b : g_a;
+
+            ps_build(g, shared, w ? PS_L3 : PS_L0, 6, 0, w ? nb : na);
+            g->s3_1fb0 = 3;
+            g->trk_0c = 64;
+            g->s3_1fe0 = 2;
+        }
+        o_pause(g_a);
+        o_pause(g_b);
+        caught = g_a->free_nodes != g_b->free_nodes;
+        n++;
+        if (!caught) {
+            fprintf(stderr, "  the pause harness does not insert a pause "
+                            "(%d/%d free) -- it is proving nothing\n",
+                    (int)g_a->free_nodes, (int)g_b->free_nodes);
+            bad++;
+        }
+    }
+
+    fprintf(stderr, "%-18s %d/%d identical\n", "pause stage", n - bad, n);
+    return bad != 0;
+}
+
+/*
+ * Stage3_Run, the whole of stage 3 in one call.
+ *
+ * The same node scripts as the two above, with the state that decides which
+ * of the three things a step is swept over them: s3_1fb0 picks the arm at the
+ * top, s3_1fb4 is the utterance-wide state machine, trk_08 and the distance
+ * between trk_0c and trk_04 are what move it on, and the p_34 bit with
+ * rate_index picks the buffer margins.
+ *
+ * Because the three arms end in three different results, the sweep also
+ * counts them: a run that never reached the build arm would be comparing
+ * almost nothing, so the tallies are printed and the last two controls are
+ * that they are not zero.
+ */
+/*
+ * Stage 3's window mask is 0x28, which g_node_type_bits turns into types 4
+ * and 5 -- so the node stage 3 stops on is a type 5 phoneme or a type 4
+ * pause, never the type 3 nodes stage 1 makes.  Engine_RunControl returns 1
+ * for anything else, and Engine_StageBegin then walks the window straight
+ * past it, which is why these scripts keep types 4 and 5 at the three
+ * positions the sweep puts the window at and leave the type 0 and type 3
+ * nodes further along, where only the look-ahead in Stage3_Pause sees them.
+ */
+static const ps_node_t R_L0[] = {
+    {5, 'A', 0}, {5, 'K', 0}, {3, 'a', 0}, {5, 'o', 0},
+    {3, '.', 0}, {0, 'C', 0}, {5, 'e', 0}, {5, 'S', 0},
+};
+static const ps_node_t R_L1[] = {
+    {5, 'E', 0}, {4, ' ', 0x18}, {3, 'e', 0}, {5, 'u', 0},
+    {3, 'i', 0}, {0, 'x', 0}, {5, 'A', 0}, {5, 'm', 0},
+};
+static const ps_node_t R_L2[] = {
+    {5, 'o', 0}, {5, 'p', 0}, {3, ',', 0}, {4, ' ', 8},
+    {3, 't', 0}, {0, 'i', 0}, {5, 'E', 0}, {5, 'r', 0},
+};
+static const ps_node_t R_L3[] = {
+    {4, ' ', 8}, {5, 'b', 0}, {3, '.', 0}, {5, 'd', 0},
+    {3, 'g', 0}, {3, 'k', 0}, {0, 'z', 0}, {5, 'u', 0},
+};
+static const ps_node_t R_L4[] = {
+    {5, 'a', 0}, {5, 'b', 0}, {3, 'e', 0}, {5, 'd', 0}, {3, 'i', 0},
+    {3, 'g', 0}, {3, 'o', 0}, {3, 'k', 0}, {3, 'u', 0}, {5, 'S', 0},
+};
+/* long enough that the look-ahead runs into its ten-node limit */
+static const ps_node_t R_L5[] = {
+    {5, 'A', 0}, {5, 'K', 0}, {3, 'a', 0}, {5, 'o', 0}, {3, 'b', 0},
+    {3, 'd', 0}, {3, 'e', 0}, {3, 'g', 0}, {3, 'i', 0}, {3, 'k', 0},
+    {3, 'm', 0}, {3, 'o', 0}, {3, 'u', 0}, {5, 'S', 0},
+};
+static const struct { const ps_node_t *n; int len; } R_LIST[] = {
+    {R_L0, 8}, {R_L1, 8}, {R_L2, 8}, {R_L3, 8}, {R_L4, 10}, {R_L5, 14},
+};
+#define R_NLIST ((int)(sizeof R_LIST / sizeof R_LIST[0]))
+
+typedef int32_t(__thiscall *s3r_t)(Engine *);
+
+static int unit_stage3run(void)
+{
+    s3r_t orig = (s3r_t)(uintptr_t)0x1001ad30;
+    static const int AT3[] = {0, 1, 3};
+    static const int STATE[] = {0, 1, 2, 4};
+    static const int AHEAD[] = {0, 40, 200};
+    uint8_t *shared = (uint8_t *)VirtualAlloc(NULL, 0x4000,
+                          MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+    int li, ai, kd, si, t8, mg, ah, bad = 0, n = 0, shown = 0;
+    int ret[4];
+    Node *na[16], *nb[16];
+
+    if (alloc_engines())
+        return 2;
+    memset(ret, 0, sizeof ret);
+
+    for (li = 0; li < R_NLIST; li++)
+        for (ai = 0; ai < 3; ai++)
+            for (kd = 0; kd < 5; kd++)
+                for (si = 0; si < 4; si++)
+                    for (t8 = 0; t8 < 2; t8++)
+                        for (mg = 0; mg < 2; mg++)
+                            for (ah = 0; ah < 3; ah++) {
+                                int32_t ra, rb;
+                                int w;
+
+                                for (w = 0; w < 2; w++) {
+                                    Engine *g = w ? g_b : g_a;
+
+                                    ps_build(g, shared, R_LIST[li].n, R_LIST[li].len,
+                                             AT3[ai], w ? nb : na);
+                                    g->s3_1fb0 = kd;
+                                    g->s3_1fb4 = STATE[si];
+                                    g->trk_08 = t8 ? 50 : -1;
+                                    g->trk_04 = 64;
+                                    g->trk_0c = 64 + AHEAD[ah];
+                                    g->trk_10 = g->trk_0c;
+                                    g->stage_ctx[3].p_34 = mg ? 0x2000 : 0;
+                                    g->stage_ctx[3].rate_index = mg ? 0x20 : 5;
+                                    g->s3_60c = 12;
+                                    g->s3_610 = 't';
+                                    g->s3_611 = 1;
+                                }
+                                ra = orig(g_a);
+                                rb = Stage3_Run(g_b);
+                                if (ra >= 0 && ra <= 3)
+                                    ret[ra]++;
+                                normalize(g_a);
+                                normalize(g_b);
+                                n++;
+                                if (ra != rb ||
+                                    memcmp(g_a, g_b, sizeof *g_a) != 0) {
+                                    if (shown++ < 6)
+                                        fprintf(stderr,
+                                                "  Stage3_Run(list %d at %d "
+                                                "1fb0 %d 1fb4 %d trk08 %d "
+                                                "margin %d ahead %d) differs "
+                                                "(%d/%d)\n",
+                                                li, AT3[ai], kd, STATE[si],
+                                                t8, mg, AHEAD[ah],
+                                                (int)ra, (int)rb);
+                                    bad++;
+                                }
+                            }
+
+    /* the first control: the margins at the top are three times wider for a
+     * slow voice, so the p_34 bit has to change them */
+    {
+        int caught, w;
+
+        for (w = 0; w < 2; w++) {
+            Engine *g = w ? g_b : g_a;
+
+            ps_build(g, shared, R_L0, 8, 1, w ? nb : na);
+            g->s3_1fb0 = 3;
+            g->stage_ctx[3].p_34 = w ? 0x2000 : 0;
+            g->stage_ctx[3].rate_index = 5;
+            g->trk_04 = 64;
+            g->trk_0c = 64;
+            g->s3_60c = 12;
+            g->s3_610 = 't';
+            g->s3_611 = 1;
+        }
+        orig(g_a);
+        orig(g_b);
+        caught = g_a->s3_1fe0 != g_b->s3_1fe0 &&
+                 g_a->s3_1fe4 != g_b->s3_1fe4 &&
+                 g_a->s3_1fe8 != g_b->s3_1fe8;
+        n++;
+        if (!caught) {
+            fprintf(stderr, "  the run harness does not see the buffer "
+                            "margins -- it is proving nothing\n");
+            bad++;
+        }
+    }
+
+    /* the second control: s3_1fb0 of 2 on a pause stage 3 put there itself
+     * takes the arm that raises s3_1fbc and ends the step */
+    {
+        int caught, w;
+        int32_t r[2];
+
+        for (w = 0; w < 2; w++) {
+            Engine *g = w ? g_b : g_a;
+
+            /* R_L1 index 1 is the type 4 pause with 0x18 set, which is
+             * the only node the s3_1fbc arm accepts */
+            ps_build(g, shared, R_L1, 8, 1, w ? nb : na);
+            g->s3_1fb0 = w ? 2 : 3;
+            g->trk_04 = 64;
+            g->trk_0c = 64;
+            g->s3_60c = 12;
+            g->s3_610 = 't';
+            g->s3_611 = 1;
+            r[w] = orig(g);
+        }
+        caught = g_b->s3_1fbc == 1 && g_a->s3_1fbc == 0 && r[0] != r[1];
+        n++;
+        if (!caught) {
+            fprintf(stderr, "  the run harness does not reach the s3_1fbc arm"
+                            " (%d/%d, returned %d/%d) -- it is proving "
+                            "nothing\n", g_a->s3_1fbc, g_b->s3_1fbc,
+                            (int)r[0], (int)r[1]);
+            bad++;
+        }
+    }
+
+    /* and the last two: that the sweep reached the pause arm and the build
+     * arm at all, not just the empty-window one */
+    n++;
+    if (ret[1] == 0) {
+        fprintf(stderr, "  the run sweep never filled a pause -- it is "
+                        "proving nothing\n");
+        bad++;
+    }
+    n++;
+    if (ret[2] == 0) {
+        fprintf(stderr, "  the run sweep never built a phoneme -- it is "
+                        "proving nothing\n");
+        bad++;
+    }
+
+    fprintf(stderr, "%-18s %d/%d identical\n", "stage 3 run", n - bad, n);
+    fprintf(stderr, "  (returned 0 %d times, 1 %d, 2 %d)\n",
+            ret[0], ret[1], ret[2]);
+    return bad != 0;
+}
+
+/*
+ * Seven leaves: the two accent folders, stage 0's emit and its backward vowel
+ * search, and three of stage 2's.
+ *
+ * The two folders take a byte and nothing else, so they are swept over all
+ * 256 values with a guard byte either side -- both of them write through the
+ * pointer they are given and the exact byte they leave is the point.  The
+ * other five walk the node list, so they get a constructed engine and a
+ * script the same way the stage 3 suites do, with the window put over stage 0
+ * or stage 2 rather than stage 3.
+ */
+typedef void(__thiscall *lf_v1_t)(Engine *, Node *);
+typedef Node *(__thiscall *lf_n1_t)(Engine *, Node *);
+typedef void(__thiscall *lf_v0_t)(Engine *);
+typedef void(__thiscall *lf_emit_t)(Engine *, int32_t, uint32_t, uint32_t);
+typedef uint8_t(__cdecl *lf_acc_t)(uint8_t *);
+
+static const ps_node_t LF_L0[] = {
+    {3, 'A', 0}, {3, 'K', 0}, {3, 'E', 0}, {4, ' ', 0},
+    {3, 'p', 0}, {3, 'I', 0}, {3, 'S', 0}, {3, 'O', 0},
+};
+static const ps_node_t LF_L1[] = {
+    {3, 'K', 0}, {3, 'p', 0}, {3, 'S', 0}, {3, 'm', 0},
+    {4, ' ', 0}, {3, 't', 0}, {3, 'r', 0}, {3, 'n', 0},
+};
+static const ps_node_t LF_L2[] = {
+    {3, '1', 0}, {3, 'A', 0}, {3, '2', 0}, {3, 'K', 0},
+    {3, '"', 0}, {3, 'E', 0}, {4, ' ', 0}, {3, 'S', 0},
+};
+static const ps_node_t LF_L3[] = {
+    {3, '~', 0}, {3, 'S', 0}, {4, ' ', 0}, {3, 'A', 0},
+    {3, '1', 0}, {0, 'C', 0}, {3, 'n', 0}, {3, 'e', 0},
+};
+static const ps_node_t *const LF_LIST[] = {LF_L0, LF_L1, LF_L2, LF_L3};
+#define LF_NLIST 4
+#define LF_LEN   8
+
+/* a returned node as an offset into its own engine, so the two compare */
+static size_t lf_off(const Engine *e, const void *p)
+{
+    return p == NULL ? (size_t)-1
+                     : (size_t)((const uint8_t *)p - (const uint8_t *)e);
+}
+
+static void lf_build(Engine *g, uint8_t *shared, const ps_node_t *script,
+                     int stage, int at, Node **out)
+{
+    ps_append_t append = (ps_append_t)(uintptr_t)0x10008b60;
+    StageCtx *st = &g->stage_ctx[stage];
+    int i;
+
+    fresh(g, shared);
+    for (i = 0; i < LF_LEN; i++) {
+        out[i] = append(g, script[i].type, (uint8_t)script[i].value);
+        out[i]->flags |= script[i].xflags;
+        out[i]->arg = (uint32_t)(15 + i * 5);
+        out[i]->b15 = (uint8_t)(0x30 + i);
+    }
+    g->stage = st;
+    st->first = out[0];
+    st->last = out[LF_LEN - 1];
+    st->cur = out[at];
+    st->ctl = out[at];
+    st->scan = out[at];
+}
+
+static int unit_leaves2(void)
+{
+    lf_acc_t o_split = (lf_acc_t)(uintptr_t)0x10014db0;
+    lf_acc_t o_fold = (lf_acc_t)(uintptr_t)0x10020cf0;
+    lf_v0_t o_clear = (lf_v0_t)(uintptr_t)0x1001a9e0;
+    lf_v1_t o_mark = (lf_v1_t)(uintptr_t)0x10019a00;
+    lf_n1_t o_stress = (lf_n1_t)(uintptr_t)0x10019a80;
+    lf_n1_t o_prevv = (lf_n1_t)(uintptr_t)0x10014720;
+    lf_emit_t o_emit = (lf_emit_t)(uintptr_t)0x10014090;
+    uint8_t *shared = (uint8_t *)VirtualAlloc(NULL, 0x4000,
+                          MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+    int c, li, ci, ni, ty, mk, bad = 0, n = 0, shown = 0;
+    Node *na[LF_LEN], *nb[LF_LEN];
+
+    if (alloc_engines())
+        return 2;
+
+    /* the two folders, over every byte */
+    for (c = 0; c < 256; c++) {
+        uint8_t a[4], b[4];
+        uint8_t ra, rb;
+        int k;
+
+        for (k = 0; k < 2; k++) {
+            memset(a, 0x5a, 4);
+            memset(b, 0x5a, 4);
+            a[1] = b[1] = (uint8_t)c;
+            ra = k ? o_fold(a + 1) : o_split(a + 1);
+            rb = k ? Accent_Fold(b + 1) : Accent_Split(b + 1);
+            n++;
+            if (ra != rb || memcmp(a, b, 4) != 0) {
+                if (shown++ < 6)
+                    fprintf(stderr, "  %s(0x%02x) differs: %02x/%02x "
+                                    "left %02x/%02x\n",
+                            k ? "Accent_Fold" : "Accent_Split", c,
+                            ra, rb, a[1], b[1]);
+                bad++;
+            }
+        }
+    }
+
+    /* Stage2_ClearRun: no inputs at all, so one dirty object is the domain */
+    for (c = 0; c < 4; c++) {
+        memset(g_a, (uint8_t)(0x11 * c + 3), sizeof *g_a);
+        memset(g_b, (uint8_t)(0x11 * c + 3), sizeof *g_b);
+        o_clear(g_a);
+        Stage2_ClearRun(g_b);
+        n++;
+        if (memcmp(g_a, g_b, sizeof *g_a) != 0) {
+            if (shown++ < 4)
+                fprintf(stderr, "  Stage2_ClearRun(fill %02x) differs\n",
+                        (unsigned)(0x11 * c + 3));
+            bad++;
+        }
+    }
+
+    /* Stage2_MarkBack and Stage2_ApplyStress, over the scripts */
+    for (li = 0; li < LF_NLIST; li++)
+        for (ci = 0; ci < 3; ci++)
+            for (ni = 0; ni < LF_LEN; ni++) {
+                int w, k;
+
+                for (k = 0; k < 2; k++) {
+                    Node *ra = NULL, *rb = NULL;
+
+                    for (w = 0; w < 2; w++) {
+                        Engine *g = w ? g_b : g_a;
+                        Node **o = w ? nb : na;
+
+                        lf_build(g, shared, LF_LIST[li], 2, ci, o);
+                        if (k == 0) {
+                            if (w)
+                                Stage2_MarkBack(g, o[ni]);
+                            else
+                                o_mark(g, o[ni]);
+                        } else {
+                            if (w)
+                                rb = Stage2_ApplyStress(g, o[ni]);
+                            else
+                                ra = o_stress(g, o[ni]);
+                        }
+                    }
+                    normalize(g_a);
+                    normalize(g_b);
+                    n++;
+                    if ((k == 1 &&
+                         lf_off(g_a, ra) != lf_off(g_b, rb)) ||
+                        memcmp(g_a, g_b, sizeof *g_a) != 0) {
+                        if (shown++ < 6)
+                            fprintf(stderr, "  %s(list %d ctl %d node %d)"
+                                            " differs\n",
+                                    k ? "Stage2_ApplyStress"
+                                      : "Stage2_MarkBack", li, ci, ni);
+                        bad++;
+                    }
+                }
+            }
+
+    /* Stage0_PrevVowel: the window's ctl is where it gives up */
+    for (li = 0; li < LF_NLIST; li++)
+        for (ci = 0; ci < 4; ci++)
+            for (ni = ci; ni < LF_LEN; ni++) {
+                Node *ra, *rb;
+
+                lf_build(g_a, shared, LF_LIST[li], 0, ci, na);
+                ra = o_prevv(g_a, na[ni]);
+                lf_build(g_b, shared, LF_LIST[li], 0, ci, nb);
+                rb = Stage0_PrevVowel(g_b, nb[ni]);
+                n++;
+                normalize(g_a);
+                normalize(g_b);
+                if (lf_off(g_a, ra) != lf_off(g_b, rb) ||
+                    memcmp(g_a, g_b, sizeof *g_a) != 0) {
+                    if (shown++ < 6)
+                        fprintf(stderr, "  Stage0_PrevVowel(list %d ctl %d "
+                                        "node %d) differs\n", li, ci, ni);
+                    bad++;
+                }
+            }
+
+    /* Stage0_Emit: both destinations, every type, and the flag rewrite */
+    for (li = 0; li < 2; li++)
+        for (ty = 0; ty < 6; ty++)
+            for (mk = 0; mk < 2; mk++)
+                for (ci = 0; ci < 2; ci++) {
+                    int w;
+
+                    for (w = 0; w < 2; w++) {
+                        Engine *g = w ? g_b : g_a;
+
+                        lf_build(g, shared, LF_LIST[li], 0, 2, w ? nb : na);
+                        if (ci == 0)
+                            g->stage_ctx[0].ctl = NULL;
+                        if (ci == 0 && mk == 0)
+                            g->stage_ctx[0].first = NULL;
+                        if (w)
+                            Stage0_Emit(g, ty, (uint8_t)('a' + ty),
+                                        (uint8_t)mk);
+                        else
+                            o_emit(g, ty, (uint32_t)('a' + ty), (uint32_t)mk);
+                    }
+                    normalize(g_a);
+                    normalize(g_b);
+                    n++;
+                    if (memcmp(g_a, g_b, sizeof *g_a) != 0) {
+                        if (shown++ < 6)
+                            fprintf(stderr, "  Stage0_Emit(list %d type %d "
+                                            "mark %d ctl %d) differs\n",
+                                    li, ty, mk, ci);
+                        bad++;
+                    }
+                }
+
+    /* the first control: both folders read their answer out of a table, so
+     * moving the table has to move the answer */
+    {
+        uint8_t *t = (uint8_t *)(uintptr_t)0x10048920;
+        uint8_t a[2], b[2];
+        int caught, k;
+
+        a[0] = b[0] = 0xc1;
+        o_split(a);
+        for (k = 0; k < 32; k++)
+            if (t[k] != 0)
+                t[k] = (uint8_t)(t[k] + 1);
+        o_split(b);
+        for (k = 0; k < 32; k++)
+            if (t[k] != 0)
+                t[k] = (uint8_t)(t[k] - 1);
+        caught = a[0] != b[0];
+        n++;
+        if (!caught) {
+            fprintf(stderr, "  the accent harness does not see a moved base "
+                            "table (%02x/%02x) -- it is proving nothing\n",
+                    a[0], b[0]);
+            bad++;
+        }
+    }
+
+    /* the second control: Stage2_ClearRun has to leave a mark */
+    {
+        int caught;
+
+        memset(g_a, 0x77, sizeof *g_a);
+        memset(g_b, 0x77, sizeof *g_b);
+        o_clear(g_a);
+        caught = memcmp(g_a, g_b, sizeof *g_a) != 0;
+        n++;
+        if (!caught) {
+            fprintf(stderr, "  Stage2_ClearRun changed nothing -- the "
+                            "harness is proving nothing\n");
+            bad++;
+        }
+    }
+
+    /* the third control: Stage2_MarkBack walks back, so starting it further
+     * along has to mark different nodes */
+    {
+        int caught;
+
+        lf_build(g_a, shared, LF_L0, 2, 0, na);
+        o_mark(g_a, na[5]);
+        lf_build(g_b, shared, LF_L0, 2, 0, nb);
+        o_mark(g_b, nb[7]);
+        caught = (na[5]->flags & 0x20) != (nb[5]->flags & 0x20) ||
+                 (na[7]->flags & 0x20) != (nb[7]->flags & 0x20);
+        n++;
+        if (!caught) {
+            fprintf(stderr, "  the mark harness sets the same flags either "
+                            "way -- it is proving nothing\n");
+            bad++;
+        }
+    }
+
+    /* the fourth control: a stress mark is removed from the list, so the pool
+     * has to come out different from a node that is not one */
+    {
+        int caught;
+
+        lf_build(g_a, shared, LF_L2, 2, 0, na);
+        o_stress(g_a, na[2]);
+        lf_build(g_b, shared, LF_L2, 2, 0, nb);
+        o_stress(g_b, nb[3]);
+        /* the level lands on the node *before* the mark, because
+         * Engine_NodeFree with forward 0 hands back the previous one */
+        caught = g_a->free_nodes != g_b->free_nodes &&
+                 (na[1]->flags & 0x18) != (nb[1]->flags & 0x18);
+        n++;
+        if (!caught) {
+            fprintf(stderr, "  the stress harness does not fold the mark "
+                            "(%d/%d free, flags %x/%x) -- it is proving "
+                            "nothing\n", (int)g_a->free_nodes,
+                    (int)g_b->free_nodes, (unsigned)na[1]->flags,
+                    (unsigned)nb[1]->flags);
+            bad++;
+        }
+    }
+
+    /* the fifth control: Stage0_Emit's two destinations are different places */
+    {
+        int caught;
+
+        lf_build(g_a, shared, LF_L0, 0, 2, na);
+        o_emit(g_a, 3, 'Z', 0);
+        lf_build(g_b, shared, LF_L0, 0, 2, nb);
+        g_b->stage_ctx[0].ctl = NULL;
+        o_emit(g_b, 3, 'Z', 0);
+        caught = na[2]->prev != nb[2]->prev &&
+                 g_a->stage_ctx[0].last != g_b->stage_ctx[0].last;
+        n++;
+        if (!caught) {
+            fprintf(stderr, "  the emit harness puts the node in the same "
+                            "place either way -- it is proving nothing\n");
+            bad++;
+        }
+    }
+
+    fprintf(stderr, "%-18s %d/%d identical\n", "leaf set 2", n - bad, n);
+    return bad != 0;
+}
+
+/*
+ * The two word searches, TextIn_Emit and Stage2_RunControls.
+ *
+ * The searches are driven from their own tables: every entry is looked up as
+ * it stands, in the other case, and as two near misses, so the hit, the
+ * back-walk and the miss all run for all 584 words.  Case is the point of the
+ * second variant -- the original compares with the CRT's _stricmp, which only
+ * folds A to Z, and the abbreviation table is full of accented letters that
+ * it therefore leaves alone.
+ */
+typedef int32_t(__cdecl *wf_t)(const char *, int32_t *);
+typedef int32_t(__thiscall *em_t)(TextIn *, int32_t);
+typedef void(__thiscall *rc_t)(Engine *);
+
+/* @0x10046088 */
+extern int32_t g_lex_index[78];
+/* @0x1006afb6 */
+extern const char g_lex_text[];
+/* @0x10045898 */
+extern int32_t g_abbrev_index[507];
+/* @0x10062074 */
+extern const char g_abbrev_text[];
+
+/* one entry's word, as a key, with variant `v` applied */
+static void wf_key(char *out, const char *word, int v)
+{
+    size_t i, n;
+
+    for (n = 0; n < 40 && word[n] != 0; n++)
+        out[n] = word[n];
+    out[n] = 0;
+    switch (v) {
+    case 1:
+        for (i = 0; i < n; i++)
+            if ((uint8_t)(out[i] - 'A') < 26u)
+                out[i] = (char)(out[i] + 0x20);
+        break;
+    case 2:
+        for (i = 0; i < n; i++)
+            if ((uint8_t)(out[i] - 'a') < 26u)
+                out[i] = (char)(out[i] - 0x20);
+        break;
+    case 3:
+        if (n > 1)
+            out[n - 1] = 0;
+        break;
+    case 4:
+        out[n] = 'Q';
+        out[n + 1] = 0;
+        break;
+    default:
+        break;
+    }
+}
+
+static int unit_words(void)
+{
+    wf_t o_lex = (wf_t)(uintptr_t)0x10023160;
+    wf_t o_abb = (wf_t)(uintptr_t)0x1001dd50;
+    em_t o_emit = (em_t)(uintptr_t)0x1001f850;
+    rc_t o_ctls = (rc_t)(uintptr_t)0x1001a7e0;
+    uint8_t *shared = (uint8_t *)VirtualAlloc(NULL, 0x4000,
+                          MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+    uint8_t *sap[2];
+    int which, tb, i, v, bad = 0, n = 0, shown = 0;
+    char key[48];
+
+    if (alloc_engines())
+        return 2;
+    Lexicon_Init();
+    Abbrev_Init();
+    for (which = 0; which < 2; which++)
+        sap[which] = (uint8_t *)VirtualAlloc(NULL, 0x1000,
+                         MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+
+    for (tb = 0; tb < 2; tb++) {
+        const int32_t *idx = tb ? g_abbrev_index : g_lex_index;
+        const char *txt = tb ? g_abbrev_text : g_lex_text;
+        int top = tb ? 0x1fa : 0x4d;
+
+        for (i = 0; i < top; i++)
+            for (v = 0; v < 5; v++) {
+                int32_t fa = -12345, fb = -12345, ra, rb;
+
+                wf_key(key, txt + idx[i], v);
+                if (key[0] == 0)
+                    continue;
+                if (tb) {
+                    ra = o_abb(key, &fa);
+                    rb = Abbrev_Find(key, &fb);
+                } else {
+                    ra = o_lex(key, &fa);
+                    rb = Lexicon_Find(key, &fb);
+                }
+                n++;
+                if (ra != rb || fa != fb) {
+                    if (shown++ < 8)
+                        fprintf(stderr, "  %s(%s) differs: %d/%d at %d/%d\n",
+                                tb ? "Abbrev_Find" : "Lexicon_Find", key,
+                                (int)ra, (int)rb, (int)fa, (int)fb);
+                    bad++;
+                }
+            }
+        /* and a null key, which both must refuse without touching *first */
+        {
+            int32_t fa = -1, fb = -1, ra, rb;
+
+            ra = tb ? o_abb(NULL, &fa) : o_lex(NULL, &fa);
+            rb = tb ? Abbrev_Find(NULL, &fb) : Lexicon_Find(NULL, &fb);
+            n++;
+            if (ra != rb || fa != fb) {
+                fprintf(stderr, "  %s(NULL) differs\n",
+                        tb ? "Abbrev_Find" : "Lexicon_Find");
+                bad++;
+            }
+        }
+    }
+
+    /* Stage2_RunControls: control nodes at the head of stage 2's window */
+    {
+        static const ps_node_t C_L0[] = {
+            {0, 'A', 0}, {0, 'I', 0}, {0, 'r', 0}, {3, 'a', 0},
+            {0, 'N', 0}, {0, 'C', 0}, {3, 'K', 0}, {3, 'o', 0},
+        };
+        static const ps_node_t C_L1[] = {
+            {0, 'v', 0}, {0, 'P', 0}, {0, 'Z', 0}, {0, 'g', 0},
+            {3, 'e', 0}, {0, 'p', 0}, {3, 'S', 0}, {3, 'i', 0},
+        };
+        static const ps_node_t C_L2[] = {
+            {3, 'A', 0}, {0, 'C', 0}, {0, 'r', 0}, {0, 'A', 0},
+            {0, 'I', 0}, {3, 'm', 0}, {3, 'u', 0}, {3, 'n', 0},
+        };
+        static const ps_node_t C_L3[] = {
+            {0, 'l', 0}, {0, 's', 0}, {0, 't', 0}, {0, 'x', 0},
+            {0, 'f', 0}, {0, 'a', 0}, {0, 'c', 0}, {0, 'i', 0},
+        };
+        static const ps_node_t *const C_LIST[] = {C_L0, C_L1, C_L2, C_L3};
+        int li, ci, sc, cu;
+        Node *na[LF_LEN], *nb[LF_LEN];
+
+        for (li = 0; li < 4; li++)
+            for (ci = 0; ci < 4; ci++)
+                for (sc = 0; sc < 2; sc++)
+                    for (cu = 0; cu < 2; cu++) {
+                        for (which = 0; which < 2; which++) {
+                            Engine *g = which ? g_b : g_a;
+                            Node **o = which ? nb : na;
+
+                            lf_build(g, shared, C_LIST[li], 2, ci, o);
+                            memset(sap[which], 0, 0x1000);
+                            g->sapi = (SapiCentral *)sap[which];
+                            /* scan == cur is what lets the 'r'/'v' arm run */
+                            g->stage_ctx[2].scan = o[sc ? ci : ci + 1];
+                            g->stage_ctx[2].cur = o[ci];
+                            g->s2_87d4 = cu ? o[ci] : NULL;
+                            g->s2_87d8 = 1;
+                        }
+                        o_ctls(g_a);
+                        Stage2_RunControls(g_b);
+                        g_a->sapi = g_b->sapi = NULL;
+                        normalize(g_a);
+                        normalize(g_b);
+                        n++;
+                        if (memcmp(g_a, g_b, sizeof *g_a) != 0 ||
+                            memcmp(sap[0], sap[1], 0x1000) != 0) {
+                            if (shown++ < 6)
+                                fprintf(stderr, "  Stage2_RunControls(list %d "
+                                                "ctl %d scan %d 87d4 %d) "
+                                                "differs\n", li, ci, sc, cu);
+                            bad++;
+                        }
+                    }
+    }
+
+    /* TextIn_Emit: a heap token list on a constructed engine, because the
+     * emit frees every token it lets go of and puts every character it emits
+     * through the engine's preformatter */
+    {
+        static const char *const TX[] = {"uno", "DOS", "tres", "cuatro",
+                                         "cinco"};
+        static const uint8_t TR[] = {' ', ',', 0, '.', ' '};
+        int nt, cur, fin;
+        rblock ba, bb;
+
+        for (nt = 1; nt <= 5; nt++)
+            for (cur = 0; cur < nt; cur++)
+                for (fin = 0; fin < 2; fin++) {
+                    int32_t ra, rb;
+                    int k, ta, tbn;
+
+                    for (which = 0; which < 2; which++) {
+                        Engine *g = which ? g_b : g_a;
+                        rblock *b = which ? &bb : &ba;
+                        Token *t;
+
+                        fresh(g, shared);
+                        rb_group(b, TX, TR, (const uint8_t *)"\0\0\0\0", nt);
+                        b->ti.engine = g;
+                        t = b->ti.head->next;
+                        for (k = 0; k < cur && t != NULL; k++)
+                            t = t->next;
+                        b->ti.cur = t;
+                        /* one token gets a replacement so both arms of the
+                         * text2-or-text choice run */
+                        if (nt > 1 && b->ti.head->next->next != NULL) {
+                            Token *r = b->ti.head->next->next;
+
+                            r->text2 = (char *)tv_malloc(6);
+                            strcpy(r->text2, "XYZ");
+                        }
+                        if (which)
+                            rb = TextIn_Emit(&b->ti, fin);
+                        else
+                            ra = o_emit(&b->ti, fin);
+                    }
+                    ta = list_index(&ba, ba.ti.cur);
+                    tbn = list_index(&bb, bb.ti.cur);
+                    normalize(g_a);
+                    normalize(g_b);
+                    n++;
+                    if (ra != rb || ta != tbn || ba.ti.count != bb.ti.count ||
+                        memcmp(g_a, g_b, sizeof *g_a) != 0) {
+                        if (shown++ < 6)
+                            fprintf(stderr, "  TextIn_Emit(n %d cur %d final "
+                                            "%d) differs (%d/%d, cur %d/%d, "
+                                            "count %d/%d)\n", nt, cur, fin,
+                                    (int)ra, (int)rb, ta, tbn,
+                                    (int)ba.ti.count, (int)bb.ti.count);
+                        bad++;
+                    }
+                }
+    }
+
+    /* the first control: the compare folds case, so a lowercase key has to
+     * find the uppercase entry it is stored as */
+    {
+        int32_t f = -1;
+        int caught = o_lex("baby", &f) == 1 && f == 1;
+
+        n++;
+        if (!caught) {
+            fprintf(stderr, "  the word harness does not fold case (%d at %d)"
+                            " -- it is proving nothing\n",
+                    (int)o_lex("baby", &f), (int)f);
+            bad++;
+        }
+    }
+
+    /* the second control: moving the index has to move the answer */
+    {
+        int32_t f1 = -1, f2 = -1;
+        int caught;
+
+        o_lex("BOOM", &f1);
+        for (i = 0; i < 78; i++)
+            g_lex_index[i] += 1;
+        o_lex("BOOM", &f2);
+        for (i = 0; i < 78; i++)
+            g_lex_index[i] -= 1;
+        caught = f1 != f2 || o_lex("BOOM", &f1) != 1;
+        n++;
+        if (!caught) {
+            fprintf(stderr, "  the word harness does not read the index "
+                            "-- it is proving nothing\n");
+            bad++;
+        }
+    }
+
+    /* the third control: TextIn_Emit's whole job is to feed the preformatter,
+     * so emitting a token has to put characters into the engine */
+    {
+        static const char *const TX1[] = {"hola"};
+        static const uint8_t TR1[] = {'.'};
+        rblock b;
+        int caught;
+
+        fresh(g_a, shared);
+        rb_group(&b, TX1, TR1, (const uint8_t *)"\0", 1);
+        b.ti.engine = g_a;
+        b.ti.cur = b.ti.head->next;
+        o_emit(&b.ti, 1);
+        caught = g_a->pre_wr != 0 && b.ti.head->next == NULL;
+        n++;
+        if (!caught) {
+            fprintf(stderr, "  the emit harness puts nothing through the "
+                            "preformatter (wr %d) -- it is proving nothing\n",
+                    (int)g_a->pre_wr);
+            bad++;
+        }
+    }
+
+    fprintf(stderr, "%-18s %d/%d identical\n", "word lookup", n - bad, n);
+    return bad != 0;
+}
+
+/*
+ * Six of stage 2's: the cache, the vowel count, the boundary class, the
+ * length-and-level latch, the elision and the level.
+ *
+ * All six read the window over stage 2 and most of them read what the cache
+ * left behind, so every case builds a real node list, runs the *original*
+ * Stage2_Cache over it to fill those fields on both sides, and only then calls
+ * the function under test.  The lists are phonemes separated by type 4 word
+ * boundaries, which is what Node_PrevBoundary and Node_NextWord walk.
+ */
+typedef void(__thiscall *s2_v0_t)(Engine *);
+typedef void(__thiscall *s2_v1_t)(Engine *, int32_t);
+typedef uint8_t(__thiscall *s2_b0_t)(Engine *);
+typedef int32_t(__thiscall *s2_cv_t)(Engine *, Node *, uint32_t);
+
+static const ps_node_t S2_L0[] = {
+    {3, 'A', 0}, {3, 'K', 0}, {4, ' ', 0}, {3, 'o', 0},
+    {3, 'S', 0}, {4, ' ', 0}, {3, 'e', 0}, {3, 'n', 0},
+};
+/* the same phoneme on both sides of a boundary, for the elision */
+static const ps_node_t S2_L1[] = {
+    {3, 'N', 0}, {3, 'N', 0}, {4, ' ', 0}, {3, 'N', 0},
+    {3, 'a', 0}, {4, ' ', 0}, {3, 'N', 0}, {3, 'i', 0},
+};
+static const ps_node_t S2_L2[] = {
+    {3, 'E', 0}, {4, ' ', 0}, {3, 'E', 0}, {3, 'L', 0},
+    {4, ' ', 0}, {3, 'L', 0}, {3, '.', 0}, {3, 'u', 0},
+};
+/* runs of vowels, for the count and its diphthong rule */
+static const ps_node_t S2_L3[] = {
+    {3, 'R', 0}, {3, 'a', 0}, {3, 'i', 0}, {4, ' ', 0},
+    {3, 'a', 0}, {3, 'e', 0}, {3, 'o', 0}, {3, 'u', 0},
+};
+static const ps_node_t *const S2_LIST[] = {S2_L0, S2_L1, S2_L2, S2_L3};
+#define S2_NLIST 4
+
+/* the window plus the state these six read, seeded from one number */
+static void s2_seed(Engine *g, uint8_t *shared, const ps_node_t *script,
+                    int at, int sd, Node **out)
+{
+    int i;
+
+    lf_build(g, shared, script, 2, at, out);
+    g->stage_ctx[2].pitch = (sd & 1) ? 0 : 0x50 + sd * 3;
+    g->stage_ctx[2].p_34 = (sd & 2) ? 0x800 : 0x1780;
+    g->cur_bac = (uint32_t)(sd % 3);
+    g->s2_87e4 = 0x20 + sd * 9;
+    g->s2_87c8 = 0x14 - sd;
+    g->s2_87cc = 0x1e;
+    g->s2_87d0 = (uint8_t)(sd & 1);
+    g->s2_87dc = 5;
+    g->s2_378 = sd & 7;
+    g->s2_37c = (sd + 3) & 7;
+    g->s2_8800 = sd % 4;
+    g->s2_3c0 = (uint8_t)(sd & 1);
+    g->s2_87f0 = out[0];
+    g->s2_8828 = out[(at + 2) % 8];
+    for (i = 0; i < 8; i++)
+        out[i]->arg = (uint32_t)(4 + i * 11 + sd);
+}
+
+static int unit_stage2b(void)
+{
+    s2_v0_t o_cache = (s2_v0_t)(uintptr_t)0x10019bd0;
+    s2_cv_t o_count = (s2_cv_t)(uintptr_t)0x10019490;
+    s2_v0_t o_class = (s2_v0_t)(uintptr_t)0x100195c0;
+    s2_v1_t o_adj = (s2_v1_t)(uintptr_t)0x1001ab90;
+    s2_b0_t o_elide = (s2_b0_t)(uintptr_t)0x10019d10;
+    s2_v0_t o_level = (s2_v0_t)(uintptr_t)0x10019710;
+    uint8_t *shared = (uint8_t *)VirtualAlloc(NULL, 0x4000,
+                          MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+    int li, ai, sd, fn, w, bad = 0, n = 0, shown = 0;
+    int elided = 0, classes = 0;
+    Node *na[LF_LEN], *nb[LF_LEN];
+
+    if (alloc_engines())
+        return 2;
+
+    /* the five that take no argument beyond the engine */
+    for (fn = 0; fn < 5; fn++)
+        for (li = 0; li < S2_NLIST; li++)
+            for (ai = 0; ai < LF_LEN; ai++)
+                for (sd = 0; sd < 4; sd++) {
+                    uint8_t ra = 0, rb = 0;
+
+                    for (w = 0; w < 2; w++) {
+                        Engine *g = w ? g_b : g_a;
+
+                        s2_seed(g, shared, S2_LIST[li], ai, sd,
+                                w ? nb : na);
+                        /* every one of them but the cache itself reads what
+                         * the cache leaves behind */
+                        if (fn != 0)
+                            o_cache(g);
+                        switch (fn) {
+                        case 0:
+                            if (w)
+                                Stage2_Cache(g);
+                            else
+                                o_cache(g);
+                            break;
+                        case 1:
+                            if (w)
+                                Stage2_Classify(g);
+                            else
+                                o_class(g);
+                            break;
+                        case 2:
+                            if (w)
+                                rb = Stage2_Elide(g);
+                            else
+                                ra = o_elide(g);
+                            break;
+                        case 3:
+                            if (w)
+                                Stage2_Level(g);
+                            else
+                                o_level(g);
+                            break;
+                        default:
+                            if (w)
+                                Stage2_Adjust(g, sd & 1);
+                            else
+                                o_adj(g, sd & 1);
+                            break;
+                        }
+                    }
+                    if (fn == 1 && g_a->s2_3d0 != 4)
+                        classes++;
+                    if (fn == 2 && ra)
+                        elided++;
+                    normalize(g_a);
+                    normalize(g_b);
+                    n++;
+                    if (ra != rb || memcmp(g_a, g_b, sizeof *g_a) != 0) {
+                        if (shown++ < 8)
+                            fprintf(stderr, "  stage2[%d](list %d ctl %d seed"
+                                            " %d) differs (%d/%d)\n",
+                                    fn, li, ai, sd, ra, rb);
+                        bad++;
+                    }
+                }
+
+    /* Stage2_CountVowels, both directions and every starting node */
+    for (li = 0; li < S2_NLIST; li++)
+        for (ai = 0; ai < LF_LEN; ai++)
+            for (sd = 0; sd < 4; sd++)
+                for (fn = 0; fn < 2; fn++) {
+                    int32_t ra, rb;
+
+                    s2_seed(g_a, shared, S2_LIST[li], 0, sd, na);
+                    ra = o_count(g_a, na[ai], (uint32_t)fn);
+                    s2_seed(g_b, shared, S2_LIST[li], 0, sd, nb);
+                    rb = Stage2_CountVowels(g_b, nb[ai], (uint8_t)fn);
+                    normalize(g_a);
+                    normalize(g_b);
+                    n++;
+                    if (ra != rb || memcmp(g_a, g_b, sizeof *g_a) != 0) {
+                        if (shown++ < 6)
+                            fprintf(stderr, "  Stage2_CountVowels(list %d node"
+                                            " %d fwd %d seed %d) differs "
+                                            "(%d/%d)\n", li, ai, fn, sd,
+                                    (int)ra, (int)rb);
+                        bad++;
+                    }
+                }
+
+    /* the first control: the cache is about the control node, so two
+     * different phonemes have to leave different bytes behind */
+    {
+        int caught;
+
+        s2_seed(g_a, shared, S2_L0, 0, 0, na);
+        o_cache(g_a);
+        s2_seed(g_b, shared, S2_L0, 1, 0, nb);
+        o_cache(g_b);
+        caught = memcmp(&g_a->s2_3d5, &g_b->s2_3d5, 12) != 0;
+        n++;
+        if (!caught) {
+            fprintf(stderr, "  the cache harness sees the same bits for A and"
+                            " K -- it is proving nothing\n");
+            bad++;
+        }
+    }
+
+    /* the second control: the vowel count has to count */
+    {
+        int32_t c1, c2, c3;
+        int caught;
+
+        s2_seed(g_a, shared, S2_L3, 0, 0, na);
+        c1 = o_count(g_a, na[0], 1);
+        c2 = o_count(g_a, na[3], 1);
+        c3 = o_count(g_a, na[7], 0);
+        caught = c1 != c2 && c1 != 0 && c3 != 0;
+        n++;
+        if (!caught) {
+            fprintf(stderr, "  the count harness counts %d/%d/%d -- it is "
+                            "proving nothing\n", (int)c1, (int)c2, (int)c3);
+            bad++;
+        }
+    }
+
+    /* the third control: Stage2_Adjust with apply set has to write the node */
+    {
+        int caught;
+
+        s2_seed(g_a, shared, S2_L0, 3, 0, na);
+        g_a->s2_378 = 7;
+        g_a->s2_380 = 9;
+        g_a->s2_8810 = 0x30;
+        g_a->s2_8814 = na[3];
+        g_a->s2_880c = na[3]->value;
+        o_adj(g_a, 1);
+        caught = na[3]->arg != (uint32_t)(4 + 3 * 11) || na[3]->b15 != 0x33;
+        n++;
+        if (!caught) {
+            fprintf(stderr, "  Stage2_Adjust wrote nothing back (arg %u b15 "
+                            "%02x) -- the harness is proving nothing\n",
+                    (unsigned)na[3]->arg, na[3]->b15);
+            bad++;
+        }
+    }
+
+    /* the fourth control: the level depends on the stage's pitch */
+    {
+        int caught;
+
+        s2_seed(g_a, shared, S2_L0, 0, 0, na);
+        g_a->stage_ctx[2].pitch = 0x40;
+        g_a->stage_ctx[2].p_34 = 0x1780;
+        g_a->cur_bac = 0;
+        o_cache(g_a);
+        o_level(g_a);
+        s2_seed(g_b, shared, S2_L0, 0, 0, nb);
+        g_b->stage_ctx[2].pitch = 0x90;
+        g_b->stage_ctx[2].p_34 = 0x1780;
+        g_b->cur_bac = 0;
+        o_cache(g_b);
+        o_level(g_b);
+        caught = na[0]->b15 != nb[0]->b15;
+        n++;
+        if (!caught) {
+            fprintf(stderr, "  the level harness gives the same b15 for two "
+                            "pitches (%02x) -- it is proving nothing\n",
+                    na[0]->b15);
+            bad++;
+        }
+    }
+
+    /* and the last two: that the sweep reached the elision and more than one
+     * boundary class */
+    n++;
+    if (elided == 0) {
+        fprintf(stderr, "  the sweep never elided a phoneme -- it is proving "
+                        "nothing\n");
+        bad++;
+    }
+    n++;
+    if (classes == 0) {
+        fprintf(stderr, "  the sweep never left s2_3d0 at anything but 4 -- "
+                        "it is proving nothing\n");
+        bad++;
+    }
+
+    fprintf(stderr, "%-18s %d/%d identical\n", "stage 2 set", n - bad, n);
+    fprintf(stderr, "  (%d elisions, %d classified boundaries)\n",
+            elided, classes);
+    return bad != 0;
+}
+
+/*
+ * The rest of stage 2: the merge, the word scan, the advance, the word, the
+ * duration, the substitutions, the punctuation pause, the boundary and
+ * Stage2_Run itself.
+ *
+ * Two things make these different from the earlier stage 2 suite.  Several of
+ * them allocate and free nodes, so each case builds a constructed engine and
+ * the whole object is compared with the self-pointers normalised.  And
+ * Stage2_ScanWord steps a *global* counter, g_pause_step, which decides
+ * whether it inserts a ')': the two runs would see different values of it, so
+ * it is saved and put back between them.
+ */
+typedef void(__thiscall *t2_v0_t)(Engine *);
+typedef uint8_t(__thiscall *t2_b0_t)(Engine *);
+typedef Node *(__thiscall *t2_n0_t)(Engine *);
+typedef void(__thiscall *t2_v1_t)(Engine *, int32_t);
+
+/* @0x10045894 */
+extern int32_t g_pause_step;
+
+static const ps_node_t T_L0[] = {
+    {3, 'I', 0}, {3, 'A', 0}, {3, 'K', 0}, {4, ' ', 0},
+    {3, 'U', 0}, {3, 'E', 0}, {3, 'S', 0}, {3, '.', 0},
+};
+static const ps_node_t T_L1[] = {
+    {3, 'B', 0}, {3, 'r', 0}, {3, 'A', 0}, {4, ' ', 0},
+    {3, 'D', 0}, {3, 'O', 0}, {3, 'N', 0}, {3, ',', 0},
+};
+static const ps_node_t T_L2[] = {
+    {3, '&', 0}, {3, 'K', 0}, {3, 'A', 0}, {3, '%', 0},
+    {3, 'S', 0}, {3, 'A', 0}, {3, '&', 0}, {3, '?', 0},
+};
+static const ps_node_t T_L3[] = {
+    {3, ' ', 0}, {3, 'A', 0}, {4, ' ', 0}, {3, '.', 0},
+    {3, 'E', 0}, {0, 'C', 0}, {3, 'L', 0}, {3, 'N', 0},
+};
+static const ps_node_t T_L4[] = {
+    {3, 'A', 0x18}, {3, 'E', 8}, {3, 'O', 0x10}, {3, 'U', 0},
+    {4, ' ', 0}, {3, 'I', 0x18}, {3, 'a', 0}, {3, 'h', 0},
+};
+/* no 'Q' here: the scan removes one at the cursor, and several of the others
+ * then walk on from the node it freed.  The fifth control drives that arm on
+ * its own instead. */
+static const ps_node_t T_L5[] = {
+    {3, 'G', 0}, {3, 'Y', 0}, {3, 'q', 0}, {3, 'Z', 0},
+    {3, '1', 0}, {3, 'A', 0}, {3, 'x', 0}, {3, '~', 0},
+};
+static const ps_node_t *const T_LIST[] = {T_L0, T_L1, T_L2, T_L3, T_L4, T_L5};
+#define T_NLIST 6
+static const int T_RATE[] = {0, 5, 13, 19};
+
+static void t2_seed(Engine *g, uint8_t *shared, uint8_t *sapi,
+                    const ps_node_t *script, int at, int sd, Node **out)
+{
+    StageCtx *st = &g->stage_ctx[2];
+    int i;
+
+    lf_build(g, shared, script, 2, at, out);
+    memset(sapi, 0, 0x1000);
+    g->sapi = (SapiCentral *)sapi;
+    st->rate_index = T_RATE[sd % 4];
+    st->pitch = (sd & 1) ? 0x50 : 0x78;
+    st->p_20 = (sd & 2) ? 1 : 0;
+    st->p_1c = (sd & 4) ? 1 : 0;
+    st->p_34 = (sd & 1) ? 0x1780 : 0x1880;
+    g->cur_bac = 0;
+    g->free_nodes = 400;
+    g->s2_87b4 = sd & 3;
+    g->s2_87b8 = 2;
+    g->s2_87dc = sd % 5;
+    g->s2_87e0 = 0x14;
+    g->s2_87e4 = 0x32;
+    g->s2_87c8 = 0x14;
+    g->s2_87cc = 0x1e;
+    g->s2_87f4 = 5;
+    g->s2_87fc = (sd & 1) ? 4 : 0xd;
+    g->s2_380 = (sd & 2) ? 0 : 0x20;
+    g->s2_1d55 = (uint8_t)(sd & 1);
+    g->s2_87f0 = out[0];
+    g->s2_87ac = out[0];
+    /* the engine keeps the word cursor on the control node, and Stage2_Run
+     * only ever reaches the phrase reset in Stage2_Advance when the two
+     * agree -- without that the window walks off its own end. */
+    g->s2_87d4 = out[at];
+    g->s2_87ec = (sd & 4) ? NULL : out[LF_LEN - 1];
+    for (i = 0; i < 8; i++)
+        out[i]->arg = (uint32_t)(3 + i * 7 + sd);
+    /* the cache is what most of these read, so fill it from the original */
+    ((t2_v0_t)(uintptr_t)0x10019bd0)(g);
+}
+
+static int unit_stage2run(void)
+{
+    t2_v0_t o_merge = (t2_v0_t)(uintptr_t)0x10018a10;
+    t2_n0_t o_scan = (t2_n0_t)(uintptr_t)0x1001a380;
+    t2_b0_t o_adv = (t2_b0_t)(uintptr_t)0x1001a220;
+    t2_b0_t o_word = (t2_b0_t)(uintptr_t)0x1001a6d0;
+    t2_v0_t o_dur = (t2_v0_t)(uintptr_t)0x10018aa0;
+    t2_v0_t o_subst = (t2_v0_t)(uintptr_t)0x10018270;
+    t2_v0_t o_punct = (t2_v0_t)(uintptr_t)0x10019eb0;
+    t2_v0_t o_bound = (t2_v0_t)(uintptr_t)0x10019b10;
+    t2_b0_t o_run = (t2_b0_t)(uintptr_t)0x1001a070;
+    uint8_t *shared = (uint8_t *)VirtualAlloc(NULL, 0x4000,
+                          MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+    uint8_t *sap[2];
+    static const char *const NAME[] = {
+        "MergeBack", "ScanWord", "Advance", "Word", "Duration",
+        "Substitute", "Punctuation", "Boundary", "Run"
+    };
+    int w, fn, li, ai, sd, bad = 0, n = 0, shown = 0;
+    int moved = 0, ran = 0;
+    Node *na[LF_LEN], *nb[LF_LEN];
+
+    if (alloc_engines())
+        return 2;
+    for (w = 0; w < 2; w++)
+        sap[w] = (uint8_t *)VirtualAlloc(NULL, 0x1000,
+                     MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+
+    for (fn = 0; fn < 9; fn++)
+        for (li = 0; li < T_NLIST; li++)
+            for (ai = 0; ai < LF_LEN; ai++)
+                for (sd = 0; sd < 8; sd++) {
+                    int32_t step = g_pause_step;
+                    int64_t ra = 0, rb = 0;
+
+                    for (w = 0; w < 2; w++) {
+                        Engine *g = w ? g_b : g_a;
+
+                        g_pause_step = step;
+                        t2_seed(g, shared, sap[w], T_LIST[li], ai, sd,
+                                w ? nb : na);
+                        switch (fn) {
+                        case 0:
+                            if (w) Stage2_MergeBack(g); else o_merge(g);
+                            break;
+                        case 1:
+                            if (w) rb = lf_off(g, Stage2_ScanWord(g));
+                            else ra = lf_off(g, o_scan(g));
+                            break;
+                        case 2:
+                            if (w) rb = Stage2_Advance(g);
+                            else ra = o_adv(g);
+                            break;
+                        case 3:
+                            if (w) rb = Stage2_Word(g); else ra = o_word(g);
+                            break;
+                        case 4:
+                            if (w) Stage2_Duration(g); else o_dur(g);
+                            break;
+                        case 5:
+                            if (w) Stage2_Substitute(g); else o_subst(g);
+                            break;
+                        case 6:
+                            if (w) Stage2_Punctuation(g); else o_punct(g);
+                            break;
+                        case 7:
+                            if (w) Stage2_Boundary(g); else o_bound(g);
+                            break;
+                        default:
+                            if (w) rb = Stage2_Run(g); else ra = o_run(g);
+                            break;
+                        }
+                    }
+                    if (fn == 2 && ra)
+                        moved++;
+                    if (fn == 8 && ra)
+                        ran++;
+                    g_a->sapi = g_b->sapi = NULL;
+                    normalize(g_a);
+                    normalize(g_b);
+                    n++;
+                    if (ra != rb || memcmp(g_a, g_b, sizeof *g_a) != 0 ||
+                        memcmp(sap[0], sap[1], 0x1000) != 0) {
+                        if (shown++ < 8)
+                            fprintf(stderr, "  Stage2_%s(list %d ctl %d seed"
+                                            " %d) differs (%lld/%lld)\n",
+                                    NAME[fn], li, ai, sd,
+                                    (long long)ra, (long long)rb);
+                        bad++;
+                    }
+                }
+
+    /* the first control: the duration comes out of the rate table, so two
+     * rates have to give the node two different lengths */
+    {
+        int caught;
+
+        t2_seed(g_a, shared, sap[0], T_L4, 0, 0, na);
+        g_a->stage_ctx[2].rate_index = 2;
+        o_dur(g_a);
+        t2_seed(g_b, shared, sap[1], T_L4, 0, 0, nb);
+        g_b->stage_ctx[2].rate_index = 17;
+        o_dur(g_b);
+        caught = na[0]->arg != nb[0]->arg && na[0]->arg != 0;
+        n++;
+        if (!caught) {
+            fprintf(stderr, "  the duration harness gives %u either way -- it"
+                            " is proving nothing\n", (unsigned)na[0]->arg);
+            bad++;
+        }
+    }
+
+    /* the second control: the substitutions merge two vowels into one node,
+     * so the pool has to shrink where they apply and not where they do not */
+    {
+        int caught;
+
+        t2_seed(g_a, shared, sap[0], T_L0, 0, 0, na);
+        o_subst(g_a);
+        t2_seed(g_b, shared, sap[1], T_L1, 0, 0, nb);
+        o_subst(g_b);
+        caught = g_a->free_nodes != g_b->free_nodes &&
+                 na[0]->value != 'I';
+        n++;
+        if (!caught) {
+            fprintf(stderr, "  the substitution harness does not merge I A "
+                            "(%c, %d/%d free) -- it is proving nothing\n",
+                    na[0]->value, (int)g_a->free_nodes,
+                    (int)g_b->free_nodes);
+            bad++;
+        }
+    }
+
+    /* the third control: a full stop is worth a longer pause than a comma */
+    {
+        int caught;
+
+        t2_seed(g_a, shared, sap[0], T_L0, 7, 0, na);
+        g_a->stage_ctx[2].rate_index = 5;
+        g_a->s2_1d55 = 0;
+        o_punct(g_a);
+        t2_seed(g_b, shared, sap[1], T_L1, 7, 0, nb);
+        g_b->stage_ctx[2].rate_index = 5;
+        g_b->s2_1d55 = 0;
+        o_punct(g_b);
+        caught = g_a->free_nodes != g_b->free_nodes &&
+                 g_a->free_nodes < 400;
+        n++;
+        if (!caught) {
+            fprintf(stderr, "  the punctuation harness inserts the same pause"
+                            " for . and , (%d/%d free) -- it is proving "
+                            "nothing\n", (int)g_a->free_nodes,
+                    (int)g_b->free_nodes);
+            bad++;
+        }
+    }
+
+    /* the fourth control: ScanWord's ')' depends on the global counter, so
+     * stepping it has to change what comes out somewhere in sixteen tries */
+    {
+        int caught = 0, k;
+        int32_t save = g_pause_step;
+
+        for (k = 0; k < 16 && !caught; k++) {
+            g_pause_step = k;
+            t2_seed(g_a, shared, sap[0], T_L2, 0, 0, na);
+            g_a->stage_ctx[2].p_20 = 1;
+            g_a->s2_87f4 = 0;
+            g_a->s2_87fc = 0;
+            g_a->s2_87c0 = 9;
+            o_scan(g_a);
+            if (g_a->free_nodes != 400)
+                caught = 1;
+        }
+        g_pause_step = save;
+        n++;
+        if (!caught) {
+            fprintf(stderr, "  the scan harness never inserts a mark -- it is"
+                            " proving nothing\n");
+            bad++;
+        }
+    }
+
+    /* the fifth control: a 'Q' at the cursor is removed from the list */
+    {
+        static const ps_node_t QL[] = {
+            {3, 'A', 0}, {3, 'Q', 0}, {3, 'S', 0}, {3, 'A', 0},
+            {4, ' ', 0}, {3, 'E', 0}, {3, 'N', 0}, {3, '.', 0},
+        };
+        int caught;
+
+        t2_seed(g_a, shared, sap[0], QL, 1, 0, na);
+        o_scan(g_a);
+        caught = g_a->free_nodes > 400 && g_a->stage_ctx[2].scan != na[1];
+        n++;
+        if (!caught) {
+            fprintf(stderr, "  the scan harness does not remove a Q (%d free)"
+                            " -- it is proving nothing\n",
+                    (int)g_a->free_nodes);
+            bad++;
+        }
+    }
+
+    /* and the last two: that the sweep saw the advance move and the run
+     * report something */
+    n++;
+    if (moved == 0) {
+        fprintf(stderr, "  the sweep never moved the cursor -- it is proving "
+                        "nothing\n");
+        bad++;
+    }
+    n++;
+    if (ran == 0) {
+        fprintf(stderr, "  Stage2_Run never returned non-zero -- the sweep is"
+                        " proving nothing\n");
+        bad++;
+    }
+
+    fprintf(stderr, "%-18s %d/%d identical\n", "stage 2 run", n - bad, n);
+    fprintf(stderr, "  (%d advances moved, %d runs reported)\n", moved, ran);
+    return bad != 0;
+}
+
+/*
+ * Stages 0 and 1: the stress rule, the interpreter, the word mark, the
+ * spelling rules and the two lexicons.
+ *
+ * Stage0_Stress and Stage1_Phoneme are the two worth the most here.  Both are
+ * pure functions of a word, so a list of Spanish words drives them directly --
+ * the function words the stress rule has tables for, the -MENTE adverbs it has
+ * a special case for, and the digraphs and trills the spelling rules rewrite.
+ *
+ * The lexicon in .bss is empty unless a host has added to it, so
+ * Stage1_Lexicon would always miss; the harness fills three entries in so the
+ * hit path runs, and puts the table back afterwards.
+ */
+typedef uint8_t(__cdecl *s01_plain_t)(uint32_t);
+typedef void(__thiscall *s01_stress_t)(Engine *, uint32_t);
+typedef int32_t(__thiscall *s01_i0_t)(Engine *);
+typedef uint8_t(__thiscall *s01_b0_t)(Engine *);
+
+typedef struct { const char *key; const char *value; } LexEnt;
+/* @0x1002e000 */
+extern LexEnt g_lex_table[];
+/* @0x10037c40 */
+extern int32_t g_lex_count;
+
+static const char *const S01_WORDS[] = {
+    "EL", "LA", "DEL", "QUE", "PERO", "SALVO", "AUNQUE", "EXCEPTO",
+    "CASA", "PAPEL", "ARBOL", "CANCION", "RAPIDAMENTE", "FACILMENTE",
+    "AGUA", "REY", "BUEY", "CIUDAD", "PAIS", "LEON", "CHICO", "LLAVE",
+    "GUERRA", "QUESO", "PERRO", "CARO", "EXITO", "ZAPATO", "NINO",
+    "BABY", "SOFTWARE", "A", "OS", "SANTAN",
+};
+#define S01_NWORDS ((int)(sizeof S01_WORDS / sizeof S01_WORDS[0]))
+
+/* a word as a list of type 3 nodes, with stage `stage`'s window over it */
+static void s01_word(Engine *g, uint8_t *shared, const char *w, int stage,
+                     Node **out, int *len)
+{
+    ps_append_t append = (ps_append_t)(uintptr_t)0x10008b60;
+    int i;
+
+    fresh(g, shared);
+    for (i = 0; w[i] != 0; i++) {
+        out[i] = append(g, 3, (uint8_t)w[i]);
+        out[i]->arg = (uint32_t)(10 + i);
+        out[i]->b15 = 0x32;
+    }
+    *len = i;
+    g->stage = &g->stage_ctx[stage];
+    g->stage_ctx[stage].first = out[0];
+    g->stage_ctx[stage].cur = out[0];
+    g->stage_ctx[stage].ctl = out[0];
+    g->stage_ctx[stage].scan = out[i - 1];
+    g->stage_ctx[stage].last = out[i - 1];
+}
+
+static int unit_stage01(void)
+{
+    s01_plain_t o_plain = (s01_plain_t)(uintptr_t)0x10014290;
+    s01_stress_t o_stress = (s01_stress_t)(uintptr_t)0x10014310;
+    s01_i0_t o_mark = (s01_i0_t)(uintptr_t)0x10010480;
+    s01_b0_t o_phone = (s01_b0_t)(uintptr_t)0x1000fca0;
+    s01_b0_t o_loan = (s01_b0_t)(uintptr_t)0x10023250;
+    s01_b0_t o_lex = (s01_b0_t)(uintptr_t)0x10001040;
+    s01_b0_t o_s0run = (s01_b0_t)(uintptr_t)0x10013360;
+    s01_b0_t o_s1run = (s01_b0_t)(uintptr_t)0x1000fa30;
+    uint8_t *shared = (uint8_t *)VirtualAlloc(NULL, 0x4000,
+                          MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+    int c, wi, ad, sd, w, bad = 0, n = 0, shown = 0;
+    int stressed = 0;
+    Node *na[40], *nb[40];
+    int la, lb;
+
+    if (alloc_engines())
+        return 2;
+
+    /* Stage0_IsPlain: one byte in, nothing else */
+    for (c = 0; c < 256; c++) {
+        uint8_t ra = o_plain((uint32_t)c);
+        uint8_t rb = Stage0_IsPlain((uint8_t)c);
+
+        n++;
+        if (ra != rb) {
+            if (shown++ < 4)
+                fprintf(stderr, "  Stage0_IsPlain(0x%02x) %d/%d\n", c, ra, rb);
+            bad++;
+        }
+    }
+
+    /* Stage0_Stress: the word, and whether it is being asked about -MENTE */
+    for (wi = 0; wi < S01_NWORDS; wi++)
+        for (ad = 0; ad < 2; ad++)
+            for (sd = 0; sd < 2; sd++) {
+                int i;
+
+                for (w = 0; w < 2; w++) {
+                    Engine *g = w ? g_b : g_a;
+                    Node **o = w ? nb : na;
+
+                    s01_word(g, shared, S01_WORDS[wi], 0, o,
+                             w ? &lb : &la);
+                    /* a one-letter word has no second node to start at, and
+                     * the sentinel past it is not one the walk can use */
+                    if (sd && (w ? lb : la) > 1)
+                        g->stage_ctx[0].ctl = o[1];
+                    if (w)
+                        Stage0_Stress(g, (uint8_t)ad);
+                    else
+                        o_stress(g, (uint32_t)ad);
+                }
+                for (i = 0; i < la; i++)
+                    if (na[i]->flags & 0x10)
+                        stressed++;
+                normalize(g_a);
+                normalize(g_b);
+                n++;
+                if (memcmp(g_a, g_b, sizeof *g_a) != 0) {
+                    if (shown++ < 6)
+                        fprintf(stderr, "  Stage0_Stress(%s adverb %d ctl %d)"
+                                        " differs\n", S01_WORDS[wi], ad, sd);
+                    bad++;
+                }
+            }
+
+    /* Stage1_WordMark and Stage1_Phoneme over the same words */
+    for (wi = 0; wi < S01_NWORDS; wi++)
+        for (sd = 0; sd < 2; sd++)
+            for (ad = 0; ad < 2; ad++) {
+                int64_t ra = 0, rb = 0;
+
+                for (w = 0; w < 2; w++) {
+                    Engine *g = w ? g_b : g_a;
+                    Node **o = w ? nb : na;
+
+                    s01_word(g, shared, S01_WORDS[wi], 1, o,
+                             w ? &lb : &la);
+                    /* Stage1_Run leaves these two pointing at the word, and
+                     * Stage1_Phoneme reads d14 without checking it */
+                    g->stage_ctx[1].d14 = o[0];
+                    g->stage_ctx[1].d18 = o[(w ? lb : la) - 1];
+                    g->s1_8834 = sd ? 2 : 0;
+                    if (ad && (w ? lb : la) > 1) {
+                        g->stage_ctx[1].ctl = o[1];
+                        g->stage_ctx[1].cur = o[0];
+                    }
+                    if (sd == 0) {
+                        if (w)
+                            rb = Stage1_WordMark(g);
+                        else
+                            ra = o_mark(g);
+                    } else {
+                        if (w)
+                            rb = Stage1_Phoneme(g);
+                        else
+                            ra = o_phone(g);
+                    }
+                }
+                normalize(g_a);
+                normalize(g_b);
+                n++;
+                if (ra != rb || memcmp(g_a, g_b, sizeof *g_a) != 0) {
+                    if (shown++ < 6)
+                        fprintf(stderr, "  %s(%s ctl %d) differs (%lld/%lld)\n",
+                                sd ? "Stage1_Phoneme" : "Stage1_WordMark",
+                                S01_WORDS[wi], ad,
+                                (long long)ra, (long long)rb);
+                    bad++;
+                }
+            }
+
+    /* Stage1_Loanword over the same words -- BABY and SOFTWARE are in it */
+    for (wi = 0; wi < S01_NWORDS; wi++) {
+        uint8_t ra, rb;
+
+        for (w = 0; w < 2; w++) {
+            Engine *g = w ? g_b : g_a;
+            Node **o = w ? nb : na;
+            int *lp = w ? &lb : &la;
+
+            s01_word(g, shared, S01_WORDS[wi], 1, o, lp);
+            g->stage_ctx[1].d14 = o[0];
+            g->stage_ctx[1].d18 = o[*lp - 1];
+            g->s1_322 = (uint8_t)(wi & 1);
+            g->s1_323 = 1;
+            if (w)
+                rb = Stage1_Loanword(g);
+            else
+                ra = o_loan(g);
+        }
+        normalize(g_a);
+        normalize(g_b);
+        n++;
+        if (ra != rb || memcmp(g_a, g_b, sizeof *g_a) != 0) {
+            if (shown++ < 6)
+                fprintf(stderr, "  Stage1_Loanword(%s) differs (%d/%d)\n",
+                        S01_WORDS[wi], ra, rb);
+            bad++;
+        }
+    }
+
+    /* Stage1_Lexicon, with three entries put into the .bss table */
+    {
+        static const LexEnt ENTS[3] = {
+            {"CASA", "KASA1"}, {"PERRO", "PErRO2"}, {"REY", "RREY"},
+        };
+        int32_t save_count = g_lex_count;
+        LexEnt save[3];
+        int k;
+
+        for (k = 0; k < 3; k++) {
+            save[k] = g_lex_table[k];
+            g_lex_table[k] = ENTS[k];
+        }
+        g_lex_count = 3;
+        for (wi = 0; wi < S01_NWORDS; wi++) {
+            uint8_t ra, rb;
+
+            for (w = 0; w < 2; w++) {
+                Engine *g = w ? g_b : g_a;
+                Node **o = w ? nb : na;
+                int *lp = w ? &lb : &la;
+
+                s01_word(g, shared, S01_WORDS[wi], 1, o, lp);
+                g->stage_ctx[1].d14 = o[0];
+                g->stage_ctx[1].d18 = o[*lp - 1];
+                g->s1_322 = (uint8_t)(wi & 1);
+                g->s1_323 = 1;
+                if (w)
+                    rb = Stage1_Lexicon(g);
+                else
+                    ra = o_lex(g);
+            }
+            normalize(g_a);
+            normalize(g_b);
+            n++;
+            if (ra != rb || memcmp(g_a, g_b, sizeof *g_a) != 0) {
+                if (shown++ < 6)
+                    fprintf(stderr, "  Stage1_Lexicon(%s) differs (%d/%d)\n",
+                            S01_WORDS[wi], ra, rb);
+                bad++;
+            }
+        }
+        for (k = 0; k < 3; k++)
+            g_lex_table[k] = save[k];
+        g_lex_count = save_count;
+    }
+
+    /* Stage0_Run and Stage1_Run, over a word each way.  Both walk their whole
+     * window, so one case per word is plenty; the corpus drives them hard. */
+    for (wi = 0; wi < S01_NWORDS; wi++)
+        for (sd = 0; sd < 2; sd++) {
+            uint8_t ra, rb;
+
+
+            for (w = 0; w < 2; w++) {
+                Engine *g = w ? g_b : g_a;
+                Node **o = w ? nb : na;
+                int *lp = w ? &lb : &la;
+
+                s01_word(g, shared, S01_WORDS[wi], sd ? 1 : 0, o, lp);
+                if (sd == 0) {
+                    int i;
+
+                    /* stage 0 works on type 1 nodes, the input stage's */
+                    for (i = 0; i < *lp; i++)
+                        o[i]->flags = (o[i]->flags & ~7u) | 1u;
+                    Stage0_Reset(g);
+                }
+                if (sd) {
+                    if (w)
+                        rb = Stage1_Run(g);
+                    else
+                        ra = o_s1run(g);
+                } else {
+                    if (w)
+                        rb = Stage0_Run(g);
+                    else
+                        ra = o_s0run(g);
+                }
+            }
+            normalize(g_a);
+            normalize(g_b);
+            n++;
+            if (ra != rb || memcmp(g_a, g_b, sizeof *g_a) != 0) {
+                if (shown++ < 6)
+                    fprintf(stderr, "  %s(%s) differs (%d/%d)\n",
+                            sd ? "Stage1_Run" : "Stage0_Run",
+                            S01_WORDS[wi], ra, rb);
+                bad++;
+            }
+        }
+
+    /* the first control: Stage0_Stress has to stress something */
+    n++;
+    if (stressed == 0) {
+        fprintf(stderr, "  the stress harness never set a stress flag -- it is"
+                        " proving nothing\n");
+        bad++;
+    }
+
+    /* the second control: the stress moves with the word, so two words have
+     * to take it on different letters */
+    {
+        int i, pa = -1, pb = -1, caught;
+
+        s01_word(g_a, shared, "PAPEL", 0, na, &la);
+        o_stress(g_a, 0);
+        s01_word(g_b, shared, "CASA", 0, nb, &lb);
+        o_stress(g_b, 0);
+        for (i = 0; i < la; i++)
+            if (na[i]->flags & 0x10)
+                pa = i;
+        for (i = 0; i < lb; i++)
+            if (nb[i]->flags & 0x10)
+                pb = i;
+        caught = pa >= 0 && pb >= 0 && pa != pb;
+        n++;
+        if (!caught) {
+            fprintf(stderr, "  the stress harness puts PAPEL at %d and CASA "
+                            "at %d -- it is proving nothing\n", pa, pb);
+            bad++;
+        }
+    }
+
+    /* the third control: two words with a '%' between them, which is what
+     * the word mark replaces.  A space does not do it -- a type 3 space is
+     * answered with 2, "the word does not end here" -- and neither does the
+     * end of the list, so the sweep above never reaches the insert. */
+    {
+        ps_append_t append = (ps_append_t)(uintptr_t)0x10008b60;
+        static const char TWO[] = "CASA%CASA";
+        int32_t r;
+        int i, caught;
+
+        for (w = 0; w < 2; w++) {
+            Engine *g = w ? g_b : g_a;
+            Node **o = w ? nb : na;
+
+            fresh(g, shared);
+            for (i = 0; TWO[i] != 0; i++) {
+                o[i] = append(g, 3, (uint8_t)TWO[i]);
+                o[i]->arg = (uint32_t)(10 + i);
+            }
+            g->stage = &g->stage_ctx[1];
+            g->stage_ctx[1].first = o[0];
+            g->stage_ctx[1].cur = o[0];
+            g->stage_ctx[1].ctl = o[0];
+            g->stage_ctx[1].scan = o[3];
+            g->stage_ctx[1].last = o[i - 1];
+        }
+        r = o_mark(g_a);
+        caught = r == 1 && na[4]->value == '&';
+        n++;
+        if (!caught) {
+            fprintf(stderr, "  the mark harness returned %d and left %c"
+                            " -- it is proving nothing\n",
+                    (int)r, na[4]->value);
+            bad++;
+        }
+    }
+
+    /* the fourth control: the loanword lexicon knows BABY and not CASA */
+    {
+        int caught;
+        uint8_t r1, r2;
+
+        s01_word(g_a, shared, "BABY", 1, na, &la);
+        g_a->stage_ctx[1].d14 = na[0];
+        g_a->stage_ctx[1].d18 = na[la - 1];
+        r1 = o_loan(g_a);
+        s01_word(g_b, shared, "CASA", 1, nb, &lb);
+        g_b->stage_ctx[1].d14 = nb[0];
+        g_b->stage_ctx[1].d18 = nb[lb - 1];
+        r2 = o_loan(g_b);
+        caught = r1 == 1 && r2 == 0;
+        n++;
+        if (!caught) {
+            fprintf(stderr, "  the loanword harness returns %d for BABY and %d"
+                            " for CASA -- it is proving nothing\n", r1, r2);
+            bad++;
+        }
+    }
+
+    fprintf(stderr, "%-18s %d/%d identical\n", "stage 0 and 1", n - bad, n);
+    fprintf(stderr, "  (%d stresses placed)\n", stressed);
+    return bad != 0;
+}
+
 static int unit_rings(void)
 {
     int bad = 0;
@@ -4869,6 +8402,211 @@ static int unit_rings(void)
     bad |= cmp_i("Engine_MidGet", 0x1000e510, Engine_MidGet, 1);
     bad |= cmp_put("Engine_MidPut", 0x1000e550, Engine_MidPut, 1);
     return bad != 0;
+}
+
+/* Mode 4's announcements: the one part of the front end the corpus reaches
+ * without ever finishing.  TextIn_Mode4 runs in all 205 configurations, but no
+ * input any of them carries has two tokens in a row beginning with the same run
+ * of quotation markers, so the two arms that call TextIn_InsertText -- the
+ * "Anfang" that opens a quotation and the "Ende" that closes it -- are never
+ * taken, and TextIn_InsertText itself is never called at all.
+ *
+ * So the list is built here and TextIn_Mode4 is called on it directly.  Each
+ * side gets one block holding the TextIn, six tokens and a text for each, so
+ * that a pointer into a block can be compared as an offset; the tokens Mode4
+ * inserts come from the DLL's heap and are compared by content.
+ *
+ * tok[0] stands in for the head node, and its prev points at itself so that
+ * the walk back has a floor.  The real engine has no floor: head_node.prev is
+ * NULL and its flags are clear, and the three steps back that opening a
+ * quotation takes would read through that NULL.  What keeps the original
+ * standing is that mode 4 text ends every line with a newline and
+ * Rule_ClassifyToken flags a newline 0x53, so there are normally three of them
+ * behind any token -- but a quotation that opens within the first three lines
+ * of a message would go off the end.  Nothing here can produce that, and it is
+ * recorded rather than reproduced.
+ */
+typedef struct {
+    TextIn ti;
+    Token tok[6];
+    char txt[6][24];
+} m4block;
+
+/* head = tok[0], then five tokens.  `flag53` says which of tok[1..5] carry the
+ * 0x53 that Mode4 walks back to. */
+static void m4_list(m4block *b, const char *const *texts, unsigned flag53)
+{
+    int i;
+
+    memset(b, 0x5a, sizeof *b);
+    memset(&b->ti, 0, sizeof b->ti);
+    for (i = 0; i < 6; i++) {
+        memset(&b->tok[i], 0, sizeof b->tok[i]);
+        memset(b->txt[i], 0, sizeof b->txt[i]);
+        b->tok[i].prev = i ? &b->tok[i - 1] : &b->tok[0];
+        b->tok[i].next = i < 5 ? &b->tok[i + 1] : NULL;
+        if (i == 0)
+            continue;
+        if (texts[i - 1] != NULL) {
+            strcpy(b->txt[i], texts[i - 1]);
+            b->tok[i].text = b->txt[i];
+            b->tok[i].len = (int16_t)strlen(texts[i - 1]);
+        }
+        b->tok[i].trail = ' ';
+        if ((flag53 >> (i - 1)) & 1)
+            Bits_Set(0x53, b->tok[i].bits);
+    }
+    Bits_Set(0x53, b->tok[0].bits);
+    b->ti.head = &b->tok[0];
+    b->ti.tail = &b->tok[5];
+    b->ti.count = 5;
+}
+
+/* What the two sides have to agree on: the return value, mode 4's own state on
+ * the TextIn, and the list as a walk from the head.
+ *
+ * ti_74[5] is left out, and that is a real difference rather than a slack
+ * comparison.  TextIn_Mode4 terminates its scratch buffer one byte past the
+ * last character it wrote, so for a token of five characters or more the sixth
+ * byte it copies into ti_74 is whatever the original's stack held there; es/
+ * clears the buffer instead, and writes zero.  Nothing ever reads ti_74[5]: the
+ * comparison against it only reaches index 4, and the index the trailing
+ * character uses is the token's length, which that case does not take.  The
+ * next run of the function overwrites the whole of it.
+ */
+static int m4_same(m4block *a, m4block *b, int32_t ra, int32_t rb)
+{
+    Token *pa = a->ti.head, *pb = b->ti.head;
+    int i;
+
+    if (ra != rb)
+        return 0;
+    if (a->ti.ti_6e != b->ti.ti_6e || a->ti.ti_70 != b->ti.ti_70 ||
+        a->ti.ti_72 != b->ti.ti_72)
+        return 0;
+    if (memcmp(a->ti.ti_74, b->ti.ti_74, 5) != 0)
+        return 0;
+    if (a->ti.count != b->ti.count)
+        return 0;
+    for (i = 0; i < 12; i++) {
+        int ina, inb;
+
+        if ((pa == NULL) != (pb == NULL))
+            return 0;
+        if (pa == NULL)
+            return 1;
+        ina = (char *)pa >= (char *)a && (char *)pa < (char *)(a + 1);
+        inb = (char *)pb >= (char *)b && (char *)pb < (char *)(b + 1);
+        if (ina != inb)
+            return 0;
+        if (ina && (char *)pa - (char *)a != (char *)pb - (char *)b)
+            return 0;
+        if (!tok_same(pa, pb))
+            return 0;
+        pa = pa->next;
+        pb = pb->next;
+    }
+    return 1;
+}
+
+static int unit_mode4(void)
+{
+    typedef int32_t(TV_THISCALL * m4_t)(TextIn *, Token *);
+    typedef int32_t(TV_THISCALL * ins_t)(TextIn *, Token *, const char *,
+                                         int32_t);
+    /* Five texts per case, for tok[1..5]; Mode4 is called on each in turn, so
+     * the run one call remembers is what the next one sees. */
+    static const char *const CASES[][5] = {
+        /* no marker anywhere */
+        {"casa", "grande", "y", "blanca", "hola"},
+        /* the same marker run twice over, which is what opens a quotation */
+        {"casa", "grande", "y", "> uno", "> dos"},
+        {"casa", "grande", "> uno", "> dos", "> tres"},
+        /* a run of two */
+        {"casa", ">> uno", ">> dos", ">> tres", ">> cuatro"},
+        /* the run is the whole token, so it is flagged rather than blanked */
+        {"casa", ">", ">", ">", ">"},
+        {"casa", ">>", ">>", ">>", ">>"},
+        /* five characters and more, where the original's scratch buffer runs
+         * one past what it wrote */
+        {"casa", "|abcd", "|abcde", "|abcdef", "|abcdefg"},
+        /* a different marker each time: nothing continues */
+        {"casa", "! uno", "@ dos", "# tres", "* cuatro"},
+        /* the marker after a letter, so it is the last marker but not one that
+         * continues the run */
+        {"casa", "a>b", "a>c", "a>d", "a>e"},
+        /* no text at all, which forgets the run */
+        {"> uno", "> dos", NULL, "> tres", "> cuatro"},
+        /* the marker at the end of the token */
+        {"casa", "uno:", "dos:", "tres:", "cuatro:"},
+        /* one character, so the trailing character is looked at too */
+        {"casa", ">", "a", ">", "a"},
+        /* a quotation that opens and then meets a line without the marker,
+         * which is what closes it */
+        {"+ uno", "+ dos", "+ tres", "hola", "adios"},
+    };
+    static const unsigned FLAG53[] = {0u, 1u, 0x1fu, 0x11u};
+    static m4block A, B;
+    int c, f, e, bad = 0, n = 0, opened = 0, closed = 0;
+
+    for (c = 0; c < (int)(sizeof CASES / sizeof CASES[0]); c++)
+        for (f = 0; f < 4; f++)
+            for (e = 0; e < 2; e++) {
+                int32_t ra = 0, rb = 0;
+                int k;
+
+                m4_list(&A, CASES[c], FLAG53[f]);
+                m4_list(&B, CASES[c], FLAG53[f]);
+                A.ti.ti_6e = B.ti.ti_6e = (int16_t)e;
+                for (k = 1; k <= 5; k++) {
+                    ra = ORIG(m4_t, 0x1001d470)(&A.ti, &A.tok[k]);
+                    rb = TextIn_Mode4(&B.ti, &B.tok[k]);
+                    if (ra != rb || !m4_same(&A, &B, ra, rb))
+                        break;
+                    if (ra == 2) {
+                        if (A.ti.ti_6e)
+                            opened++;
+                        else
+                            closed++;
+                    }
+                }
+                n++;
+                if (!m4_same(&A, &B, ra, rb)) {
+                    if (bad++ < 8)
+                        fprintf(stderr, "  TextIn_Mode4[%d,%#x,%d]: %d/%d "
+                                        "(6e=%d/%d 70=%d/%d 72=%d/%d "
+                                        "74=%.6s/%.6s)\n",
+                                c, FLAG53[f], e, ra, rb,
+                                (int)A.ti.ti_6e, (int)B.ti.ti_6e,
+                                (int)A.ti.ti_70, (int)B.ti.ti_70,
+                                (int)A.ti.ti_72, (int)B.ti.ti_72,
+                                A.ti.ti_74, B.ti.ti_74);
+                }
+            }
+
+    /* TextIn_InsertText on its own, both directions, so the side Mode4 never
+     * asks for is covered as well. */
+    for (c = 0; c < 2; c++)
+        for (f = 1; f <= 5; f++) {
+            static const char *const T[5] = {"a", "bb", "ccc", "dddd", "e"};
+            int32_t ra, rb;
+
+            m4_list(&A, T, 0);
+            m4_list(&B, T, 0);
+            ra = ORIG(ins_t, 0x1001d8d0)(&A.ti, &A.tok[f], "un texto",
+                                         c ? 1 : -1);
+            rb = TextIn_InsertText(&B.ti, &B.tok[f], "un texto", c ? 1 : -1);
+            n++;
+            if (!m4_same(&A, &B, ra, rb)) {
+                if (bad++ < 8)
+                    fprintf(stderr, "  TextIn_InsertText(tok[%d], dir=%d): "
+                                    "%d/%d\n", f, c ? 1 : -1, ra, rb);
+            }
+        }
+
+    fprintf(stderr, "%-18s %d/%d identical\n", "mode 4", n - bad, n);
+    fprintf(stderr, "  (%d quotations opened, %d closed)\n", opened, closed);
+    return bad != 0 || opened == 0 || closed == 0;
 }
 
 int unit_run(const char *name)
@@ -4908,6 +8646,24 @@ int unit_run(const char *name)
     if (!strcmp(name, "trill")) return unit_trillshapes();
     if (!strcmp(name, "blenddelta")) return unit_blenddelta();
     if (!strcmp(name, "average")) return unit_average();
+    if (!strcmp(name, "pause")) return unit_pausebound();
+    if (!strcmp(name, "stopburst")) return unit_stopburst();
+    if (!strcmp(name, "loadphone")) return unit_loadphone();
+    if (!strcmp(name, "helpers3")) return unit_helpers3();
+    if (!strcmp(name, "transition")) return unit_transition();
+    if (!strcmp(name, "loadtriples")) return unit_loadtriples();
+    if (!strcmp(name, "blendtriples")) return unit_blendtriples();
+    if (!strcmp(name, "stopclosure")) return unit_stopclosure();
+    if (!strcmp(name, "build")) return unit_build();
+    if (!strcmp(name, "pausefill")) return unit_pausefill();
+    if (!strcmp(name, "pausestage")) return unit_pausestage();
+    if (!strcmp(name, "stage3run")) return unit_stage3run();
+    if (!strcmp(name, "leaves2")) return unit_leaves2();
+    if (!strcmp(name, "words")) return unit_words();
+    if (!strcmp(name, "stage2b")) return unit_stage2b();
+    if (!strcmp(name, "stage2run")) return unit_stage2run();
+    if (!strcmp(name, "stage01")) return unit_stage01();
+    if (!strcmp(name, "mode4")) return unit_mode4();
     if (!strcmp(name, "volumefull")) return unit_volume_full();
     if (!strcmp(name, "all"))
         return unit_rings() | unit_flush() | unit_putchar() | unit_input()
@@ -4930,7 +8686,25 @@ int unit_run(const char *name)
              | unit_couple()
              | unit_trillshapes()
              | unit_blenddelta()
-             | unit_average();
+             | unit_average()
+             | unit_pausebound()
+             | unit_stopburst()
+             | unit_loadphone()
+             | unit_helpers3()
+             | unit_transition()
+             | unit_loadtriples()
+             | unit_blendtriples()
+             | unit_stopclosure()
+             | unit_build()
+             | unit_pausefill()
+             | unit_pausestage()
+             | unit_stage3run()
+             | unit_leaves2()
+             | unit_words()
+             | unit_stage2b()
+             | unit_stage2run()
+             | unit_stage01()
+             | unit_mode4();
     fprintf(stderr, "unknown unit test %s\n", name);
     return 2;
 }

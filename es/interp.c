@@ -402,3 +402,243 @@ int32_t TV_THISCALL Rule_Eval(TextIn *self, Token **cursor, Token **anchor,
         return TextIn_Error(self, 0);
     }
 }
+
+/* The twenty-two rule tables, one per flag a token can carry.  Each is a run
+ * of rules; each rule starts with its own length as an int16 and the bytecode
+ * Rule_Eval walks follows. */
+/* @0x10069b08 */
+extern int16_t g_rules_02[];
+/* @0x10068d40 */
+extern int16_t g_rules_03[];
+/* @0x10068dc8 */
+extern int16_t g_rules_05[];
+/* @0x10068e90 */
+extern int16_t g_rules_06[];
+/* @0x10069980 */
+extern int16_t g_rules_09[];
+/* @0x10068f10 */
+extern int16_t g_rules_0a[];
+/* @0x100690d8 */
+extern int16_t g_rules_0b[];
+/* @0x1006986c */
+extern int16_t g_rules_0c[];
+/* @0x10069248 */
+extern int16_t g_rules_0d[];
+/* @0x10069308 */
+extern int16_t g_rules_0e[];
+/* @0x100695f0 */
+extern int16_t g_rules_0f[];
+/* @0x10069378 */
+extern int16_t g_rules_10[];
+/* @0x100693e8 */
+extern int16_t g_rules_11[];
+/* @0x100694b8 */
+extern int16_t g_rules_12[];
+/* @0x100694d0 */
+extern int16_t g_rules_13[];
+/* @0x100696b0 */
+extern int16_t g_rules_14[];
+/* @0x10069870 */
+extern int16_t g_rules_15[];
+/* @0x10069a78 */
+extern int16_t g_rules_16[];
+/* @0x100698a8 */
+extern int16_t g_rules_17[];
+/* @0x10068db0 */
+extern int16_t g_rules_18[];
+/* @0x100694cc */
+extern int16_t g_rules_1a[];
+
+/*
+ * Tell the SAPI object which tokenizer mode is in force.
+ *
+ * Only reached from the ESC[nX arm of Rule_Select, and only when the engine
+ * has a SAPI object at all.
+ */
+/* @0x1001dcc0 */
+void TV_THISCALL TextIn_PublishMode(TextIn *self)
+{
+    if (self->engine != NULL && self->engine->sapi != NULL)
+        self->engine->sapi->textin_mode = self->mode;
+}
+
+/*
+ * Which rule tables apply to this token.
+ *
+ * Every bit set in the token's 96-bit flag set is looked at in turn, and the
+ * ones between 2 and 26 name a rule table.  The bit numbers come out in
+ * `bits`, NUL-terminated, and the matching tables in `tables`; thirty is the
+ * most it will collect.  The bit the token's own d18 record names comes first
+ * and is then skipped when the walk reaches it, so a token's own rule is tried
+ * before the general ones.
+ *
+ * Bit 0x52 is not a rule but the mark TextIn_ReadEscape leaves on an ESC[
+ * token: ESC[nX sets the tokenizer's mode and tells the host, and ESC[nI sets
+ * ti_04.  Bit 10's arm tests the mode and then does the same thing either way.
+ */
+/* @0x1001e160 */
+int32_t TV_THISCALL Rule_Select(TextIn *self, Token *t, int32_t *bits,
+                               int16_t **tables)
+{
+    /* the bits are collected into a frame of the original's own before the
+     * two the caller passes are filled, so the walk and the filter do not
+     * tread on each other */
+    int32_t seen[0x60];
+    int32_t n = 0;
+    int32_t *out;
+    int32_t bit = 0;
+    int32_t i, k = 0;
+
+    seen[0] = 0;
+    if (t->d18 != NULL) {
+        seen[0] = *(const int32_t *)((const uint8_t *)t->d18 + 0x24);
+        if (seen[0] != 0)
+            n = 1;
+    }
+    out = &seen[n];
+    for (;;) {
+        bit = (int32_t)(int16_t)Bits_Next(bit, t->bits);
+        if (bit == 0)
+            break;
+        if (seen[0] == bit)
+            continue;
+        *out++ = bit;
+        n++;
+    }
+    if (n == 0)
+        return 0;
+    if (n >= 0x1e)
+        n = 0x1e;
+
+    for (i = 0; i < n; i++) {
+        int32_t b = seen[i];
+        int16_t *tbl = NULL;
+
+        switch (b) {
+        case 0x02: tbl = g_rules_02; break;
+        case 0x03: tbl = g_rules_03; break;
+        case 0x05: tbl = g_rules_05; break;
+        case 0x06: tbl = g_rules_06; break;
+        case 0x09: tbl = g_rules_09; break;
+        case 0x0a: tbl = g_rules_0a; break;
+        case 0x0b: tbl = g_rules_0b; break;
+        case 0x0c: tbl = g_rules_0c; break;
+        case 0x0d: tbl = g_rules_0d; break;
+        case 0x0e: tbl = g_rules_0e; break;
+        case 0x0f: tbl = g_rules_0f; break;
+        case 0x10: tbl = g_rules_10; break;
+        case 0x11: tbl = g_rules_11; break;
+        case 0x12: tbl = g_rules_12; break;
+        case 0x13: tbl = g_rules_13; break;
+        case 0x14: tbl = g_rules_14; break;
+        case 0x15: tbl = g_rules_15; break;
+        case 0x16: tbl = g_rules_16; break;
+        case 0x17: tbl = g_rules_17; break;
+        case 0x18: tbl = g_rules_18; break;
+        case 0x1a: tbl = g_rules_1a; break;
+        case 0x52: {
+            const char *s = t->text;
+
+            if (s[3] == 'X') {
+                self->mode = (int32_t)(int8_t)s[2] - '0';
+                TextIn_PublishMode(self);
+            } else if (s[3] == 'I') {
+                self->ti_04 = (int32_t)(int8_t)s[2] - '0';
+            }
+            break;
+        }
+        default:
+            break;
+        }
+        if (tbl != NULL) {
+            tables[k] = tbl;
+            bits[k] = b;
+            k++;
+        }
+    }
+    bits[k] = 0;
+    return 1;
+}
+
+/*
+ * Run the rules for one token.
+ *
+ * Every table Rule_Select found is walked, rule by rule, and every rule is
+ * handed to Rule_Eval one opcode at a time.  What ends a rule is the opcode
+ * left in rule_ip when Rule_Eval stops: 0x8315 stops the whole run, 0x8316
+ * carries on with the next rule, 2 stops the run but keeps stepping the
+ * current rule, and 1 abandons the table and moves to the next flag.  A rule
+ * whose run stopped and that left the anchor where it started records which
+ * flag matched in the token's d1c.
+ */
+/* @0x1001e490 */
+int32_t TV_THISCALL Rule_Run(TextIn *self, Token **tp)
+{
+    int32_t bits[0x1e];
+    int16_t *tables[0x1e];
+    int16_t *rule = NULL;
+    const int32_t *bitp = NULL;
+    Token *first = *tp;
+    int32_t rulelen = 0;
+    int32_t i = 0;
+    int stop = 0;
+
+    if (!Rule_Select(self, first, bits, tables))
+        return 1;
+    if (bits[0] == 0)
+        return 1;
+
+next_list:
+    if (stop)
+        return 1;
+    self->rule_ip = tables[i];
+    if (*self->rule_ip == 0)
+        goto next_bit;
+
+next_rule:
+    if (stop)
+        goto next_bit;
+    rule = self->rule_ip;
+    rulelen = (int32_t)*rule;
+    self->rule_ip = rule + 1;
+    bitp = &bits[i];
+
+step:
+    if (!Rule_Eval(self, &first, tp, (uint32_t)*bitp))
+        goto done_rule;
+    {
+        int16_t op = *self->rule_ip;
+
+        if (op == (int16_t)0x8315) {
+            stop = 1;
+            goto done_rule;
+        }
+        if (op == 2) {
+            stop = 1;
+            self->rule_ip = self->rule_ip + 1;
+            goto step;
+        }
+        if (op == (int16_t)0x8316) {
+            stop = 0;
+            goto done_rule;
+        }
+        if (op != 1)
+            goto step;
+        first = *tp;
+        goto next_bit;
+    }
+
+done_rule:
+    if (stop && *tp == first)
+        first->d1c = (uint32_t)*bitp;
+    self->rule_ip = rule + rulelen;
+    first = *tp;
+    if (*self->rule_ip != 0)
+        goto next_rule;
+
+next_bit:
+    i++;
+    if (bits[i] == 0)
+        return 1;
+    goto next_list;
+}

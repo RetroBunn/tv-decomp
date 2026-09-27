@@ -66,6 +66,11 @@ void TV_THISCALL Preformat_PutChar(Engine *self, uint8_t c);
 
 /* @0x1000e290 */
 uint8_t TV_THISCALL Engine_InputStage(Engine *self);
+/* Takes one TextData item from the host into the input ring, cutting it into
+ * lines and closing each as a sentence when the PreFormat option is on. */
+/* @0x1001c310 */
+void TV_THISCALL Engine_Feed(Engine *self, const char *text, uint32_t len,
+                             uint32_t *ppos);
 
 /* ---- the node pool (node.c) ---------------------------------------------- */
 
@@ -132,6 +137,16 @@ int32_t TV_STDCALL Vowel_Index(uint8_t c);
 int32_t TV_STDCALL Vowel_Index2(uint8_t c);
 /* @0x100132e0 */
 uint8_t TV_STDCALL Is_Vowel(uint8_t c);
+/* A Roman numeral's value, or -1 when the string is not one. */
+/* @0x10022380 */
+int32_t TV_CDECL Roman_Value(const char *s);
+/* Latin-1 in, the letter under the accent out, and the mark it carried left
+ * in the caller's byte so the next read picks it up. */
+/* @0x10014db0 */
+uint8_t TV_CDECL Accent_Split(uint8_t *p);
+/* The same for the other table pair, keeping the letter's case. */
+/* @0x10020cf0 */
+uint8_t TV_CDECL Accent_Fold(uint8_t *p);
 
 /* ---- the TextIn tokenizer (textin.c) -------------------------------------- */
 
@@ -175,16 +190,30 @@ char *TV_CDECL tv_itoa(int32_t value, char *buf, int32_t radix);
 char *TV_CDECL tv_strchr(const char *s, int32_t c);
 /* @0x1002449d */
 int32_t TV_CDECL tv_atoi(const char *s);
+/* @0x10024408 */
+int32_t TV_CDECL tv_atol(const char *s);
+/* @0x100244ac */
+char *TV_CDECL tv_strstr(const char *s, const char *sub);
 /* @0x10023b51 */
 char *TV_CDECL tv_strlwr(char *s);
 
-/* the tokenizer's inner parts, still to do */
+/* the tokenizer proper */
 /* @0x1001c9e0 */
 int32_t TV_THISCALL TextIn_ReadToken(TextIn *self, Token **out);
 /* @0x1001d260 */
-void TV_THISCALL TextIn_Split(TextIn *self, Token **t);
+int32_t TV_THISCALL TextIn_Split(TextIn *self, Token **t);
+/* The same tokenizer over a string rather than the input ring, splitting each
+ * token as it goes; `mark` puts flag 3 on every one of them. */
+/* @0x1001cd10 */
+int32_t TV_THISCALL TextIn_TokenizeText(TextIn *self, const char *text,
+                                        int32_t mark);
 /* @0x1001d470 */
-void TV_THISCALL TextIn_Mode4(TextIn *self, Token *t);
+int32_t TV_THISCALL TextIn_Mode4(TextIn *self, Token *t);
+/* Puts a string into the list as a new token's replacement text, before the
+ * token given when dir is -1 and after it otherwise. */
+/* @0x1001d8d0 */
+int32_t TV_THISCALL TextIn_InsertText(TextIn *self, Token *ref,
+                                      const char *text, int32_t dir);
 /* @0x1001c6c0 */
 uint8_t TV_THISCALL Engine_CreateTextIn(Engine *self);
 /* @0x1001c790 */
@@ -193,13 +222,29 @@ TextIn *TV_THISCALL TextIn_Construct(TextIn *self, int32_t mode);
 int32_t TV_THISCALL TextIn_Reset(TextIn *self);
 /* @0x1001e0d0 */
 int32_t TV_THISCALL TextIn_Advance(TextIn *self);
-/* the mode-4 reset and the rule runner, neither written yet */
+/* Reads one ESC[ sequence into a token of its own, or puts the characters
+ * back when it is not one. */
+/* @0x1001d090 */
+int32_t TV_THISCALL TextIn_ReadEscape(TextIn *self, const char *base,
+                                      int32_t *ppos, int32_t no_mode4);
+/* Reads one line into a buffer, giving the index of its first space. */
+/* @0x100230b0 */
+int32_t TV_THISCALL TextIn_ReadLine(TextIn *self, char *buf,
+                                    int32_t *first_space);
+/* Reads the headers of a mail message, when mode 4 says the text is one. */
 /* @0x10022970 */
-void TV_THISCALL TextIn_Mode4Reset(TextIn *self);
+int32_t TV_THISCALL TextIn_Mode4Reset(TextIn *self);
+/* Which rule tables a token's flags select, and the ESC[nX mode change. */
+/* @0x1001e160 */
+int32_t TV_THISCALL Rule_Select(TextIn *self, Token *t, int32_t *bits,
+                               int16_t **tables);
+/* Tells the SAPI object the tokenizer's mode. */
+/* @0x1001dcc0 */
+void TV_THISCALL TextIn_PublishMode(TextIn *self);
 /* @0x1001e490 */
 int32_t TV_THISCALL Rule_Run(TextIn *self, Token **t);
 /* @0x1001f850 */
-void TV_THISCALL TextIn_Emit(TextIn *self, int32_t final);
+int32_t TV_THISCALL TextIn_Emit(TextIn *self, int32_t final);
 /* @0x1000e120 */
 void TV_THISCALL Queue_Push(void *queue, void *data, int32_t len);
 
@@ -218,7 +263,7 @@ void TV_THISCALL Engine_ResetNodes(Engine *self);
 /* @0x100087d0 */
 int32_t TV_THISCALL Engine_Step(Engine *self);
 
-/* the reset chain and the stages, still to do */
+/* the reset chain and the stages */
 /* @0x10007790 */
 void TV_THISCALL Preformat_Reset(Engine *self);
 /* @0x10017850 */
@@ -239,8 +284,25 @@ void TV_THISCALL Stage1_Reset(Engine *self);
 uint8_t TV_THISCALL Stage0_Run(Engine *self);
 /* @0x1000fa30 */
 uint8_t TV_THISCALL Stage1_Run(Engine *self);
+/* The same over the loanword lexicon. */
+/* @0x10023250 */
+uint8_t TV_THISCALL Stage1_Loanword(Engine *self);
+/* Looks the word between stage 1's cursors up in the exception lexicon and
+ * replaces it when it is there. */
+/* @0x10001040 */
+uint8_t TV_THISCALL Stage1_Lexicon(Engine *self);
+/* One phoneme of stage 1: the Spanish spelling rules, one arm each. */
+/* @0x1000fca0 */
+uint8_t TV_THISCALL Stage1_Phoneme(Engine *self);
+/* Looks ahead for the end of the word and puts a '&' at it; see es/stage1.c
+ * for what the four results mean. */
+/* @0x10010480 */
+int32_t TV_THISCALL Stage1_WordMark(Engine *self);
 /* @0x1001a070 */
 uint8_t TV_THISCALL Stage2_Run(Engine *self);
+/* Appends one byte to a growable byte list; the host's, not the engine's. */
+/* @0x1000df10 */
+uint8_t TV_THISCALL ByteList_Add(void *list, int32_t byte);
 /* @0x1001ad30 */
 int32_t TV_THISCALL Stage3_Run(Engine *self);
 /* @0x100077b0 */
@@ -284,6 +346,20 @@ uint8_t TV_CDECL Stage0_CharClass(int32_t cls, uint8_t c);
 uint8_t TV_THISCALL Stage0_MatchWord(Engine *self, uint8_t list, uint8_t fold_case);
 /* @0x10014010 */
 uint8_t TV_THISCALL Stage0_Finish(Engine *self, uint8_t done);
+/* Appends one node to stage 0's output, in front of the control node while
+ * there is one and on the end of the work list once there is not. */
+/* @0x10014090 */
+void TV_THISCALL Stage0_Emit(Engine *self, int32_t type, uint8_t value,
+                             uint8_t mark);
+/* Whether a character is one the rules can name: not C, F, I, N or x. */
+/* @0x10014290 */
+uint8_t TV_CDECL Stage0_IsPlain(uint8_t c);
+/* Puts the stress flag on one vowel of stage 0's window. */
+/* @0x10014310 */
+void TV_THISCALL Stage0_Stress(Engine *self, uint8_t adverb);
+/* The nearest node behind this one whose value is A E I O or U. */
+/* @0x10014720 */
+Node *TV_THISCALL Stage0_PrevVowel(Engine *self, Node *n);
 
 /* ---- stage 4 and the parameter tracks (stage4.c) ------------------------- */
 
@@ -341,7 +417,7 @@ int32_t TV_THISCALL Rule_Acronym(TextIn *self, Token *t, uint32_t v);
 /* @0x10020920 */
 int32_t TV_CDECL Number_Words(char *digits, char *out,
                               int32_t style, int32_t mode);
-/* the six-argument formatter behind it, not written yet */
+/* and the six-argument formatter behind it, which recurses on itself */
 /* @0x100200d0 */
 int32_t TV_CDECL Number_WordsEx(char *digits, char *out,
                                 int32_t style, int32_t mode, int32_t a, int32_t b);
@@ -397,16 +473,122 @@ int32_t TV_THISCALL Rule_Op85(TextIn *self, Token *t, uint32_t v);
 int32_t TV_CDECL Abbrev_Init(void);
 /* @0x10023120 */
 int32_t TV_CDECL Lexicon_Init(void);
+/* Binary-searches the loanword lexicon; returns how many entries match and
+ * puts the first matching index in *first. */
+/* @0x10023160 */
+int32_t TV_CDECL Lexicon_Find(const char *word, int32_t *first);
+/* The same search over the abbreviation table. */
+/* @0x1001dd50 */
+int32_t TV_CDECL Abbrev_Find(const char *word, int32_t *first);
+/* Looks the token up in the abbreviation table and, when one of the records
+ * fits, copies it onto the token. */
+/* @0x1001de40 */
+int32_t TV_CDECL Rule_MatchAbbrev(Token *t);
+/* Flags a numeric token as a plain number, an ordinal, a day, a month, a year,
+ * an hour or minutes, from what follows it and what came before. */
+/* @0x1001fde0 */
+int32_t TV_STDCALL Rule_ClassifyNumber(Token *t);
+/* Counts what the token's characters are and turns the counts into flags: all
+ * capitals, all punctuation, a Roman numeral, a dotted abbreviation, a number.
+ * Always returns 1. */
+/* @0x1001f950 */
+int32_t TV_THISCALL Rule_ClassifyToken(TextIn *self, Token *t);
 
 /* ---- stage 2 and stage 3 helpers (stage2.c, stage3.c) -------------------- */
 
 /* @0x1001aa60 */
 uint8_t TV_THISCALL Stage2_Scan(Engine *self, int32_t dir, int32_t count,
                                 int32_t mask1, int32_t mask2, int32_t mode);
+/* Runs the control nodes at the head of stage 2's window, stopping at the
+ * first phoneme. */
+/* @0x1001a7e0 */
+void TV_THISCALL Stage2_RunControls(Engine *self);
+/* Inserts the pause a punctuation mark is worth. */
+/* @0x10019eb0 */
+void TV_THISCALL Stage2_Punctuation(Engine *self);
+/* One word boundary: the two neighbour searches, then the class, the level
+ * and the duration. */
+/* @0x10019b10 */
+void TV_THISCALL Stage2_Boundary(Engine *self);
+/* The phoneme substitutions: N to ~, the stops lowered, and the fourteen
+ * diphthongs merged into one node each. */
+/* @0x10018270 */
+void TV_THISCALL Stage2_Substitute(Engine *self);
+/* Works out how long the phoneme lasts and writes it to the control node. */
+/* @0x10018aa0 */
+void TV_THISCALL Stage2_Duration(Engine *self);
+/* Merges the boundary node behind the control node into it. */
+/* @0x10018a10 */
+void TV_THISCALL Stage2_MergeBack(Engine *self);
+/* Walks to the end of the word, inserting the pauses and marks it finds
+ * reason for; returns the node the caller should treat as the last. */
+/* @0x1001a380 */
+Node *TV_THISCALL Stage2_ScanWord(Engine *self);
+/* Moves the window on by a node or a word; returns whether the cursor
+ * moved. */
+/* @0x1001a220 */
+uint8_t TV_THISCALL Stage2_Advance(Engine *self);
+/* One word's phonemes, folding their stress marks in.  Returns whether the
+ * word is finished with. */
+/* @0x1001a6d0 */
+uint8_t TV_THISCALL Stage2_Word(Engine *self);
+/* Works out the phoneme's level and writes it to the control node's b15. */
+/* @0x10019710 */
+void TV_THISCALL Stage2_Level(Engine *self);
+/* Two words meeting on the same phoneme: drops one.  Returns whether it did. */
+/* @0x10019d10 */
+uint8_t TV_THISCALL Stage2_Elide(Engine *self);
+/* Works out what kind of word boundary this is, into s2_3c8, s2_3c9 and
+ * s2_3d0. */
+/* @0x100195c0 */
+void TV_THISCALL Stage2_Classify(Engine *self);
+/* Latches the control node's length and level, or writes them back. */
+/* @0x1001ab90 */
+void TV_THISCALL Stage2_Adjust(Engine *self, int32_t apply);
+/* Caches the control node's class bits and its three neighbours. */
+/* @0x10019bd0 */
+void TV_THISCALL Stage2_Cache(Engine *self);
+/* Counts the vowels ahead of or behind a node, treating two together as one. */
+/* @0x10019490 */
+int32_t TV_THISCALL Stage2_CountVowels(Engine *self, Node *from,
+                                       uint8_t forward);
+/* Clears the state stage 2 keeps for one utterance. */
+/* @0x1001a9e0 */
+void TV_THISCALL Stage2_ClearRun(Engine *self);
+/* Sets flag 0x20 on a node and on up to three more behind it. */
+/* @0x10019a00 */
+void TV_THISCALL Stage2_MarkBack(Engine *self, Node *n);
+/* Folds a '1', '2' or '\"' stress mark into the vowel before it. */
+/* @0x10019a80 */
+Node *TV_THISCALL Stage2_ApplyStress(Engine *self, Node *n);
 /* @0x1001b810 */
 void TV_THISCALL Stage3_Reset(Engine *self);
+/* One phoneme's worth of stage 3: every correction pass in turn, then the
+ * 22 tracks.  Stage3_Run calls it once per phoneme. */
+/* @0x1001b880 */
+void TV_THISCALL Stage3_Build(Engine *self);
 /* @0x1001be30 */
 Node *TV_THISCALL Stage3_Insert(Engine *self, Node *ref, int32_t mode);
+/* One pause's worth of samples: builds a 22-byte parameter frame from
+ * `mode` and writes it into every track buffer until `count` or the
+ * buffers' `room` runs out, returning what is still owed. */
+/* @0x1001b250 */
+int32_t TV_THISCALL Stage3_FillFrames(Engine *self, uint8_t mode,
+                                     int32_t count, int32_t room,
+                                     uint8_t rebuild);
+/* Advances every track by the duration it was given and republishes
+ * trk_0c and trk_10 as the earliest and latest cursor. */
+/* @0x1001c040 */
+void TV_THISCALL Track_Commit(Engine *self);
+/* One call's worth of a pause: takes the length off the node, then hands
+ * the tracks as much of it as they have room for, and returns what is still
+ * owed. */
+/* @0x1001b170 */
+int32_t TV_THISCALL Stage3_Fill(Engine *self);
+/* Looks ahead for what ends the current run and inserts the pause that goes
+ * with it; returns the node stage 3 should scan from next. */
+/* @0x1001c110 */
+Node *TV_THISCALL Stage3_Pause(Engine *self);
 
 /* A sparse-record index over a bitmap: BitTable_Rank gives the packed
  * position of the record at (a, b) in table `kind`, or -1 when there is
@@ -505,13 +687,52 @@ void TV_THISCALL Track_AdjustVelar(Engine *self);
 /* Averages each track's old level with its new one, within a limit. */
 /* @0x10011660 */
 void TV_THISCALL Track_Average(Engine *self);
+/* Emits a run of fixed values into tracks 0, 2 and 13 and accounts for it. */
+/* @0x10017f90 */
+void TV_THISCALL Track_EmitPause(Engine *self);
+/* The phoneme boundary: whether to emit a pause, and what follows it. */
+/* @0x10015540 */
+void TV_THISCALL Track_AdjustBoundary(Engine *self);
+/* Writes a stop's release burst back into already-laid audio. */
+/* @0x100150f0 */
+void TV_THISCALL Track_StopBurst(Engine *self);
+/* Loads a phoneme's voice parameters into the whole track set. */
+/* @0x1001b440 */
+void TV_THISCALL Stage3_LoadPhone(Engine *self);
+/* Which of stage 3's two phonemes are flagged, as two bits. */
+/* @0x10017550 */
+int32_t TV_THISCALL Stage3_BlendMode(Engine *self);
+/* Sets tracks 9 to 11 from one of two triples, or their average. */
+/* @0x10017630 */
+void TV_THISCALL Track_SetTriple(Engine *self, int32_t a1, int32_t a2,
+                                 int32_t a3, int32_t b1, int32_t b2,
+                                 int32_t b3, int32_t mode);
+/* Puts one or both phonemes into a vowel class, 1 to 5. */
+/* @0x100176c0 */
+void TV_THISCALL Stage3_VowelClass(Engine *self, int32_t mode);
+/* Corrections for the transition between two phonemes, either direction. */
+/* @0x10010630 */
+void TV_THISCALL Track_AdjustTransition(Engine *self);
+/* Loads the two level triples for a transition from the per-vowel-class
+ * tables and hands them to Track_SetTriple. */
+/* @0x10016fe0 */
+void TV_THISCALL Stage3_LoadTriples(Engine *self);
+/* Stage3_LoadTriples' sibling: fills both triples when both phonemes are
+ * flagged, and lets Track_SetTriple average them. */
+/* @0x10015b30 */
+void TV_THISCALL Stage3_BlendTriples(Engine *self);
+/* A stop closure, and then the triples for whatever follows it. */
+/* @0x10016460 */
+void TV_THISCALL Stage3_StopClosure(Engine *self);
 
 /* ---- not written yet ------------------------------------------------------
- * Declared with an address and nothing else.  tools/gen_hookmap.py emits a
- * --defsym for every annotated symbol it cannot find a definition of, so a
- * call to one of these lands in the original inside the loaded DLL.  That is
- * what makes it possible to decompile one function at a time rather than a
- * whole subsystem at once. */
-
+ * Empty, and that is the point: every function the corpus executes is written,
+ * so nothing is left that needs declaring with an address and no definition.
+ * tools/gen_hookmap.py emits a --defsym for every annotated symbol it cannot
+ * find a definition of, so a call to one of those lands in the original inside
+ * the loaded DLL, and that is what made it possible to decompile one function
+ * at a time rather than a whole subsystem at once.  Three such declarations are
+ * left in the tree, in es/textin.c: the mode 4 header handlers, which nothing
+ * can reach yet. */
 
 #endif /* TV_ES_ENGINE_H */

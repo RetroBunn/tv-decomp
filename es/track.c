@@ -426,3 +426,101 @@ void TV_THISCALL Track_Shorten(Engine *self)
         self->trk_wr[0] -= self->s3_458;
     }
 }
+
+/* the same two tables Track_SetModes reads, and a third entry point into
+ * the second one -- the original addresses it eight bytes along. */
+/* @0x10057e20 */
+extern const uint8_t *const g_10057e20t;
+/* @0x100581e8 */
+extern const uint8_t g_100581e8[256];
+
+/*
+ * Emit a run of fixed values into tracks 0, 2 and 13, and account for it.
+ *
+ * trans_len is the length, worked out in four steps: 4 to begin with, 2 when
+ * the current node is not flagged 0x20, then 5 or 7 or 1 depending on the
+ * class flags, and finally a duration lookup added on.  It is then clamped
+ * against what tracks 2 and 0 have left, and if nothing is left the whole
+ * thing is skipped.
+ *
+ * The fills are 0 into track 0, s3_47c into track 2 and 0x4b into track 13.
+ * Each one costs the track that many samples of duration and advances its
+ * cursor by the same amount, so the time is moved rather than created.
+ *
+ * The original looks the duration up seven separate times, always on the
+ * current phoneme and always through the same two tables; it is one value.
+ * It also sets trans_len to 5 twice on nested conditions, the inner one
+ * changing nothing.
+ */
+/* @0x10017f90 */
+void TV_THISCALL Track_EmitPause(Engine *self)
+{
+    Node *cur = self->stage_ctx[3].cur;
+    Node *ctl = self->stage_ctx[3].ctl;
+    int32_t c_cur = cur->value;
+    int32_t c_ctl = ctl->value;
+    int32_t v = self->s3_478;
+    int32_t n;
+
+    self->s3_47c = v;
+    self->trans_len = 4;
+    if (!(cur->flags & 0x20)) {
+        self->trans_len = 2;
+        self->s3_47c = v - 3;
+    }
+    if (!(g_10058618[cls0_trk((uint8_t)c_ctl)] & 1))
+        self->trans_len = 5;
+    if (c_ctl == 'p')
+        self->trans_len = 7;
+
+    if (g_10058618[cls0_trk((uint8_t)c_cur)] & 0x20) {
+        int32_t d = g_100581e8[g_10057e20t[cls0_trk((uint8_t)c_cur)]];
+        int32_t wr2 = self->trk_wr[2];
+
+        self->trans_len += d;
+        self->trk_param[2][3] += d;
+        self->trk_param[0][3] += d;
+        self->trk_param[13][3] += d;
+        wr2 -= d;
+        self->trk_wr[2] = wr2;
+        self->trk_wr[0] -= d;
+        self->trk_wr[13] -= d;
+        self->trk_rd[2] = wr2;
+    }
+
+    if (g_10058618[cls0_trk((uint8_t)c_cur)] & 0x40) {
+        self->trans_len = 1;
+        if (!(g_10058618[cls0_trk((uint8_t)c_ctl)] & 1))
+            self->trans_len = self->trk_param[2][3] / 2;
+    }
+    if (self->trans_len > self->trk_param[2][3])
+        self->trans_len = self->trk_param[2][3];
+    if (self->trans_len > self->trk_param[0][3])
+        self->trans_len = self->trk_param[0][3];
+    if (self->trans_len <= 0)
+        return;
+
+    if (g_10058618[cls0_trk((uint8_t)c_cur)] & 0x40) {
+        int32_t wr2 = self->trk_wr[2];
+
+        Track_BlendDelta(self, self->trk_buf[2], 2, wr2, 3,
+                         wr2 - self->trk_rd[2],
+                         self->s3_47c - self->trk_490[2]);
+    }
+    n = self->trans_len;
+    Track_Fill(self->trk_buf[0], self->trk_wr[0], n, 0);
+    Track_Fill(self->trk_buf[2], self->trk_wr[2], self->trans_len,
+               (uint8_t)self->s3_47c);
+    Track_Fill(self->trk_buf[13], self->trk_wr[13], self->trans_len, 0x4b);
+
+    n = self->trans_len;
+    self->trk_490[2] = self->s3_47c;
+    self->trk_param[2][3] -= n;
+    self->trk_wr[2] += n;
+    self->trk_param[0][3] -= n;
+    self->trk_wr[0] += n;
+    self->trk_param[13][3] -= n;
+    self->trk_490[13] = 0x96;
+    self->trk_param[0][0] = 6;
+    self->trk_wr[13] += n;
+}

@@ -36,6 +36,18 @@
 # 0x19ec, another 8.  Each deviation is a place English grew.
 # ---------------------------------------------------------------------------
 
+# One queued input segment of a TextData item, cut at line breaks by
+# Engine_Feed.  Field for field the same as English's, offsets read off
+# sub_1001c310: text at 0, the length as an int16 at 8, then the three
+# per-line marks.
+struct InputSeg 0x10
+0x00 char     *text
+0x08 int16_t   len
+0x0a uint8_t   caps_only        # no lower-case characters
+0x0b uint8_t   no_words         # nothing alphanumeric
+0x0c uint8_t   flag_c
+end
+
 # One entry of the stage 0 rule interpreter's call stack.  English's, and the
 # 0xa0 bytes between s0_stack and s0_sp divide by it exactly twenty times.
 struct S0Frame 0x8
@@ -53,8 +65,8 @@ struct StageCtx 0x44
 0x08 Node    *ctl              # next control node to execute
 0x0c Node    *scan
 0x10 Node    *last             # end of this stage's window
-0x14 void    *d14
-0x18 void    *d18
+0x14 Node    *d14              # stage 0 walks the window with these two
+0x18 Node    *d18
 0x1c int32_t  p_1c             # <- mode_I
 0x20 int32_t  p_20             # <- mode_P
 0x24 int32_t  rate_index       # (wpm - 46) >> 3
@@ -80,6 +92,9 @@ struct Node 0x1c
 0x0c uint32_t arg              # control nodes: the command argument
 0x10 uint8_t  b15
 0x11 uint8_t  value            # character, or the command letter
+0x12 uint8_t  n_12             # Stage3_Run compares it against 1 and, when
+                              # it matches, pins s3_1fb8 and trk_490[17] at
+                              # 100.  Nothing in the image writes it.
 0x14 uint32_t notify           # 'i' index marks: the TextData notify context
 end
 
@@ -157,12 +172,14 @@ struct TextIn 0xac
 0x68 int16_t *rule_ip          # the interpreter's instruction pointer
 0x6c int16_t  rule_trail       # Rule_MatchTrail leaves the token's trailing
                                # character here, sign-extended
-0x6e int16_t  ti_6e            # cleared by TextIn_Construct and Reset
+0x6e int16_t  ti_6e            # mode 4: the quotation is open
 
-# sub_1001dce0 is TextIn_Error: it appends the code it is given to a ring of
-# ten and counts them, which is where these two come from.  0x6e..0x7f is
-# still unexamined.
-0x74 uint8_t  ti_74            # cleared by TextIn_Construct and Reset
+# The rest of it is mode 4's, from sub_1001d470: the run of marker characters
+# it is tracking, as a string, and how far it has got with it.
+0x70 int16_t  ti_70            # how many characters the run covers
+0x72 int16_t  ti_72            # how many tokens in a row have carried it
+0x74 char     ti_74[12]        # the run itself; ti_74[0] == 0 is "none yet",
+                               # which is what Construct and Reset write
 0x80 int32_t  errors[10]       # the first ten error codes, in order
 0xa8 int32_t  err_count        # how many have been reported
 end
@@ -197,6 +214,11 @@ struct Engine 0x8838
 # so English added an escape flag.
 # Engine_Construct sets this to 1 -- the field English keeps at 0x2104 in
 # the host block and calls fmt_2104, which the 1995 host block does not have.
+# Engine_Feed cuts a TextData item into lines here.  Twenty of them, not the
+# ten English has, and 0x94 + 20 * 0x10 is exactly feed_pos, which is what
+# pins both the base and the count.
+0x0094 InputSeg in_seg[20]
+0x01d4 uint32_t feed_pos         # position within the current TextData item
 0x01dc int32_t  e_1ae4          # ESC[f stows the rate index here
 0x01d8 int32_t  fmt
 0x01e0 int32_t  in_flags_N       # 0x1780 here, 0x17c0 in English
@@ -223,30 +245,84 @@ struct Engine 0x8838
 0x023c const uint8_t *s0_word_data # replacement text after a matched word
 0x0244 S0Frame  s0_stack[20]    # 0xa0 bytes, and s0_sp points into it
 0x02e4 S0Frame *s0_sp
+# The interpreter's own state, between its stack and the pending node.  The
+# two counts come out of one byte of the rule stream, a nibble each; s0_reg is
+# twelve bytes because that is the whole of the gap, and the rules only ever
+# index the first few.
+0x0240 uint8_t  s0_nact           # action bytes still to run
+0x0241 uint8_t  s0_skip           # bytes to step over once they have
+0x02e8 uint8_t  s0_reg[12]
 0x02f4 Node     s0_pending       # accent or stress carried to the next node;
                                  # 0x1c bytes, which is one Spanish Node --
                                  # English's is 0x20, which is one of its own
 0x0310 Node    *s0_pending_ptr
 0x0314 uint8_t  s0_1c1c
 
+# --- stage 1, from sub_10001040 and sub_1000fca0 ---------------------------
+# The two stress-level settings the lexicon reads; both are only ever compared
+# against 1, and what writes them is not established.
+0x0322 uint8_t  s1_322
+0x0323 uint8_t  s1_323
+# Where stage 1 was when it last looked a word up, so that a caller holding
+# either cursor keeps hold of the nodes that replaced it.
+0x0338 Node    *s1_338
+0x033c Node    *s1_33c
+
 # --- stage 2, from sub_1001a8b0 --------------------------------------------
 0x0378 int32_t  s2_378
 0x037c int32_t  s2_37c
+0x0380 int32_t  s2_380            # the control node's arg, with the low
+#   byte sign-extended; sub_1001ab90 latches it here and writes it back.
 
 # Preformat_PutChar raises s2_1d54 once there is room for a lot more nodes:
 # "cmp byte [ecx+0x385],0" then "cmp dword [esi+0x750],0x260" then
 # "mov byte [esi+0x384],1" -- English's !s2_1d55 && free_nodes > 0x260.
 0x0384 uint8_t  s2_1d54
+# Four more of stage 2's, from sub_1001a9e0, which clears the state it keeps
+# for one utterance.  Only the offsets and the defaults are established.
+0x03c0 uint8_t  s2_3c0
+0x03c8 uint8_t  s2_3c8
+0x03c9 uint8_t  s2_3c9
+0x03d0 int32_t  s2_3d0            # set to 4
+# sub_10019bd0 caches eleven bits of the control node's class flags, one to a
+# byte, and the values of its three neighbours.  Each byte holds the table's
+# own bit value, not 0 or 1, except s2_3db which comes from the node's flags.
+0x03d5 uint8_t  s2_3d5            # cls80 bit 8
+0x03d6 uint8_t  s2_3d6            # cls0 bit 0x40
+0x03d7 uint8_t  s2_3d7            # cls0 bit 0x10
+0x03d8 uint8_t  s2_3d8            # cls0 bit 0x80
+0x03d9 uint8_t  s2_3d9            # cls0 bit 2
+0x03da uint8_t  s2_3da            # cls100 bit 1
+0x03db uint8_t  s2_3db            # node flag 0x20, shifted to 0 or 1
+0x03dc uint8_t  s2_3dc            # cls0 bit 1
+0x03dd uint8_t  s2_3dd            # cls100 bit 2
+0x03de uint8_t  s2_3de            # cls0 bit 1 of the boundary behind
+0x03e0 uint8_t  s2_3e0            # cls0 bit 1 of the next word
+0x03e1 uint8_t  s2_3e1            # the control node's own value
 0x045c int32_t  trans_len         # the length of the glide into a
 #   segment, in samples.  sub_10012390 hands it to Extend as both the
 #   sample count and, clamped to 20, the contour number, and treats 0x7f
 #   and anything <= 0 as "no glide".
+0x0448 int32_t  s3_448            # the previous s3_44c, kept one
+#   segment back; the pair indexes g_10058200 as s3_448 * 4 + s3_44c.
+0x044c int32_t  s3_44c            # 0..3, from the control phoneme's
+#   class flags.
+0x0450 int32_t  s3_450
+0x0454 int32_t  s3_454            # also kept one segment back: the new
+#   value goes in after the old one has been copied to s3_450.
 0x0458 int32_t  s3_458            # how many samples sub_10017e60 winds
 #   tracks 0 and 2 back by, and adds to their trk_param[t][3].
+0x0460 int32_t  s3_460            # how far back from a track's write
+#   cursor sub_100150f0 puts the stop burst.
 0x0468 int32_t  s3_468            # a duration, halved toward a table
 #   value by sub_10015720 and then clamped against s3_1fe8.
+0x0464 int32_t  s3_464            # cleared by Stage3_ResetParams and not
+#   read anywhere else in the image.
+0x0470 int32_t  s3_470            # the same: cleared there, never read.
 0x046c int32_t  s3_46c            # the run length sub_10015720 hands to
 #   Track_Fill and then takes off trk_param[t][3].
+0x0474 int32_t  s3_474            # how many samples sub_10016460 pads a
+#   stop's closure by: trk_param[1][3] less the closure length itself.
 0x0478 int32_t  s3_478            # copied to s3_47c by sub_10015090,
 #   less 6 when it shortens.
 0x047c int32_t  s3_47c            # the level sub_10017e60 redraws
@@ -263,6 +339,7 @@ struct Engine 0x8838
 #   ever touched -- the four tracks sub_10010ba0 adjusts and their
 #   partners, used there alongside trk_490[9..11] and trk_param[9..11][6]
 #   -- and 0x55c + 22 * 4 is exactly where s3_param_raw begins.
+0x0480 int32_t  s3_480            # set to 0x39 and not read here.
 0x0490 int32_t  trk_490[22]       # a second per-track int32 array,
 #   written beside trk_param[t][6] and trk_param[t+4][6] by
 #   sub_10012cb0.  Twenty-two again: the highest index reached is 17
@@ -303,6 +380,21 @@ struct Engine 0x8838
 0x05fc int32_t  s3_1fe0          # set to 2; Stage3_Insert adds it to s3_1fe4
 0x0600 int32_t  s3_1fe4          # set to 3
 0x0604 int32_t  s3_1fe8          # set to 4
+
+# The held parameter frame, from sub_1001b250.  A type 4 node -- a pause --
+# does not go through the phoneme machinery at all: it names a source for
+# one 22-byte frame and then that frame is written straight into all 22
+# track buffers once per sample for as long as the pause lasts.  Which is
+# what fixes the size: 0x612 + 22 is exactly 0x628.
+0x060c int32_t  s3_60c            # how many samples of the pause are
+#   still owed; seeded from the node's arg and counted down across calls.
+0x0610 uint8_t  s3_610            # the node's value, kept for the rebuild
+0x0611 uint8_t  s3_611            # set when the frame needs rebuilding,
+#   cleared once sub_1001b250 has done it
+0x0612 uint8_t  s3_frame[22]      # one byte per track
+0x0628 int32_t  s3_628            # the node's b15 when the table row says
+#   to take it, else 0.  Gates the s3_1fbd bit and, over 0xb4, changes what
+#   tracks 13 to 15 get.
 0x0650 uint8_t  s3_650            # gates the tracks 9..15 branch in
 #   sub_10010ba0; written elsewhere.
 0x0630 int32_t  seg_len           # the segment length in samples.
@@ -416,8 +508,10 @@ struct Engine 0x8838
 0x073c uint8_t *out_buf          # the PCM buffer out_count counts into
 0x0740 uint16_t w_212c
 0x0742 uint16_t w_212e
-0x0744 uint16_t w_2130
-0x0746 uint16_t w_2132
+# Stage2_Run hands every phoneme to this object through a thiscall, so it is
+# a pointer and not the two int16 the English field names suggested.  It is
+# the phoneme trace: a growable byte list the host asks for, gated by w_212c.
+0x0744 void    *s2_trace
 0x0748 uint32_t item_notify      # zeroed by the constructor, as English's is
 0x074c StageCtx *stage           # sub_1000ead0: "mov ebp,[ebx+0x74c]" and then
                                  # "cmp edx, 0x7dc" -- stage_ctx[2], which
@@ -497,17 +591,56 @@ struct Engine 0x8838
 # The values differ from English's throughout -- this writes 1, 0xd, 5, 7
 # and 0x14 where English writes 3, -1, -1, 180 and -1 -- so the 1995 stage 2
 # keeps different state.  Only the offsets are established.
+0x8788 int32_t  s3_8788            # 0..3: bit 1 set when the current
+#   phoneme is flagged 2, bit 0 when the following one is.  sub_10017550
+#   writes it and returns it; the other two helpers branch on it.
+0x878c int32_t  s3_next_trip[3]    # the three levels for the following
+#   phoneme's vowel class, scaled the way tracks 9, 10 and 11 want them.
+0x8798 int32_t  s3_cur_trip[3]     # the same for the current phoneme.
+#   sub_10016fe0 fills one or both and hands them to Track_SetTriple.
+0x87a4 int32_t  s3_87a4            # 1..5, the current phoneme's vowel
+#   class, or left alone when it has none.
+0x87a8 int32_t  s3_87a8            # the same for the following phoneme.
 0x87b4 int32_t  s2_87b4
 0x87b8 int32_t  s2_87b8          # set to 7
+0x87bc int32_t  s2_87bc
+0x87c0 int32_t  s2_87c0
+0x87c8 int32_t  s2_87c8          # set to 0x14
+0x87cc int32_t  s2_87cc          # set to 0x1e
+0x87d0 uint8_t  s2_87d0
+0x87d1 uint8_t  s2_87d1
 0x87d2 uint8_t  s2_87d2
-0x87d4 int32_t  s2_87d4
+0x87d4 Node    *s2_87d4          # sub_1001a7e0 keeps a node here and
+                                 # moves it on with the window
 0x87d8 uint8_t  s2_87d8
 0x87dc int32_t  s2_87dc
 0x87e0 int32_t  s2_87e0          # set to 0x14
+0x87e4 int32_t  s2_87e4          # set to 0x32
+0x87ec Node    *s2_87ec          # the word's last node
+0x87ac Node    *s2_87ac          # the last '&' or '%' node seen
+0x87b0 Node    *s2_87b0          # and the one before it
+0x87f0 Node    *s2_87f0          # where the backward vowel count stops
+0x87f8 uint8_t  s2_87f8
+0x87fa uint8_t  s2_87fa
+0x87fb uint8_t  s2_87fb
 0x87e8 uint8_t  s2_87e8
 0x87f4 int32_t  s2_87f4          # set to 5
 0x87f9 uint8_t  s2_87f9          # set to 1
 0x87fc int32_t  s2_87fc          # set to 0xd
+0x8800 int32_t  s2_8800
+0x8804 int32_t  s2_8804
+0x880c uint8_t  s2_880c          # the latched node's value
+0x8810 int32_t  s2_8810          # its b15, low byte sign-extended
+0x8814 Node    *s2_8814          # the node those two were latched from
+0x8828 Node    *s2_8828          # a 'q' here raises flag 0x40 on the
+#   control node; what puts it there is not established.
+0x8818 Node    *s2_8818          # the next phoneme the table marks 0x80
+0x881c Node    *s2_881c          # the boundary behind the control node
+0x8820 Node    *s2_8820          # the next word
+0x8824 Node    *s2_8824          # the word after that
+0x882c uint8_t  s2_882c          # s2_881c's value, or 0
+0x882d uint8_t  s2_882d          # s2_8820's value, or 0
+0x8830 int32_t  s2_8830          # s2_8824's value, sign-extended, or 0
 0x8808 int32_t  s2_8808
 
 # From sub_1000fa10, the Stage1_Reset counterpart.

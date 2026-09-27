@@ -1,14 +1,18 @@
 /*
- * The TextIn tokenizer's edges: the two ways it reads a character from the
- * engine, the way it writes a string back, and the string allocator its
- * tokens use.
+ * The TextIn tokenizer.
  *
  * TextIn sits between Engine_Feed and the preformatter when the SAPI
  * "TextIn" option is on, which it is by default.  It pulls characters out of
  * the input ring itself, splits them into tokens, rewrites some of them --
  * numbers, abbreviations -- and puts the result back through
- * Preformat_PutChar.  These four are the parts that touch the engine; the
- * tokenizing proper is still to do.
+ * Preformat_PutChar.
+ *
+ * The file runs outward from the middle: first the edges, the two ways it
+ * reads a character and the string allocator its tokens use, then the list
+ * and its lifecycle, then the tokenizer proper -- `TextIn_ReadToken`, which
+ * decides where a token ends, `TextIn_Split`, which cuts one up where the
+ * marks say to, and `TextIn_TokenizeText`, which is the same walk over a
+ * string.  Mode 4, the mail reader, is last.
  */
 #include "es_engine.h"
 
@@ -363,7 +367,7 @@ TextIn *TV_THISCALL TextIn_Construct(TextIn *self, int32_t mode)
     self->detached = NULL;
     self->cur = self->head;
     self->tail = self->head;
-    self->ti_74 = 0;
+    self->ti_74[0] = 0;
     self->count = 0;
     self->err_count = 0;
     self->mode = mode;
@@ -385,7 +389,7 @@ int32_t TV_THISCALL TextIn_Reset(TextIn *self)
     self->cur = self->head;
     self->tail = self->head;
     self->count = 0;
-    self->ti_74 = 0;
+    self->ti_74[0] = 0;
     self->err_count = 0;
     if (self->mode == 4)
         TextIn_Mode4Reset(self);
@@ -437,5 +441,932 @@ uint8_t TV_THISCALL Engine_CreateTextIn(Engine *self)
         return 0;
     t->engine = self;
     self->textin = t;
+    return 1;
+}
+
+/*
+ * Hand the finished tokens back to the engine and drop them.
+ *
+ * Each token's text goes out through TextIn_PutString -- the replacement text
+ * if the rules left one, otherwise the original -- followed by the character
+ * that ended it, and then the token is removed from the list.  So this is
+ * where a rewritten token stops being a token and becomes characters again.
+ *
+ * `final` says how much to let go of.  Set, everything from the head to the
+ * end goes.  Clear, the cursor is walked back up to a hundred tokens (or to
+ * the one after the head, whichever comes first) and the walk stops there, so
+ * that much stays in the list for the rules to keep looking at.
+ */
+/* @0x1001f850 */
+int32_t TV_THISCALL TextIn_Emit(TextIn *self, int32_t final)
+{
+    Token *head = self->head;
+    Token *t = head->next;
+    Token *stop = self->cur;
+
+    if (t == NULL || stop == NULL)
+        return 0;
+
+    if (final == 0) {
+        int32_t back = 0;
+
+        if (stop->prev != head) {
+            while (back < 100) {
+                stop = stop->prev;
+                back++;
+                if (stop->prev == head)
+                    break;
+            }
+        }
+        while (t != NULL && t != stop) {
+            const char *s = t->text2 != NULL ? t->text2 : t->text;
+            char trail[2];
+
+            if (s != NULL)
+                TextIn_PutString(self, s);
+            if (t->trail != 0) {
+                trail[0] = (char)t->trail;
+                trail[1] = 0;
+                TextIn_PutString(self, trail);
+            }
+            t = TextIn_RemoveToken(self, t, 1);
+        }
+        return 1;
+    }
+
+    while (t != NULL) {
+        const char *s = t->text2 != NULL ? t->text2 : t->text;
+        char trail[2];
+
+        if (s != NULL)
+            TextIn_PutString(self, s);
+        if (t->trail != 0) {
+            trail[0] = (char)t->trail;
+            trail[1] = 0;
+            TextIn_PutString(self, trail);
+        }
+        t = TextIn_RemoveToken(self, t, 1);
+    }
+    return 1;
+}
+
+/* The tokenizer's own character table, one dword each, and not the same table
+ * as the rule interpreter's in es/rule.c: bit 1 is punctuation, bit 2 one of
+ * the three separators -./, bit 4 a letter -- which is what ends a CSI
+ * sequence -- bit 8 a digit and bit 0x10 one of # $ % & @ ` ~. */
+/* @0x10061450 */
+extern const uint32_t g_tok_class[0x100];
+/* The two bytes a CSI sequence starts with, as one int16: ESC and then a
+ * zero the '[' overwrites. */
+/* @0x1006185c */
+extern const uint16_t g_esc_prefix;
+
+/*
+ * Read one ESC[ sequence and make a token of it.
+ *
+ * The characters come either from the tokenizer's own input, or -- when `base`
+ * is not NULL -- from `base` at the position `*ppos`, which is walked forward
+ * as it goes and back again if the sequence turns out not to be one.  The
+ * sequence is ESC, '[', any number of parameter bytes and then a letter;
+ * twenty characters is the limit.
+ *
+ * On success the whole sequence becomes a new token on the end of the list,
+ * flagged 0x51 and 0x52, with its length in Token.len.  Anything that is not a
+ * sequence after all -- no '[', or the input running out -- is put back, a
+ * character at a time, and nothing is made.
+ *
+ * ESC[4X is the one sequence handled here rather than passed on: it switches
+ * the tokenizer to mode 4 and resets it, unless `no_mode4` says not to.
+ */
+/* @0x1001d090 */
+int32_t TV_THISCALL TextIn_ReadEscape(TextIn *self, const char *base,
+                                      int32_t *ppos, int32_t no_mode4)
+{
+    char buf[0x18];
+    Token *tok;
+    int32_t state = 1;
+    int32_t n = 1;
+
+    buf[0] = (char)(g_esc_prefix & 0xff);
+    buf[1] = (char)(g_esc_prefix >> 8);
+    memset(buf + 2, 0, 0x12);
+
+    while (state < 3) {
+        int32_t c;
+
+        if (base != NULL) {
+            c = (int32_t)(int8_t)base[*ppos];
+            (*ppos)++;
+        } else {
+            c = TextIn_GetChar(self);
+        }
+        buf[n] = (char)c;
+        n++;
+        if (c == -2 || c == 0)
+            goto putback;
+        if (state == 1) {
+            if (c != '[')
+                goto putback;
+            state = 2;
+        } else if (state == 2) {
+            if (g_tok_class[c] & 4)
+                state = (c == 'X' && buf[n - 2] == '4') ? 4 : 3;
+            if (n > 0x14)
+                goto putback;
+        }
+    }
+
+    if (state == 4) {
+        if (no_mode4 == 0) {
+            self->mode = 4;
+            TextIn_Mode4Reset(self);
+        }
+        return 0;
+    }
+
+    buf[n] = 0;
+    tok = TextIn_InsertAfter(self, self->tail);
+    if (tok == NULL)
+        return TextIn_Error(self, 1);
+    if (AllocString(&tok->text, n + 1) == -1)
+        return TextIn_Error(self, 0);
+    strcpy(tok->text, buf);
+    tok->len = (int16_t)n;
+    Bits_Set(0x51, tok->bits);
+    Bits_Set(0x52, tok->bits);
+    /* the original tests the state against 4 again here, which by now it
+     * cannot be */
+    return 0;
+
+putback:
+    {
+        int32_t k = n;
+
+        n--;
+        if (k > 1) {
+            do {
+                k = n;
+                if (base != NULL)
+                    (*ppos)--;
+                else
+                    TextIn_Unget(self);
+                n--;
+            } while (k > 1);
+        }
+    }
+    return 0;
+}
+
+/*
+ * One line of input into a buffer.
+ *
+ * Characters up to 0xff of them, stopping at end of input, a NUL or a newline;
+ * a carriage return is dropped, and an ESC is handed to TextIn_ReadEscape so
+ * that a sequence in the middle of a line does not end up in the buffer.  The
+ * index of the first space goes to `first_space`, or -1 when there is none,
+ * and the length comes back.
+ */
+/* @0x100230b0 */
+int32_t TV_THISCALL TextIn_ReadLine(TextIn *self, char *buf,
+                                    int32_t *first_space)
+{
+    int32_t n = 0;
+
+    *first_space = -1;
+    for (;;) {
+        int32_t c = TextIn_GetChar(self);
+
+        if (c == -2 || c == 0)
+            break;
+        if (c == 0x1b) {
+            TextIn_ReadEscape(self, NULL, NULL, 1);
+            continue;
+        }
+        if (c == '\r')
+            continue;
+        if (c == '\n')
+            break;
+        if (*first_space == -1 && c == ' ')
+            *first_space = n;
+        buf[n++] = (char)c;
+        if (n >= 0xff)
+            break;
+    }
+    buf[n] = 0;
+    return n;
+}
+
+/*
+ * Cut a token into several where its split marks say to.
+ *
+ * Every token is classified first.  One that has no marks -- Token.types is
+ * where Rule_Run's own opcodes put them -- or that turned out to be an
+ * abbreviation, or that carries flag 7 for a dotted abbreviation, is left
+ * whole; a token with no marks and no abbreviation record goes to
+ * TextIn_Unmatched instead, which is how the rule interpreter hears about a
+ * word it could not place.
+ *
+ * Otherwise the text is walked and a mark of anything other than 1 ends the
+ * piece at hand: a new token is inserted before this one and gets the
+ * characters collected so far, with the character at the mark as its trailing
+ * character -- unless the mark is 2, which takes no trailing character and
+ * leaves the character for the next piece.  The last piece stays in the
+ * original token, the marks are freed, and then every new piece and the
+ * original are classified again, in the order they will be spoken.
+ */
+/* @0x1001d260 */
+int32_t TV_THISCALL TextIn_Split(TextIn *self, Token **tp)
+{
+    char buf[0x68];
+    Token *t = *tp;
+    Token *first = NULL;
+    int32_t n = 0;
+    int32_t i;
+
+    Rule_ClassifyToken(self, t);
+    if (t->w34 == 0)
+        return 1;
+    if (Rule_MatchAbbrev(t) == 1)
+        return 1;
+    if (t->types == NULL) {
+        TextIn_Unmatched(self, t);
+        return 1;
+    }
+    if (Bits_Test(7, t->bits))
+        return 1;
+
+    for (i = 0; i < (int32_t)t->len; ) {
+        if (t->types[i] != 1) {
+            Token *tok = TextIn_InsertBefore(self, t);
+
+            if (tok == NULL)
+                return TextIn_Error(self, 0);
+            if (first == NULL)
+                first = tok;
+            if (AllocString(&tok->text, n + 5) == -1)
+                return TextIn_Error(self, 0);
+            if (t->types[i] == 2) {
+                tok->trail = 0;
+            } else {
+                tok->trail = (uint8_t)t->text[i];
+                i++;
+                t->types[i] = 1;
+            }
+            buf[n] = 0;
+            strcpy(tok->text, buf);
+            tok->len = (int16_t)n;
+            n = 0;
+        }
+        buf[n] = t->text[i];
+        i++;
+        n++;
+    }
+
+    if (first == NULL)
+        return 1;
+    buf[n] = 0;
+    strcpy(t->text, buf);
+    t->len = (int16_t)n;
+    tv_free(t->types);
+    t->types = NULL;
+    for (;;) {
+        Rule_ClassifyToken(self, t);
+        if (Rule_MatchAbbrev(t) == 0)
+            TextIn_Unmatched(self, t);
+        if (first == t)
+            break;
+        t = t->prev;
+    }
+    return 1;
+}
+
+/*
+ * Read one token from the input.
+ *
+ * A hundred characters at most.  A NUL or a carriage return counts as a space;
+ * an ESC begins a control sequence, which TextIn_ReadEscape takes over when it
+ * is the first character of the token and otherwise ends the token; a newline
+ * is a token of its own.  Whitespace ends a token, and so does any character
+ * that cannot follow what came before: punctuation after a letter or a digit, a
+ * digit after a leading space run, a letter after one, a digit right after
+ * punctuation.  The character that ended the token becomes the token's trailing
+ * character, and when it was a letter, a digit or one of # $ % & @ ` ~ it is
+ * pushed back instead so that the next token starts with it.
+ *
+ * Three marks come out of the walk, one per character, for TextIn_Split to
+ * divide the token on later: 1 for "no split", 2 where a letter and a digit
+ * meet in either order, and 3 for one of - . / between two letters.  The marks
+ * are only kept when at least one of them is not 1.
+ *
+ * Trailing punctuation is given back to the input a character at a time, so
+ * "casa." leaves the full stop to be read as its own token.  The loop stops at
+ * the first character that is not punctuation, which it can rely on being
+ * there: a token of nothing but punctuation has every character counted in the
+ * leading run and the trimming is skipped entirely.
+ *
+ * All digits and nothing else makes the token a number, with its value in
+ * Token.num.  Returns 0 at end of input with nothing read, otherwise 1 with
+ * the new token in *out.
+ */
+/* @0x1001c9e0 */
+int32_t TV_THISCALL TextIn_ReadToken(TextIn *self, Token **out)
+{
+    char buf[0x65];
+    uint8_t marks[0x64];
+    Token *tok;
+    uint32_t cls = 0;          /* the class of the character in hand */
+    uint32_t prevcls = 0;      /* and of the one before it */
+    int32_t c = 0;
+    int32_t n = 0;             /* characters collected */
+    int32_t lead = 0;          /* leading punctuation */
+    int32_t nmarks = 0;        /* marks other than 1 */
+    int32_t seen_digit = 0, seen_letter = 0;
+    int32_t i;
+
+    memset(buf, 0, sizeof buf);
+    for (;;) {
+        if (n >= 0x64) {
+            c = 0;
+            cls = 0;
+            break;
+        }
+        c = TextIn_GetChar(self);
+        if (c == -2) {
+            c = 0;
+            if (n == 0)
+                return 0;
+            cls = 0;
+            break;
+        }
+        if (c == 0x1b) {
+            if (n != 0) {
+                cls = g_tok_class[c];
+                break;
+            }
+            TextIn_ReadEscape(self, NULL, NULL, 0);
+            continue;
+        }
+        if (c == 0 || c == 0x0d)
+            c = ' ';
+        cls = g_tok_class[c];
+        marks[n] = 1;
+        if (c == '\n') {
+            if (n != 0)
+                break;
+            buf[n] = '\n';
+            n++;
+            c = 0;
+            cls = 0;
+            break;
+        }
+        if (cls & 0x20)                     /* whitespace ends it */
+            break;
+        if ((cls & 2) && seen_letter != 0) {
+            /* one of - . / between two letters: a mark, not a break */
+            if (prevcls != 4)
+                break;
+            marks[n] = 3;
+            nmarks++;
+        } else if (cls & 1) {
+            if (seen_digit != 0 || seen_letter != 0)
+                break;
+            lead++;
+        } else if (cls & 8) {
+            if (n == 0) {
+                seen_digit = 1;
+            } else {
+                if (lead != 0)
+                    break;
+                if (prevcls & 1)
+                    break;
+            }
+            if (prevcls == 4) {
+                marks[n] = 2;
+                nmarks++;
+            }
+            seen_letter = 0;
+        } else if (cls & 4) {
+            if (n == 0) {
+                seen_letter = 1;
+            } else if (lead != 0) {
+                break;
+            }
+            if (prevcls == 8) {
+                marks[n] = 2;
+                nmarks++;
+            }
+            seen_digit = 0;
+        }
+        buf[n] = (char)c;
+        n++;
+        prevcls = cls;
+    }
+
+    /* Trailing punctuation goes back into the input.  The n > 0 guard is this
+     * translation's: the original reads the byte before the buffer when the
+     * whole of it is punctuation, and cannot reach that because such a token
+     * has lead == n and never enters the loop at all. */
+    if (n > lead && (g_tok_class[(uint8_t)buf[n - 1]] & 1)) {
+        do {
+            if (c != 0)
+                TextIn_Unget(self);
+            n--;
+            c = (uint8_t)buf[n];
+            buf[n] = 0;
+            cls = g_tok_class[c];
+        } while (n > 0 && (g_tok_class[(uint8_t)buf[n - 1]] & 1));
+    }
+
+    buf[n] = 0;
+    tok = TextIn_InsertAfter(self, self->tail);
+    if (tok == NULL)
+        return TextIn_Error(self, 1);
+    if (n > 0) {
+        if (AllocString(&tok->text, n + 1) == -1)
+            return TextIn_Error(self, 0);
+        strcpy(tok->text, buf);
+    }
+    tok->len = (int16_t)n;
+    if (cls & 0x1c) {
+        /* a letter, a digit or one of # $ % & @ ` ~ ended the token: the next
+         * one starts with it */
+        c = 0;
+        TextIn_Unget(self);
+    }
+    tok->trail = (uint8_t)c;
+    if (seen_digit != 0) {
+        tok->num = tv_atol(buf);
+        tok->w34 = 0;
+        tok->is_number = 1;
+    } else {
+        if (nmarks != 0) {
+            if (AllocString(&tok->types, n + 1) == -1)
+                return TextIn_Error(self, 0);
+            for (i = 0; i < n; i++)
+                tok->types[i] = (char)marks[i];
+            tok->types[n] = 1;
+        }
+        tok->w34 = 1;
+        tok->is_number = 0;
+    }
+    *out = tok;
+    return 1;
+}
+
+/*
+ * Tokenize a string, the way TextIn_ReadToken tokenizes the input.
+ *
+ * Character for character the same walk, with the same marks and the same
+ * rules about what ends a token; only where the characters come from differs,
+ * and so does what "putting one back" means -- the position in the string goes
+ * back by one instead of a character going back into the input ring.  Each
+ * token is split as it is made, rather than by the caller, and when `mark` is
+ * set every one of them also gets flag 3.
+ *
+ * Used by the mode 4 machinery, which has text of its own to turn into tokens.
+ * Always returns 1 unless a token could not be made.
+ */
+/* @0x1001cd10 */
+int32_t TV_THISCALL TextIn_TokenizeText(TextIn *self, const char *text,
+                                        int32_t mark)
+{
+    char buf[0x65];
+    uint8_t marks[0x64];
+    int32_t pos = 0;
+    int32_t len = (int32_t)strlen(text);
+
+    if (len <= 0)
+        return 1;
+
+    do {
+        Token *tok;
+        uint32_t cls = 0;
+        uint32_t prevcls = 0;
+        int32_t c = 0;
+        int32_t n = 0;
+        int32_t lead = 0;
+        int32_t nmarks = 0;
+        int32_t seen_digit = 0, seen_letter = 0;
+        int32_t i;
+
+        memset(buf, 0, sizeof buf);
+        for (;;) {
+            c = (uint8_t)text[pos];
+            pos++;
+            if (c == 0x1b) {
+                if (n != 0) {
+                    c = 0;
+                    pos--;
+                    cls = 0;
+                    break;
+                }
+                TextIn_ReadEscape(self, text, &pos, 1);
+                continue;
+            }
+            if (c == 0 || c == 0x0d)
+                c = ' ';
+            cls = g_tok_class[c];
+            marks[n] = 1;
+            if (c == '\n') {
+                if (n != 0)
+                    break;
+                n++;
+                c = 0;
+                cls = 0;
+                buf[n - 1] = '\n';
+                break;
+            }
+            if (cls & 0x20)
+                break;
+            if ((cls & 2) && seen_letter != 0) {
+                if (prevcls != 4)
+                    break;
+                marks[n] = 3;
+                nmarks++;
+            } else if (cls & 1) {
+                if (seen_digit != 0 || seen_letter != 0)
+                    break;
+                lead++;
+            } else if (cls & 8) {
+                if (n == 0) {
+                    seen_digit = 1;
+                } else {
+                    if (lead != 0)
+                        break;
+                    if (prevcls & 1)
+                        break;
+                }
+                if (prevcls == 4) {
+                    marks[n] = 2;
+                    nmarks++;
+                }
+                seen_letter = 0;
+            } else if (cls & 4) {
+                if (n == 0) {
+                    seen_letter = 1;
+                } else if (lead != 0) {
+                    break;
+                }
+                if (prevcls == 8) {
+                    marks[n] = 2;
+                    nmarks++;
+                }
+                seen_digit = 0;
+            }
+            buf[n] = (char)c;
+            n++;
+            prevcls = cls;
+            if (n >= 0x64)
+                break;
+        }
+
+        /* trailing punctuation goes back to the string; the n > 0 guard is
+         * this translation's, as in TextIn_ReadToken */
+        if (lead < n && (g_tok_class[(uint8_t)buf[n - 1]] & 1)) {
+            do {
+                if (c != 0)
+                    pos--;
+                n--;
+                c = (uint8_t)buf[n];
+                buf[n] = 0;
+                cls = g_tok_class[c];
+            } while (n > 0 && (g_tok_class[(uint8_t)buf[n - 1]] & 1));
+        }
+
+        buf[n] = 0;
+        tok = TextIn_InsertAfter(self, self->tail);
+        if (tok == NULL)
+            return TextIn_Error(self, 1);
+        if (n > 0) {
+            if (AllocString(&tok->text, n + 1) == -1)
+                return TextIn_Error(self, 0);
+            strcpy(tok->text, buf);
+        }
+        tok->len = (int16_t)n;
+        if (cls & 0x1c) {
+            c = 0;
+            pos--;
+        }
+        tok->trail = (uint8_t)c;
+        if (seen_digit != 0) {
+            tok->num = tv_atol(buf);
+            tok->w34 = 0;
+            tok->is_number = 1;
+        } else {
+            if (nmarks != 0) {
+                if (AllocString(&tok->types, n + 1) == -1)
+                    return TextIn_Error(self, 0);
+                for (i = 0; i < n; i++)
+                    tok->types[i] = (char)marks[i];
+                tok->types[n] = 1;
+            }
+            tok->w34 = 1;
+            tok->is_number = 0;
+        }
+        TextIn_Split(self, &tok);
+        if (mark != 0)
+            Bits_Set(3, tok->bits);
+    } while (len > pos);
+    return 1;
+}
+
+/* The characters mode 4 treats as the marker that brackets inserted text, and
+ * the two announcements it makes around it.  Both are in German: the strings
+ * were never translated, so a Spanish voice in mode 4 says "Achtung: Anfang
+ * des eingesetzten textes".  Neither is reachable through the SAPI interface
+ * this build offers, which is why nothing in the corpus hears them. */
+/* @0x10061850 */
+extern const char g_str_mode4_marks[];   /* "!@#%*+|><:" */
+/* @0x10069c38 */
+extern const char g_str_mode4_start[];   /* ". Achtung: Anfang des ..." */
+/* @0x10069c68 */
+extern const char g_str_mode4_end[];     /* ". Achtung: Ende des ..." */
+
+/*
+ * Put a string into the list as a token's replacement text.
+ *
+ * A new token goes before the one given when `dir` is -1 and after it
+ * otherwise, and the string becomes its text2 -- the replacement the emitter
+ * speaks in place of text -- with a space for its trailing character.
+ */
+/* @0x1001d8d0 */
+int32_t TV_THISCALL TextIn_InsertText(TextIn *self, Token *ref,
+                                      const char *text, int32_t dir)
+{
+    Token *tok = dir == -1 ? TextIn_InsertBefore(self, ref)
+                           : TextIn_InsertAfter(self, ref);
+
+    if (AllocString(&tok->text2, (int32_t)strlen(text) + 1) == -1)
+        return TextIn_Error(self, 0);
+    strcpy(tok->text2, text);
+    tok->trail = ' ';
+    return 1;
+}
+
+/*
+ * Mode 4: find the run of marker characters that brackets inserted text.
+ *
+ * Mode 4 is for text quoted from somewhere else, marked out by a run of one of
+ * ! @ # % * + | > < : at the start of every line.  This is called once per
+ * token and its job is to recognise that run and, once it is sure, silence it
+ * and announce the quoted passage.
+ *
+ * The first five characters of the token -- and its trailing character too when
+ * it is shorter than that -- are compared against the run remembered from the
+ * token before, in ti_74, and counted.  A marker character whose position is
+ * one less than the number of matches so far continues the remembered run, and
+ * the last marker character at any position ends it.  With no marker at all the
+ * remembered run is forgotten; with one, either the run carries on -- and ti_70
+ * is how many characters of it there are -- or a new one is remembered in its
+ * place.
+ *
+ * Then, if the quotation is not open yet, a second token carrying the run opens
+ * it: up to three tokens back to the last one flagged 0x53 are silenced, either
+ * by flagging them 2 and 0x51 when the run is all they hold or by blanking the
+ * run's characters out of their text, and the "Anfang" announcement goes in
+ * front.  While it is open, a token with the run has the same done to it, and a
+ * token without one closes the quotation with the "Ende" announcement.
+ *
+ * Returns 2 when it made an announcement and 1 otherwise.
+ */
+/* @0x1001d470 */
+int32_t TV_THISCALL TextIn_Mode4(TextIn *self, Token *t)
+{
+    /* The original leaves buf[5] as whatever the stack held when the token is
+     * five characters or longer -- the terminator goes one past the last
+     * character written -- and copies it into ti_74[5].  Nothing ever reads
+     * ti_74[5]: the comparison below only reaches index 4, and the index the
+     * trailing character uses is the length, which that case does not take.
+     * Zeroed here so the object is the same from one run to the next. */
+    char buf[8];
+    int32_t special = -1;      /* a marker that continues the remembered run */
+    int32_t last_special = -1; /* the last marker, wherever it was */
+    int32_t same = 0;          /* characters matching the remembered run */
+    int32_t n, i;
+
+    memset(buf, 0, sizeof buf);
+    if (t->text == NULL) {
+        self->ti_72 = 0;
+        self->ti_74[0] = 0;
+    } else {
+        n = t->len < 5 ? (int32_t)t->len : 5;
+        for (i = 0; i < n; i++) {
+            uint8_t c = (uint8_t)t->text[i];
+
+            buf[i] = (char)c;
+            if ((uint8_t)self->ti_74[i] == c)
+                same++;
+            if (tv_strchr(g_str_mode4_marks, (int32_t)(int8_t)c) != NULL) {
+                last_special = i;
+                if (i - same == -1)
+                    special = i;
+            }
+        }
+        if (t->len < 5) {
+            uint8_t c = t->trail;
+
+            buf[i] = (char)c;
+            if ((uint8_t)self->ti_74[i] == c)
+                same++;
+            if (c != 0 &&
+                tv_strchr(g_str_mode4_marks, (int32_t)(int8_t)c) != NULL) {
+                last_special = i;
+                if (i - same == -1)
+                    special = i;
+            }
+        }
+        buf[i + 1] = 0;
+        if (last_special < 0) {
+            self->ti_74[0] = 0;
+        } else if (self->ti_74[0] == 0) {
+            strcpy(self->ti_74, buf);
+            self->ti_70 = (int16_t)(last_special + 1);
+            self->ti_72 = 0;
+        } else if (special > -1) {
+            self->ti_70 = (int16_t)(special + 1);
+        } else {
+            self->ti_70 = (int16_t)(last_special + 1);
+            strcpy(self->ti_74, buf);
+            self->ti_72 = 0;
+        }
+    }
+
+    if (self->ti_6e != 0) {
+        if (special <= -1) {
+            TextIn_InsertText(self, t, g_str_mode4_end, -1);
+            t->prev->d1c = 1;
+            self->ti_6e = 0;
+            self->ti_72 = 0;
+            return 2;
+        }
+        if (t->len > self->ti_70) {
+            for (i = 0; i < (int32_t)self->ti_70; i++)
+                t->text[i] = ' ';
+            return 1;
+        }
+        Bits_Set(2, t->bits);
+        Bits_Set(0x51, t->bits);
+        return 1;
+    }
+
+    if (special <= -1)
+        return 1;
+    self->ti_72 = (int16_t)(self->ti_72 + 1);
+    if (self->ti_72 <= 1)
+        return 1;
+    for (i = 0; i < 3; ) {
+        while (!Bits_Test(0x53, t->prev->bits))
+            t = t->prev;
+        if (t->len > self->ti_70) {
+            int32_t k;
+
+            for (k = 0; k < (int32_t)self->ti_70; k++)
+                t->text[k] = ' ';
+        } else {
+            Bits_Set(0x51, t->bits);
+            Bits_Set(2, t->bits);
+        }
+        t = t->prev;
+        i++;
+    }
+    TextIn_InsertText(self, t, g_str_mode4_start, -1);
+    self->ti_6e = 1;
+    return 2;
+}
+
+/* The two lists of mail headers, each entry wrapped in '#' so that a match can
+ * be checked for being a whole entry.  The first list is what makes the text a
+ * message at all -- only the first line is tried against it -- and the second
+ * is the headers that are spoken. */
+/* @0x10048be8 */
+extern const char g_str_mail_ident[];   /* "#Received:#Return-Path:#..." */
+/* @0x10048bc8 */
+extern const char g_str_mail_spoken[];  /* "#From:#Subject:#Date:#Cc:#Bcc#" */
+/* @0x100496e8 */
+extern const char g_str_dot[];          /* "." */
+/* @0x1006ae68 */
+extern const char g_str_newline[];      /* "\n" */
+
+/* The three header handlers.  Nothing in the corpus reaches them -- mode 4 is
+ * not reachable through this build's interface -- so they are still the
+ * original's. */
+/* @0x10022cf0 */
+extern void TV_THISCALL Mode4_From(TextIn *self, const char *text);
+/* @0x10022e90 */
+extern void TV_THISCALL Mode4_Header(TextIn *self, const char *text,
+                                     int32_t which);
+/* @0x10022f90 */
+extern void TV_THISCALL Mode4_Date(TextIn *self, const char *text);
+
+/*
+ * Mode 4: read the headers of a mail message.
+ *
+ * Called when mode 4 starts, and again by TextIn_ReadEscape when it sees
+ * ESC[4X.  Lines are read one at a time; a line whose first space is between 1
+ * and 20 characters in has that space replaced by a NUL, which leaves the part
+ * before it to look up.  The very first line has to be one of the headers in
+ * g_str_mail_ident for this to be a message at all, and if it is not, the line
+ * is put back together and spoken as ordinary text.  After that, "From:",
+ * "Subject:", "Date:", "Cc:" and "Bcc" each go to their handler and every other
+ * header is passed over in silence.
+ *
+ * A blank line, or a line that is just a full stop, ends the headers: a "." and
+ * a newline go into the list as two tokens of their own, both with d1c = 3, and
+ * the body follows as ordinary text.
+ *
+ * Returns 1 when the headers ended properly and 0 otherwise.
+ */
+/* @0x10022970 */
+int32_t TV_THISCALL TextIn_Mode4Reset(TextIn *self)
+{
+    char line[0x104];
+    int32_t first_space;
+    int32_t nlines = 0;
+    Token *tok;
+
+    for (;;) {
+        int32_t n = TextIn_ReadLine(self, line, &first_space);
+
+        nlines++;
+        if (n == 0)
+            break;
+        if (n == 1 && line[0] == '.')
+            break;
+        if (n == -1)
+            return 0;
+        if (first_space > 0x14 || first_space < 1) {
+            /* not a header line at all */
+            if (nlines != 1)
+                continue;
+            strcat(line, g_str_newline);
+            TextIn_TokenizeText(self, line, 0);
+            return 0;
+        }
+        line[first_space] = 0;
+        if (nlines == 1) {
+            const char *p = tv_strstr(g_str_mail_ident, line);
+
+            if (p == NULL || p[-1] != '#' || p[strlen(line)] != '#') {
+                /* the first line is not a header this recognises, so the text
+                 * is not a message: put the space back and say it */
+                line[first_space] = ' ';
+                strcat(line, g_str_newline);
+                TextIn_TokenizeText(self, line, 0);
+                return 0;
+            }
+        }
+        {
+            const char *p = tv_strstr(g_str_mail_spoken, line);
+            int32_t k;
+
+            if (p == NULL || p[-1] != '#')
+                continue;
+            k = (int32_t)(p - g_str_mail_spoken);
+            if (p[strlen(line)] != '#')
+                continue;
+            k--;
+            if ((uint32_t)k > 0x19)
+                continue;
+            switch (k) {
+            case 0:
+                Mode4_From(self, &line[first_space + 1]);
+                break;
+            case 6:
+                Mode4_Header(self, &line[first_space + 1], 1);
+                break;
+            case 15:
+                Mode4_Date(self, &line[first_space + 1]);
+                break;
+            case 21:
+                Mode4_Header(self, &line[first_space + 1], 2);
+                break;
+            case 25:
+                Mode4_Header(self, &line[first_space + 1], 3);
+                break;
+            default:
+                break;
+            }
+        }
+    }
+
+    /* the headers are over: a full stop and a newline of their own */
+    tok = TextIn_InsertAfter(self, self->tail);
+    if (tok == NULL)
+        return TextIn_Error(self, 0);
+    if (AllocString(&tok->text, 2) == -1)
+        return TextIn_Error(self, 0);
+    strcpy(tok->text, g_str_dot);
+    tok->len = 1;
+    tok->trail = ' ';
+    tok->d1c = 3;
+    tok = TextIn_InsertAfter(self, self->tail);
+    if (tok == NULL)
+        return TextIn_Error(self, 0);
+    if (AllocString(&tok->text, 2) == -1)
+        return TextIn_Error(self, 0);
+    strcpy(tok->text, g_str_newline);
+    tok->len = 1;
+    tok->trail = ' ';
+    tok->d1c = 3;
     return 1;
 }

@@ -283,3 +283,101 @@ uint8_t TV_STDCALL Is_Vowel(uint8_t c)
 {
     return (uint8_t)(c == 'A' || c == 'E' || c == 'I' || c == 'O' || c == 'U');
 }
+
+/* Which of the 128 ASCII codes Accent_Split lets through: 0x20 to 0x7e, plus
+ * tab, newline, return, 0x12, 0x13, 0x1b and 0x1e. */
+/* @0x10048880 */
+extern const uint8_t g_ascii_ok[0x80];
+/* The mark an accented letter carries, and the letter under it.  Indexed by
+ * the low five bits, which is what makes 0xc0 and 0xe0 share an entry.  The
+ * marks are ' for an acute, ~ for a tilde, ` for a diaeresis and e for the
+ * ligature, all of them characters the rules read in their own right. */
+/* @0x10048900 */
+extern const uint8_t g_accent_mark[32];
+/* @0x10048920 */
+extern const uint8_t g_accent_base[32];
+/* The same pair again, for the other caller: here a diaeresis becomes an E
+ * after the vowel rather than a mark before it, and 0xdf gives s rather
+ * than S. */
+/* @0x10048b88 */
+extern const uint8_t g_accent_mark2[32];
+/* @0x10048ba8 */
+extern const uint8_t g_accent_base2[32];
+
+/*
+ * One Latin-1 byte in, the letter under it out, and the mark it carried left
+ * behind in the caller's byte for the next read.
+ *
+ * So an accented letter becomes two characters: the caller gets 'A' back and
+ * finds '\'' waiting where the 0xc1 was.  An unaccented byte below 0x80 comes
+ * back as itself if the table allows it and as zero if it does not, and the
+ * byte is cleared either way.  0x80 to 0xbf are dropped, and 0xdf gives S
+ * with s left over.
+ */
+/* @0x10014db0 */
+uint8_t TV_CDECL Accent_Split(uint8_t *p)
+{
+    uint8_t c = *p;
+    int32_t i;
+
+    *p = 0;
+    if (c < 0x80)
+        return g_ascii_ok[c] != 0 ? c : 0;
+    if (c < 0xc0)
+        return 0;
+    if (c == 0xdf) {
+        *p = 's';
+        return 'S';
+    }
+    /* the add is a byte add, so both halves of the range land on 0 to 0x1f */
+    i = (uint8_t)(c >= 0xe0 ? c + 0x20 : c + 0x40);
+    if (g_accent_mark[i] != 0) {
+        *p = g_accent_base[i];
+        return g_accent_mark[i];
+    }
+    return g_accent_base[i];
+}
+
+/*
+ * Accent_Split's sibling, for the other table pair.
+ *
+ * Two differences beyond the tables: the case of the original letter is kept,
+ * by adding 0x20 to both results when the byte came from the lower half of
+ * the range, and the accepted range stops at 0xfc.  A return of 0x0d is
+ * dropped, and anything outside the range comes back as zero with the
+ * caller's byte untouched.
+ */
+/* @0x10020cf0 */
+uint8_t TV_CDECL Accent_Fold(uint8_t *p)
+{
+    uint8_t c = *p;
+    uint8_t mark, base;
+    int lower, i;
+
+    if (c == 0x0d) {
+        *p = 0;
+        return 0;
+    }
+    if (c < 0x80) {
+        *p = 0;
+        return c;
+    }
+    if (c < 0xc0 || c > 0xfc)
+        return 0;
+    if (c == 0xdf) {
+        *p = 's';
+        return 's';
+    }
+    lower = c >= 0xe0;
+    i = lower ? c - 0xe0 : c - 0xc0;
+    mark = g_accent_mark2[i];
+    base = g_accent_base2[i];
+    *p = mark;
+    if (!lower)
+        return base;
+    if (base != 0)
+        base = (uint8_t)(base + 0x20);
+    if (mark != 0)
+        *p = (uint8_t)(mark + 0x20);
+    return base;
+}

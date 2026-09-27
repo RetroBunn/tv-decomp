@@ -63,7 +63,7 @@ void TV_THISCALL Stage2_Reset(Engine *self)
     self->s2_87b8 = 7;
     self->s2_87e0 = 0x14;
     self->s2_87d2 = 0;
-    self->s2_87d4 = 0;
+    self->s2_87d4 = NULL;
     self->s2_87d8 = 0;
     self->s2_87e8 = 0;
     self->s2_8808 = 0;
