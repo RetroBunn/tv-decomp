@@ -7531,7 +7531,7 @@ static int unit_stage2b(void)
                             break;
                         case 3:
                             if (w)
-                                Stage2_Level(g);
+                                Stage2_Contour(g);
                             else
                                 o_level(g);
                             break;

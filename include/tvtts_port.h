@@ -63,6 +63,12 @@ typedef struct {
 
     int         (*speak_bytes)(void *s, const void *text, uint32_t len,
                                tvtts_callback cb, void *user);
+
+    /* Which OpenTV extensions are on.  Process-wide rather than per-synth,
+     * because the engines keep their stage 2 working state in globals, so one
+     * synth was never independent of another here.  Each language takes the
+     * whole mask and picks out what means anything to it. */
+    void        (*set_extensions)(uint32_t mask);
 } tvtts_lang;
 
 /* English, src/port/tvtts.c. */
@@ -79,6 +85,7 @@ uint32_t    en_get_rate_hz(const void *s);
 int         en_set_rate_hz(void *s, uint32_t hz);
 void        en_set_compat(void *s, int preformat, int textin, int terminators);
 void        en_set_textin_mode(void *s, int mode);
+void        en_set_extensions(uint32_t mask);
 int         en_voice_count(void);
 const char *en_voice_name(int voice);
 int         en_voice_rate(int voice);
@@ -100,6 +107,7 @@ uint32_t    es_get_rate_hz(const void *s);
 int         es_set_rate_hz(void *s, uint32_t hz);
 void        es_set_compat(void *s, int preformat, int textin, int terminators);
 void        es_set_textin_mode(void *s, int mode);
+void        es_set_extensions(uint32_t mask);
 int         es_voice_count(void);
 const char *es_voice_name(int voice);
 int         es_voice_rate(int voice);

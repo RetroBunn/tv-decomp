@@ -194,6 +194,136 @@ static void test_text(void)
     sink_free(&a); sink_free(&b); sink_free(&c);
 }
 
+/*
+ * The Spanish engine's pitch ceiling, and TVTTS_EXT_PITCH moving it.
+ *
+ * Stage 2 clamps every node before storing half of it in a byte.  The 1995
+ * engine clamps to 50..200 and the 1997 one to 50..500, and both DLLs ship the
+ * same voice table -- Carlos is 203 and Josefa 208, so those two sit above their
+ * own engine's ceiling and every node of their contour is pinned to it.  That is
+ * the monotone the extension exists to fix.
+ *
+ * Measured through the audio rather than by reading the flag back: the point is
+ * that the pitch a caller asks for reaches the output.
+ */
+static void test_pitch_ceiling(void)
+{
+    static const char *const TXT = "Hola, buenos dias. Que tal?";
+    tvtts_synth *s;
+    sink lo = {0}, mid = {0}, hi = {0}, flat1 = {0}, flat2 = {0};
+    const char *es = NULL;
+    int i, josefa = -1;
+
+    for (i = 0; i < tvtts_language_count(); i++)
+        if (strcmp(tvtts_language(i), "es") == 0)
+            es = tvtts_language(i);
+    if (es == NULL)
+        return;                 /* no Spanish in this build */
+    /* Voices are numbered across the languages, so Josefa is not voice 8 but
+     * the ninth Spanish one; found rather than counted, so that adding a
+     * language ahead of Spanish would not quietly test Wanda instead. */
+    for (i = 0; i < tvtts_voice_count(); i++)
+        if (strcmp(tvtts_voice_language(i), "es") == 0 &&
+            strcmp(tvtts_voice_name(i), "Josefa") == 0)
+            josefa = i;
+    check(josefa >= 0, "Josefa is one of the voices");
+    if (josefa < 0)
+        return;
+
+    /* With the original's ceiling, two pitches above it give the same audio:
+     * the contour is flat at the ceiling either way. */
+    tvtts_set_extensions(0);
+    s = tvtts_create_lang(11025, es);
+    tvtts_set_pitch(s, 260);
+    say(s, TXT, &flat1);
+    tvtts_set_pitch(s, 400);
+    say(s, TXT, &flat2);
+    check(same(&flat1, &flat2),
+          "the 1995 ceiling makes two pitches above it sound the same");
+    tvtts_destroy(s);
+
+    /* With the extension they differ, and a pitch under the old ceiling is
+     * untouched -- the flag lifts a limit rather than changing the voice. */
+    tvtts_set_extensions(TVTTS_EXT_ALL);
+    s = tvtts_create_lang(11025, es);
+    tvtts_set_pitch(s, 100);
+    say(s, TXT, &lo);
+    tvtts_set_pitch(s, 260);
+    say(s, TXT, &mid);
+    tvtts_set_pitch(s, 400);
+    say(s, TXT, &hi);
+    check(!same(&mid, &hi), "with TVTTS_EXT_PITCH they do not");
+    check(!same(&lo, &mid), "and the range below is still a range");
+    tvtts_destroy(s);
+
+    /* A pitch the old ceiling never reached is the same either way, which is
+     * what says the flag lifts a limit and changes nothing else. */
+    {
+        sink a = {0}, b = {0};
+
+        tvtts_set_extensions(0);
+        s = tvtts_create_lang(11025, es);
+        tvtts_set_pitch(s, 100);
+        say(s, TXT, &a);
+        tvtts_destroy(s);
+        tvtts_set_extensions(TVTTS_EXT_ALL);
+        s = tvtts_create_lang(11025, es);
+        tvtts_set_pitch(s, 100);
+        say(s, TXT, &b);
+        tvtts_destroy(s);
+        check(same(&a, &b),
+              "and below the old ceiling the extension changes nothing");
+        sink_free(&a);
+        sink_free(&b);
+    }
+
+    /*
+     * Josefa, the voice the ceiling silenced.  Her own pitch is 208, above the
+     * 1995 ceiling, so with the original she sounds the same as any higher pitch
+     * would -- her contour has nowhere to move.
+     *
+     * A voice number does not carry its pitch: the engine keeps a default per
+     * voice and the caller applies it, which is what tvtts_voice_pitch is for and
+     * what the NVDA driver does.  So the pitch is set here too, or this would be
+     * testing Pedro's 85 under Josefa's name.
+     */
+    {
+        sink j1 = {0}, j2 = {0}, j3 = {0};
+
+        check(tvtts_voice_pitch(josefa) > 200,
+              "Josefa's pitch is above the 1995 ceiling");
+
+        tvtts_set_extensions(0);
+        s = tvtts_create_lang(11025, es);
+        tvtts_set_voice(s, josefa);
+        tvtts_set_pitch(s, tvtts_voice_pitch(josefa));
+        say(s, TXT, &j1);
+        tvtts_set_pitch(s, 300);
+        say(s, TXT, &j2);
+        check(same(&j1, &j2),
+              "so the 1995 engine gives her the same audio as a higher pitch");
+        tvtts_destroy(s);
+
+        tvtts_set_extensions(TVTTS_EXT_ALL);
+        s = tvtts_create_lang(11025, es);
+        tvtts_set_voice(s, josefa);
+        tvtts_set_pitch(s, tvtts_voice_pitch(josefa));
+        say(s, TXT, &j3);
+        check(!same(&j1, &j3), "and the extension gives her a contour again");
+        tvtts_destroy(s);
+        sink_free(&j1);
+        sink_free(&j2);
+        sink_free(&j3);
+    }
+
+    sink_free(&lo);
+    sink_free(&mid);
+    sink_free(&hi);
+    sink_free(&flat1);
+    sink_free(&flat2);
+    tvtts_set_extensions(TVTTS_EXT_ALL);
+}
+
 static void test_voices(void)
 {
     int n = tvtts_voice_count(), i, distinct = 1, named = 1;
@@ -610,6 +740,7 @@ int main(void)
     test_rate_extension();
     test_sample_rate();
     test_clarity();
+    test_pitch_ceiling();
     printf("%s\n", failures ? "FAILED" : "all passed");
     return failures != 0;
 }

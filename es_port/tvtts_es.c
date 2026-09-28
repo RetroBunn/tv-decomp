@@ -186,6 +186,15 @@ uint8_t TV_THISCALL ByteList_Add(void *list, int32_t byte)
     return 0;
 }
 
+/*
+ * Which OpenTV extensions are on.  src/port/api.c hands every language the whole
+ * mask; the only one this engine understands is the pitch ceiling.
+ */
+void es_set_extensions(uint32_t mask)
+{
+    tv_es_ext_pitch = (mask & TVTTS_EXT_PITCH) != 0;
+}
+
 /* ---- lifetime ------------------------------------------------------------ */
 
 void *es_create(uint32_t sample_rate)
@@ -220,6 +229,7 @@ void *es_create(uint32_t sample_rate)
      * bookmark finds its way back to the caller. */
     s->host.audio_queue = s;
 
+    es_set_extensions(tvtts_get_extensions());
     Engine_Construct(s->eng);
     s->eng->w_212e = 1;
     s->eng->w_212c = 0;

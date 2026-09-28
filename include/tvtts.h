@@ -263,7 +263,25 @@ TVTTS_API int TVTTS_CALL tvtts_rate_sequence(char *buf, size_t cap, int wpm);
  */
 #define TVTTS_EXT_CLARITY 0x2u
 
-#define TVTTS_EXT_ALL   0x3u
+/*
+ * TVTTS_EXT_PITCH lifts the Spanish engine's pitch ceiling to the English
+ * engine's.  Stage 2 clamps every node's pitch before storing it, and the 1995
+ * engine clamps to 50..200 where the 1997 one clamps to 50..500 -- but both
+ * DLLs ship the same ten-voice table, in which Carlos is 203 and Josefa 208.
+ * Those two voices are above their own engine's ceiling, so every node of their
+ * contour is pinned to it and they speak in a monotone; the rest lose the top of
+ * their range wherever the contour reaches for it.
+ *
+ * What the flag changes is one constant, to the value the other generation of
+ * the same engine uses, and the byte the pitch is stored in has always had the
+ * room: it holds half the pitch, so 500 is what fits and 200 never needed the
+ * limit.  Nothing here is invented -- it is the 1997 engine's own number.
+ *
+ * It does nothing to English, which already clamps there.
+ */
+#define TVTTS_EXT_PITCH 0x4u
+
+#define TVTTS_EXT_ALL   0x7u
 
 TVTTS_API void TVTTS_CALL tvtts_set_extensions(uint32_t mask);
 TVTTS_API uint32_t TVTTS_CALL tvtts_get_extensions(void);

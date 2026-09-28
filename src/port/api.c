@@ -36,7 +36,7 @@
       en_get_voice, en_get_rate, en_get_pitch,                                \
       en_get_rate_hz, en_set_rate_hz, en_set_compat, en_set_textin_mode,      \
       en_voice_count, en_voice_name, en_voice_rate, en_voice_pitch,           \
-      en_speak_bytes }
+      en_speak_bytes, en_set_extensions }
 
 #define ES_LANG                                                               \
     { "es", "Castilian Spanish", 10, es_create, es_destroy,                   \
@@ -44,7 +44,7 @@
       es_get_voice, es_get_rate, es_get_pitch,                                \
       es_get_rate_hz, es_set_rate_hz, es_set_compat, es_set_textin_mode,      \
       es_voice_count, es_voice_name, es_voice_rate, es_voice_pitch,           \
-      es_speak_bytes }
+      es_speak_bytes, es_set_extensions }
 
 /* In voice order: English first, because it was first and because renumbering
  * anybody's saved voice would be unkind. */
@@ -64,6 +64,34 @@ struct tvtts_synth {
     uint32_t          rate_hz;
     int               preformat, textin, nuls, compat_set;
 };
+
+/* ---- extensions ---------------------------------------------------------- */
+
+/*
+ * Which OpenTV extensions are on, for every engine in the library.  Process-wide
+ * rather than per-synth, like tvtts_add_lexicon: the engines keep their stage 2
+ * working state in globals, so one synth was never independent of another here.
+ *
+ * Each language is handed the whole mask and picks out what means anything to
+ * it.  A flag can be one language's alone -- TVTTS_EXT_PITCH does nothing to
+ * English, which already clamps where it moves Spanish to -- and which is which
+ * is the language's business rather than this file's.
+ */
+static uint32_t g_ext = TVTTS_EXT_ALL;
+
+void TVTTS_CALL tvtts_set_extensions(uint32_t mask)
+{
+    int i;
+
+    g_ext = mask & TVTTS_EXT_ALL;
+    for (i = 0; i < NLANGS; i++)
+        g_langs[i].set_extensions(g_ext);
+}
+
+uint32_t TVTTS_CALL tvtts_get_extensions(void)
+{
+    return g_ext;
+}
 
 /* ---- languages and voices ------------------------------------------------ */
 

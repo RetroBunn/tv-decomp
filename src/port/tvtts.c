@@ -31,7 +31,13 @@
 
 /* Which OpenTV extensions are on; see tvtts_set_extensions.
  * Process-wide, which is why it is not in tvtts_synth. */
-static uint32_t g_ext = TVTTS_EXT_ALL;
+/* Which extensions are on is src/port/api.c's, because every language has to
+ * hear about a change; this file only applies the ones English understands. */
+void en_set_extensions(uint32_t mask)
+{
+    tv_ext_rate = (mask & TVTTS_EXT_RATE) != 0;
+    tv_ext_clarity = (mask & TVTTS_EXT_CLARITY) != 0;
+}
 
 /* The engine object has no allocator of its own -- in the original it lives
  * on a thread stack -- so the caller provides the block.  0x9200 is what the
@@ -347,7 +353,8 @@ int TVTTS_CALL tvtts_rate_sequence(char *buf, size_t cap, int wpm)
      * the engine for a rate that is not speech.  The ceiling follows
      * whether the added rate rows are on, since without them anything
      * past 253 is the original's off-the-end reading. */
-    int hi = (g_ext & TVTTS_EXT_RATE) ? TVTTS_RATE_MAX_EXT : TVTTS_RATE_MAX;
+    int hi = (tvtts_get_extensions() & TVTTS_EXT_RATE) ? TVTTS_RATE_MAX_EXT
+                                                       : TVTTS_RATE_MAX;
 
     if (wpm < TVTTS_RATE_MIN)
         wpm = TVTTS_RATE_MIN;
@@ -386,8 +393,7 @@ void *en_create(uint32_t sample_rate)
     s->host.volume = 0xffff;
     s->host.ctx = 0;
 
-    tv_ext_rate = (g_ext & TVTTS_EXT_RATE) != 0;
-    tv_ext_clarity = (g_ext & TVTTS_EXT_CLARITY) != 0;
+    en_set_extensions(tvtts_get_extensions());
     Engine_Construct(s->eng);
     s->eng->w_212e = 1;
     s->eng->w_212c = 0;
@@ -476,21 +482,6 @@ int en_get_pitch(const void *vs)
     const struct en_synth *s = (const struct en_synth *)vs;
 
     return s != NULL ? (int)(uint16_t)s->host.pitch : -1;
-}
-
-/* ---- extensions ---------------------------------------------------------- */
-
-
-void TVTTS_CALL tvtts_set_extensions(uint32_t mask)
-{
-    g_ext = mask & TVTTS_EXT_ALL;
-    tv_ext_rate = (g_ext & TVTTS_EXT_RATE) != 0;
-    tv_ext_clarity = (g_ext & TVTTS_EXT_CLARITY) != 0;
-}
-
-uint32_t TVTTS_CALL tvtts_get_extensions(void)
-{
-    return g_ext;
 }
 
 /* ---- output rate ---------------------------------------------------------- */

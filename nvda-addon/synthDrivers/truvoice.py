@@ -63,11 +63,16 @@ from . import _truvoice
 #: 1997 engine, so the voices still sound the way people know them.
 MIN_WPM, MAX_WPM = 46, 400
 #: The engine's full pitch range, in the units its voice table uses.
-#: Stage 2 clamps every node to 50..500 and stores the value halved in a
-#: byte, so that is exactly what the engine can represent -- 500 is the
-#: largest pitch whose half still fits.  The ten voices sit inside it,
-#: Sidney lowest at 50 and Wanda highest at 208, which leaves most of the
-#: top half of the slider above any stock voice.
+#: Stage 2 clamps every node and stores the value halved in a byte, so 500 is
+#: exactly what can be represented -- the largest pitch whose half still fits.
+#: The voices sit inside it, Sidney and Jorge lowest at 50 and Josefa highest
+#: at 208, which leaves most of the top half of the slider above any stock
+#: voice.
+#:
+#: The Spanish engine clamped at 200 rather than 500 until OpenTV lifted it --
+#: which is why Josefa and Carlos, both above 200, used to speak in a monotone.
+#: That is TVTTS_EXT_PITCH, on by default, so the range here holds for every
+#: language.
 MIN_PITCH, MAX_PITCH = 50, 500
 
 

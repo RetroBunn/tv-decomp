@@ -2297,6 +2297,52 @@ and English is unmoved at 335/335 on all three.  `tvtts_set_textin_mode` was
 added along the way, because mode 4 was reachable from the harness and not from
 the library, which left one corpus case untestable through it.
 
+## The first fix of its own
+
+With the engine decompiled, what it got wrong can be fixed, and the pitch ceiling
+was the first thing to go.
+
+`Stage2_Contour` -- the counterpart of English's function of the same name,
+and called `Stage2_Level` here until this fix showed the name up -- clamps
+every node to
+0x32..0xc8 and stores half of it in `Node.b15`, which stage 3 turns into track
+17 as `b15 * 2`.  So the pitch ceiling is 200, and measured through the audio it
+is 197 Hz: asking for 200, 260, 400 or 560 gives the same flat contour, byte for
+byte.
+
+The 1997 engine clamps the same node to 0x32..**0x1f4**, and both DLLs ship the
+**same ten-voice table** -- byte-identical, checked -- in which Carlos is 203 and
+Josefa 208.  Those two voices are above their own engine's ceiling, so every node
+of their contour is pinned to it.  That is not a design choice, it is a defect:
+Centigram gave the 1995 engine the 1997 voice table and a lower clamp, and two of
+the ten voices fall off the end of it.  It is why Josefa sounds monotone, which is
+how it was noticed.
+
+Nothing had to be invented to fix it.  The byte that holds the pitch holds half of
+it, so 0x1f4 is exactly what fits -- 200 never needed the limit -- and 0x1f4 is
+the number the other generation of the same engine uses.  `TVTTS_EXT_PITCH` moves
+that one constant, and like every OpenTV extension it is on by default and off in
+the corpus, which still comes back 205 of 205 at both word widths.
+
+Measured on "Hola, me llamo Josefa. Como estas?", F0 frame by frame:
+
+| | voiced frames | F0 |
+| --- | --- | --- |
+| the original | 16 | 197, 200, 200, 125, 204, 197, 208, 197, 208, 204, 204, 200, 204, 204, 187, 200 |
+| with the flag | 17 | 245, 251, 262, 136, 235, 235, 269, 262, 262, 127, 225, 208, 256, 256, 256, 240, 121 |
+
+The original holds 197-208 Hz for thirteen of sixteen frames.  With the ceiling
+lifted the same sentence moves over 208-269.  Below the old ceiling nothing
+changes at all: a synth at pitch 100 or 120 is byte-identical with the flag on and
+off, which is what says it lifts a limit rather than retuning a voice.
+
+Two things fell out of doing it.  `tvtts_set_extensions` now belongs to
+`src/port/api.c` and is handed to every language in turn, because a flag can mean
+something to one engine and nothing to another -- this one does nothing to
+English.  And the top of the new range was worth measuring rather than assuming:
+F0 tracks the setting to about 480 Hz and the waveform stays periodic there
+(autocorrelation 0.93 and above), so the ceiling is real rather than nominal.
+
 ## What is next
 
 There are three tests with different reach: `difftest --lang es` asks whether

@@ -15,6 +15,25 @@
  */
 #include "es_engine.h"
 
+/*
+ * OpenTV: the pitch ceiling.  This engine clamps a node to 0x32..0xc8 and stores
+ * half of it in a byte; the 1997 English engine, whose Stage2_Contour is this
+ * function's counterpart, clamps to 0x32..0x1f4 and stores half of that.  Both
+ * DLLs carry the same voice table, and two of its ten voices -- Carlos at 203
+ * and Josefa at 208 -- are above 0xc8, so their whole contour sits on the
+ * ceiling and they come out monotone.  The byte always had the room: 0x1f4 is
+ * exactly what half of it can hold, which is why English uses that number.
+ *
+ * With the extension off this is 0xc8 and the engine is the 1995 one, bug and
+ * all, which is what the corpus checks.
+ */
+int tv_es_ext_pitch = 0;
+
+static int32_t es_pitch_max(void)
+{
+    return tv_es_ext_pitch ? 0x1f4 : 0xc8;
+}
+
 /* @0x10058618 */
 extern const uint8_t g_10058618[0x200];
 
@@ -582,15 +601,19 @@ uint8_t TV_THISCALL Stage2_Elide(Engine *self)
 }
 
 /*
- * How loud this phoneme is, as a level in the control node's b15.
+ * How high this phoneme is: the pitch contour, in the control node's b15.
+ *
+ * English's Stage2_Contour is the same function, and b15 is what stage 3 turns
+ * into track 17 as b15 * 2, which is the pitch the synthesiser runs at.
  *
  * It starts from a running value in s2_87e4 that decays to 85% of itself at
  * every word boundary, adds the stage's pitch, and then nudges it up and down
  * on a dozen tests -- what is within three nodes, within eight, within twenty,
  * whether the node is stressed, whether a full stop is coming.  The result is
- * clamped to 0x32..0xc8 and halved, so b15 lands in 0x19..0x64, the same range
- * Stage2_Adjust clamps it to.  A zero pitch zeroes it instead, and bit 0x800
- * of the stage's p_34 replaces it with the pitch outright.
+ * clamped and halved, so b15 lands in 0x19..0x64, the same range Stage2_Adjust
+ * clamps it to -- or in 0x19..0xfa with the pitch ceiling lifted, which is what
+ * es_pitch_max above is for.  A zero pitch zeroes it instead, and bit 0x800 of
+ * the stage's p_34 replaces it with the pitch outright.
  *
  * cur_bac of 1 forces the level to zero and 2 replaces it with the pitch, both
  * before the halving.
@@ -600,7 +623,7 @@ uint8_t TV_THISCALL Stage2_Elide(Engine *self)
  * near, and s2_3c0 is whether one is near at all.
  */
 /* @0x10019710 */
-void TV_THISCALL Stage2_Level(Engine *self)
+void TV_THISCALL Stage2_Contour(Engine *self)
 {
     StageCtx *st = &self->stage_ctx[2];
     Node *ctl = st->ctl;
@@ -696,8 +719,8 @@ void TV_THISCALL Stage2_Level(Engine *self)
     pitch = st->pitch;
     if (pitch == 0)
         v = 0;
-    else if (v > 0xc8)
-        v = 0xc8;
+    else if (v > es_pitch_max())
+        v = es_pitch_max();
     else if (v < 0x32)
         v = 0x32;
     if (st->p_34 & 0x800)
@@ -1776,7 +1799,7 @@ void TV_THISCALL Stage2_Boundary(Engine *self)
     }
 
     Stage2_Classify(self);
-    Stage2_Level(self);
+    Stage2_Contour(self);
     Stage2_Duration(self);
     if (g_10058618[s2_cls0(self->s2_3e1)] & 0x80)
         Stage2_MergeBack(self);

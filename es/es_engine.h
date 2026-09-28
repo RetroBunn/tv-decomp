@@ -21,6 +21,11 @@
 
 #include "es_engine_struct.h" /* generated from es/engine.fields */
 
+/* OpenTV: on, the pitch ceiling is the English engine's 0x1f4 rather than this
+ * engine's 0x32..0xc8, which two of the ten voices sit above.  Set from
+ * TVTTS_EXT_PITCH; see es/stage2.c. */
+extern int tv_es_ext_pitch;
+
 /* OpenTV's third output rate.  The original offered 8 kHz and 11.025 kHz; this
  * one is an addition, and the tables for it are computed from the formulas that
  * reproduce both of the original's exactly.  See src/syn_hifi.h. */
@@ -550,7 +555,7 @@ uint8_t TV_THISCALL Stage2_Advance(Engine *self);
 uint8_t TV_THISCALL Stage2_Word(Engine *self);
 /* Works out the phoneme's level and writes it to the control node's b15. */
 /* @0x10019710 */
-void TV_THISCALL Stage2_Level(Engine *self);
+void TV_THISCALL Stage2_Contour(Engine *self);
 /* Two words meeting on the same phoneme: drops one.  Returns whether it did. */
 /* @0x10019d10 */
 uint8_t TV_THISCALL Stage2_Elide(Engine *self);

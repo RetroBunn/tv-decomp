@@ -159,7 +159,7 @@ original got wrong. Anything that changes engine behaviour sits behind a
 flag, all of them on by default:
 
 ```c
-tvtts_set_extensions(0);              /* the 1997 engine, exactly */
+tvtts_set_extensions(0);              /* the original engines, exactly */
 tvtts_set_extensions(TVTTS_EXT_ALL);  /* the default */
 ```
 
@@ -172,6 +172,23 @@ underneath is right while callers get the better behaviour by default.
   instead, reaching 400 wpm at about 3.4× the speed of 150. Everything at
   253 and below is bit-for-bit the original, so the voices still sound the
   way people know them.
+
+* **`TVTTS_EXT_CLARITY`** — widens the formant bandwidths as the rate
+  climbs, which is what keeps fast speech from slurring: a narrow resonator
+  rings for longer than a shortened phoneme lasts, so its energy smears into
+  the next one. It does nothing at or below 253 wpm, so it only shapes the
+  range `TVTTS_EXT_RATE` added.
+
+* **`TVTTS_EXT_PITCH`** — the Spanish engine clamps every node's pitch to
+  50..200 where the English one clamps to 50..500, and both DLLs ship the
+  *same* ten-voice table, in which Carlos is 203 and Josefa 208. Those two
+  voices sit above their own engine's ceiling, so every node of their
+  contour was pinned to it and they spoke in a monotone; measured, Josefa
+  held 197–208 Hz across a whole sentence. The flag moves the one constant
+  to the value the other generation of the same engine uses — the byte it is
+  stored in holds half the pitch, so 500 is what fits and 200 never needed
+  the limit. Josefa now moves over 208–269 Hz in that sentence. It does
+  nothing to English, which already clamps there.
 
 ## What is next
 
