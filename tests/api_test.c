@@ -206,6 +206,344 @@ static void test_text(void)
  * Measured through the audio rather than by reading the flag back: the point is
  * that the pitch a caller asks for reaches the output.
  */
+/* ---- the Spanish pitch contour ------------------------------------------- */
+
+/*
+ * How far the pitch moves across an utterance, as the ratio between the
+ * longest and shortest glottal period, in thousandths.  1000 is a monotone.
+ *
+ * A proper pitch tracker is not wanted here -- only whether the contour
+ * reaches further with the extension than without -- so this is plain
+ * autocorrelation over the loud windows, in integers so that the freestanding
+ * 32-bit build needs no soft-float.  The period is taken as the earliest lag
+ * that is nearly as good as the best one, because a multiple of the true
+ * period correlates just as well and would otherwise be picked instead.
+ */
+#define F0_FRAME 768
+#define F0_WIDTH 256
+#define F0_HOP   256
+#define F0_LAG_LO 22            /* 11025/22  = 501 Hz, the engine's ceiling */
+#define F0_LAG_HI 280           /* 11025/280 =  39 Hz, under any real floor */
+
+static long long f0_corr(const int16_t *x, int lag)
+{
+    long long r = 0;
+    int k;
+    for (k = 0; k < F0_WIDTH; k++)
+        r += (long long)x[k] * x[k + lag];
+    return r;
+}
+
+/*
+ * The lag search runs over a wide band around the pitch that was asked for --
+ * from 0.6 to 2.2 times it -- rather than the engine's whole 50..500 Hz.  An
+ * unconstrained autocorrelation picks a multiple or a sub-multiple of the true
+ * period often enough to swamp the thing being measured; every contour this is
+ * used on sits well inside the band, so nothing real is clipped by it.
+ */
+/* The voiced periods, sorted, shortest first.  Returns how many were found. */
+static int period_lags(const sink *s, int pitch, int *lags, int cap)
+{
+    long long gsum = 0, gms;
+    size_t i, f;
+    int n = 0, lag_lo, lag_hi;
+
+    if (s->n < (size_t)F0_FRAME * 4 || pitch <= 0)
+        return 0;
+    lag_lo = 11025 * 10 / (pitch * 22);
+    lag_hi = 11025 * 10 / (pitch * 6);
+    if (lag_lo < F0_LAG_LO)
+        lag_lo = F0_LAG_LO;
+    if (lag_hi > F0_LAG_HI)
+        lag_hi = F0_LAG_HI;
+    if (lag_hi <= lag_lo + 2)
+        return 0;
+
+    for (i = 0; i < s->n; i++)
+        gsum += (long long)s->pcm[i] * s->pcm[i];
+    gms = gsum / (long long)s->n;
+    if (gms <= 0)
+        return 0;
+
+    for (f = 0; f + F0_FRAME < s->n && n < 4096; f += F0_HOP) {
+        const int16_t *x = s->pcm + f;
+        long long e = 0, r0, best = 0, r;
+        int lag, bestlag = 0, k;
+
+        for (k = 0; k < F0_FRAME; k++)
+            e += (long long)x[k] * x[k];
+        /* louder than a third of the overall level, squared, so the quiet
+         * closures between syllables get no pitch invented for them */
+        if ((e / F0_FRAME) * 100 < gms * 9)
+            continue;
+
+        r0 = f0_corr(x, 0);
+        if (r0 <= 0)
+            continue;
+        for (lag = lag_lo; lag <= lag_hi; lag++) {
+            r = f0_corr(x, lag);
+            if (r > best) {
+                best = r;
+                bestlag = lag;
+            }
+        }
+        if (bestlag == 0 || best * 10 < r0 * 3)
+            continue;                   /* not periodic enough to be voiced */
+        /* Autocorrelation peaks at the period and again at twice it, so if
+         * half of what was picked is nearly as good, half is the period. */
+        while (bestlag / 2 >= lag_lo &&
+               f0_corr(x, bestlag / 2) * 100 >= best * 85)
+            bestlag /= 2;
+        if (n < cap)
+            lags[n++] = bestlag;
+    }
+    for (i = 1; i < (size_t)n; i++) {    /* insertion sort */
+        int v = lags[i], j = (int)i - 1;
+        while (j >= 0 && lags[j] > v) {
+            lags[j + 1] = lags[j];
+            j--;
+        }
+        lags[j + 1] = v;
+    }
+    return n;
+}
+
+/* The ratio between the longest and shortest period, in thousandths. */
+static int period_spread(const sink *s, int pitch)
+{
+    static int lags[4096];
+    int n = period_lags(s, pitch, lags, 4096);
+
+    if (n < 8 || lags[n / 10] <= 0)
+        return 0;
+    return 1000 * lags[n - 1 - n / 10] / lags[n / 10];
+}
+
+/* The longest period reached, in samples -- the lowest note of the contour.
+ * A period rather than a frequency so that lower reads as larger. */
+static int lowest_period(const sink *s, int pitch)
+{
+    static int lags[4096];
+    int n = period_lags(s, pitch, lags, 4096);
+
+    return n < 8 ? 0 : lags[n - 1 - n / 10];
+}
+
+/* The ratio above, with the monotone subtracted off, so the numbers compare
+ * as "how much contour is there" rather than "how close to 1000". */
+static int excursion(const sink *s, int pitch)
+{
+    int r = period_spread(s, pitch);
+    return r > 1000 ? r - 1000 : 0;
+}
+
+static void say_at(const char *lang, int voice, int pitch, unsigned ext,
+                   const char *text, sink *out)
+{
+    tvtts_synth *s;
+
+    tvtts_set_extensions(ext);
+    s = tvtts_create_lang(11025, lang);
+    tvtts_set_voice(s, voice);
+    tvtts_set_pitch(s, pitch);
+    say(s, text, out);
+    tvtts_destroy(s);
+}
+
+/*
+ * TVTTS_EXT_FLOOR: the bottom of the Spanish engine's range.
+ *
+ * That engine calls a pitch track under 60 an error and puts 65 in its place --
+ * a low C, and audibly where its bottom stops.  English has no such check, and
+ * Stage 2 has already clamped the track to 50, so nothing needs it.
+ *
+ * Jorge is the case: the lowest Spanish voice, pitch 50, the same as English's
+ * Sidney, and only one of the two could reach it.
+ */
+static void test_pitch_floor(void)
+{
+    /* Long and sonorant, so the contour has room to fall at the end of a
+     * phrase, which is the only place the bottom of it is reached. */
+    static const char *const TXT =
+        "Mama mia, mama mia, la luna llena la mano, mama mia.";
+    const char *es = NULL;
+    int i, jorge = -1, lowest = 1000;
+
+    for (i = 0; i < tvtts_language_count(); i++)
+        if (strcmp(tvtts_language(i), "es") == 0)
+            es = tvtts_language(i);
+    if (es == NULL)
+        return;
+    /* found by its pitch rather than by name, since what matters is that it
+     * is the one sitting at the bottom of the range */
+    for (i = 0; i < tvtts_voice_count(); i++)
+        if (strcmp(tvtts_voice_language(i), "es") == 0 &&
+            tvtts_voice_pitch(i) < lowest) {
+            lowest = tvtts_voice_pitch(i);
+            jorge = i;
+        }
+    check(jorge >= 0 && lowest == 50,
+          "the lowest Spanish voice sits at pitch 50");
+    if (jorge < 0)
+        return;
+
+    {
+        sink off = {0}, on = {0}, hi_off = {0}, hi_on = {0};
+        int p_off, p_on;
+
+        say_at(es, jorge, 50, TVTTS_EXT_ALL & ~TVTTS_EXT_FLOOR, TXT, &off);
+        say_at(es, jorge, 50, TVTTS_EXT_ALL, TXT, &on);
+        p_off = lowest_period(&off, 50);
+        p_on = lowest_period(&on, 50);
+        printf("    [floor, longest period in samples: off %d, on %d "
+               "(= %d Hz and %d Hz)]\n",
+               p_off, p_on, p_off ? 11025 / p_off : 0, p_on ? 11025 / p_on : 0);
+
+        check(!same(&off, &on), "the extension changes the low end");
+        check(p_off > 0 && p_on > 0, "both renderings have a lowest note");
+        check(p_on > p_off * 11 / 10, "with it the voice reaches lower");
+
+        /*
+         * And where the engine never goes near the substitution, it changes
+         * nothing -- which is what says this lifts a limit rather than
+         * retuning the voice.  At pitch 150 the contour stays far above 60.
+         */
+        say_at(es, jorge, 150, TVTTS_EXT_ALL & ~TVTTS_EXT_FLOOR, TXT, &hi_off);
+        say_at(es, jorge, 150, TVTTS_EXT_ALL, TXT, &hi_on);
+        check(same(&hi_off, &hi_on),
+              "well above it the extension changes nothing at all");
+
+        sink_free(&off);
+        sink_free(&on);
+        sink_free(&hi_off);
+        sink_free(&hi_on);
+    }
+
+    tvtts_set_extensions(TVTTS_EXT_ALL);
+}
+
+/*
+ * TVTTS_EXT_CONTOUR: the Spanish engine's intonation as the pitch moves.
+ *
+ * That engine adds fixed numbers of hertz to the base pitch to make its
+ * contour, so raising the pitch shrinks the interval the contour spans and the
+ * voice goes flat.  The extension scales the excursion by the pitch against
+ * the voice's own, which is the shape the 1997 English engine has.
+ *
+ * Three things are checked, and the middle one is the point: that the audio
+ * really does move further, rather than the flag merely reading back as set.
+ */
+static void test_contour(void)
+{
+    static const char *const TXT = "Mala mala mala, mala mala mala.";
+    const char *es = NULL;
+    int i, pedro = -1;
+
+    for (i = 0; i < tvtts_language_count(); i++)
+        if (strcmp(tvtts_language(i), "es") == 0)
+            es = tvtts_language(i);
+    if (es == NULL)
+        return;                         /* no Spanish in this build */
+    for (i = 0; i < tvtts_voice_count(); i++)
+        if (strcmp(tvtts_voice_language(i), "es") == 0 && pedro < 0)
+            pedro = i;
+    if (pedro < 0)
+        return;
+
+    /*
+     * The contour must not depend on which voice is speaking.  Neither engine's
+     * does -- nothing in either Stage2_Contour reads the voice, and English's
+     * g_voice_pitch_scale is 32766 for all ten -- so at one pitch every voice
+     * has to be affected the same way.  An earlier version of this extension
+     * scaled against each voice's own pitch and broke exactly that: Josefa and
+     * Carlos, the two highest, came out flattest at a shared pitch and their
+     * centre moved with it.
+     *
+     * Two things say it is voice-independent now.  At the reference pitch, 85,
+     * the scale is one and every voice is byte-identical either way; away from
+     * it, every voice changes, so none is being quietly left alone.
+     */
+    {
+        int same_at_ref = 1, changed_away = 1, tested = 0;
+
+        for (i = 0; i < tvtts_voice_count(); i++) {
+            sink a = {0}, b = {0}, c = {0}, d = {0};
+
+            if (strcmp(tvtts_voice_language(i), "es") != 0)
+                continue;
+            say_at(es, i, 85, TVTTS_EXT_ALL & ~TVTTS_EXT_CONTOUR, TXT, &a);
+            say_at(es, i, 85, TVTTS_EXT_ALL, TXT, &b);
+            if (!same(&a, &b))
+                same_at_ref = 0;
+
+            say_at(es, i, 300, TVTTS_EXT_ALL & ~TVTTS_EXT_CONTOUR, TXT, &c);
+            say_at(es, i, 300, TVTTS_EXT_ALL, TXT, &d);
+            if (same(&c, &d))
+                changed_away = 0;
+
+            tested++;
+            sink_free(&a);
+            sink_free(&b);
+            sink_free(&c);
+            sink_free(&d);
+        }
+        check(tested == 10, "all ten Spanish voices were tried");
+        check(same_at_ref,
+              "at the reference pitch every voice is byte-identical either way");
+        check(changed_away,
+              "away from it every voice is affected, none left behind");
+    }
+
+    /*
+     * Moved off that pitch it does change, and changes in the direction
+     * claimed: the contour reaches further.  Measured out of the audio.
+     */
+    {
+        sink off160 = {0}, off300 = {0}, on160 = {0}, on300 = {0};
+        int eoff160, eoff300, eon160, eon300;
+        const unsigned NOC = TVTTS_EXT_ALL & ~TVTTS_EXT_CONTOUR;
+
+        say_at(es, pedro, 160, NOC, TXT, &off160);
+        say_at(es, pedro, 300, NOC, TXT, &off300);
+        say_at(es, pedro, 160, TVTTS_EXT_ALL, TXT, &on160);
+        say_at(es, pedro, 300, TVTTS_EXT_ALL, TXT, &on300);
+
+        eoff160 = excursion(&off160, 160);
+        eoff300 = excursion(&off300, 300);
+        eon160 = excursion(&on160, 160);
+        eon300 = excursion(&on300, 300);
+        printf("    [contour, parts per thousand of period: "
+               "off %d->%d, on %d->%d, pitch 160->300]\n",
+               eoff160, eoff300, eon160, eon300);
+
+        check(!same(&off300, &on300),
+              "above its own pitch the extension changes the audio");
+        check(eoff160 > 0 && eon300 > 0, "both renderings have a contour");
+        /* the bug: the original's excursion shrinks as the pitch climbs */
+        check(eoff300 * 4 < eoff160 * 3,
+              "without it the contour collapses as the pitch rises");
+        /*
+         * The fix: it keeps a much larger share of its range.  Not all of it,
+         * and the reason is worth knowing -- at 300 the widened contour now
+         * reaches the 0x1f4 ceiling and has its peaks taken off, which is the
+         * same limit the English engine runs into and not a failure of the
+         * scaling.  Below the ceiling the ratio is held exactly, since the
+         * excursion and the pitch are multiplied by the same number.
+         */
+        check(eon300 * eoff160 > eoff300 * eon160,
+              "with it far more of the range survives the climb");
+        check(eon300 > eoff300 * 2,
+              "and at a raised pitch it reaches more than twice as far");
+
+        sink_free(&off160);
+        sink_free(&off300);
+        sink_free(&on160);
+        sink_free(&on300);
+    }
+
+    tvtts_set_extensions(TVTTS_EXT_ALL);
+}
+
 static void test_pitch_ceiling(void)
 {
     static const char *const TXT = "Hola, buenos dias. Que tal?";
@@ -256,8 +594,14 @@ static void test_pitch_ceiling(void)
     check(!same(&lo, &mid), "and the range below is still a range");
     tvtts_destroy(s);
 
-    /* A pitch the old ceiling never reached is the same either way, which is
-     * what says the flag lifts a limit and changes nothing else. */
+    /*
+     * A pitch the old ceiling never reached is the same either way, which is
+     * what says the flag lifts a limit and changes nothing else.
+     *
+     * TVTTS_EXT_PITCH on its own, not the whole mask: TVTTS_EXT_CONTOUR is
+     * also about this engine's pitch and does change the audio at 100, since
+     * 100 is not the voice's own pitch.  test_contour checks that one.
+     */
     {
         sink a = {0}, b = {0};
 
@@ -266,7 +610,7 @@ static void test_pitch_ceiling(void)
         tvtts_set_pitch(s, 100);
         say(s, TXT, &a);
         tvtts_destroy(s);
-        tvtts_set_extensions(TVTTS_EXT_ALL);
+        tvtts_set_extensions(TVTTS_EXT_PITCH);
         s = tvtts_create_lang(11025, es);
         tvtts_set_pitch(s, 100);
         say(s, TXT, &b);
@@ -741,6 +1085,8 @@ int main(void)
     test_sample_rate();
     test_clarity();
     test_pitch_ceiling();
+    test_contour();
+    test_pitch_floor();
     printf("%s\n", failures ? "FAILED" : "all passed");
     return failures != 0;
 }

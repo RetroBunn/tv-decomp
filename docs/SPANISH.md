@@ -2343,6 +2343,143 @@ English.  And the top of the new range was worth measuring rather than assuming:
 F0 tracks the setting to about 480 Hz and the waveform stays periodic there
 (autocorrelation 0.93 and above), so the ceiling is real rather than nominal.
 
+### The contour flattens as the pitch rises
+
+Lifting the ceiling made a second defect audible.  Put a Spanish voice higher
+and it keeps its speed and its timbre but loses its intonation: the higher it
+goes, the flatter it reads.  English does not do this, and the reason is in how
+the two engines build a contour at all.
+
+`Stage2_Contour` here starts from the base pitch and *adds numbers of hertz* to
+it -- a declining term that begins at 0x32, then a dozen nudges of 5, 7, 0xf and
+0x1e chosen by what is near the phoneme.  So the excursion is a fixed distance.
+At a voice's own pitch it is the distance it was tuned to be; move the pitch up
+and the same few hertz shrink to a smaller and smaller musical interval, because
+what a listener hears as inflection is a ratio.
+
+The 1997 engine never had the problem, because it does not use distances.  Its
+`Stage2_Contour` takes the excursion as
+
+```c
+v = Synth_MulQ15(st->pitch / 3, g_voice_pitch_scale[st->voice]);
+```
+
+-- a third of the pitch, and again `pitch >> 2` further down.  Multiply the
+pitch and the excursion multiplies with it, so the interval is the same wherever
+the voice is put and only the 0x1f4 clamp ever takes the top off it.
+
+This also settles a loose end from docs/VOICES.md.  Of the fourteen per-voice
+tables, three sit in CGRM_ES holding the English values and are read by nothing,
+and one of the three is `g_voice_pitch_scale` -- the Q15 scale on the pitch
+*range*.  It is unread here because there is no proportional excursion for it to
+scale.  The 1995 engine was given the 1997 voice block and not the 1997 contour.
+
+`TVTTS_EXT_CONTOUR` scales the excursion this engine has already worked out,
+rather than replacing the rules that produce it: one line before the clamp,
+
+```c
+v = es_contour_scale(v, pitch, st->voice);   /* pitch + (v - pitch) * pitch / own */
+```
+
+The reference is **one constant for every voice**, and it has to be.  Neither
+engine's contour depends on who is speaking: nothing in either `Stage2_Contour`
+reads the voice, and English's `g_voice_pitch_scale` is 32766 for all ten, so at
+a given pitch every voice is inflected alike.  Scaling against each voice's own
+pitch instead -- which this did at first -- breaks that twice over.  It makes a
+high-pitched voice flatter than a low one at the same setting, and it moves the
+centre as well, because the declining term is a large offset rather than a
+symmetric excursion.  Josefa and Carlos, the two highest, came out flattest and
+a fifth flat: at a shared pitch of 85 their median F0 fell to 100 and 101 Hz
+where every other voice sat at 123 to 127.
+
+The reference is **85**, because that is where the two engines already agree.
+Rendered at pitch 85 the 1995 engine's fixed contour and the 1997 engine's
+proportional one put the median F0 within a hertz of each other -- 126.1 against
+126.8 -- and they diverge above and below, because only one of them scales.
+Scaling from that crossover keeps them together:
+
+| base pitch | 85 | 130 | 200 | 300 | 400 |
+| --- | --- | --- | --- | --- | --- |
+| median F0, the original | 126.1 | 169.6 | 235.5 | 333.3 | 426.7 |
+| median F0, with the flag | 126.1 | 192.1 | 291.9 | 425.7 | 479.5 |
+| median F0, English | 126.8 | 196.8 | 299.3 | 447.4 | 479.5 |
+
+So the number is measured, not picked, and it is also why a voice at pitch 85 is
+byte-identical with the flag on or off -- the scale is exactly one there, for
+every voice.  `api_test` checks that for all ten, and checks that away from 85
+every voice is affected, so none is quietly left alone.
+
+Measured on "Mala mala mala, mala mala mala." with Pedro, as the 10th-to-90th
+percentile of F0 in semitones:
+
+| base pitch | 130 | 160 | 200 | 250 | 300 | 350 | 400 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| the original | 5.7 | 5.8 | 4.5 | 4.1 | 3.7 | 3.3 | 2.7 |
+| with the flag | 7.3 | 7.4 | 8.4 | 7.9 | 7.9 | 5.1 | 3.1 |
+| English, for comparison | 18.9 | 17.6 | 10.2 | 10.7 | 7.1 | 5.5 | 3.8 |
+
+The original's range falls by more than half across that span; with the flag it
+holds around 7 to 8 semitones and then narrows above 300 -- and it narrows for
+the *English* reason, the 0x1f4 ceiling clipping the peaks.  At 350 and 400 both
+engines land on the same median F0, 479 Hz, which is what the two rows above
+agreeing there means.  Below the ceiling the ratio is held exactly, since the
+excursion and the pitch are multiplied by the same number.
+
+### A low C at the bottom of the range
+
+The third pitch defect, and the one that is plainly a guard rather than a
+design: `Prosody_Frame` treats a pitch track under `0x3c` as an *error*, and
+puts `0x41` in its place.
+
+```c
+if (par[17] < 0x3c) {
+    Engine_Error(self, 0x65);
+    Engine_Trace(self, g_fmt_parl, par[17]);
+    par[17] = 0x41;
+}
+```
+
+0x41 is 65, and a low C is 65.41 Hz, which is what the bottom of these voices
+audibly stops on -- that is how it was reported, by ear, before the code was
+looked at.  Everything around it is the same in both engines, down to the `++`
+on 0x45, 0x4a, 0x4f, 0x54 and 0x5a and the jitter that follows; the 1997 engine
+simply has no such check.
+
+Nothing needs it.  `par[17]` is twice the node's `b15`, and Stage 2 has already
+clamped `b15` to `0x19`, so the track cannot arrive under `0x32` -- exactly the
+floor English works down to, and a period of 220 samples at 11 kHz, which the
+same division handles there without complaint.
+
+It is worst for whichever voice sits lowest.  Jorge and Sidney are the lowest of
+their engines and both have a pitch of 50, but only Sidney could reach it.
+Measured on "Mama mia, mama mia, la luna llena la mano, mama mia." at pitch 50:
+
+| | lowest F0 | 5th percentile | 10th percentile |
+| --- | --- | --- | --- |
+| the original | 62.0 | 63.3 | 64.1 |
+| with `TVTTS_EXT_FLOOR` | 48.9 | 52.1 | 55.9 |
+| English, Sidney | 49.6 | 50.1 | 50.4 |
+
+Well above the substitution nothing changes at all: at pitch 150 the contour
+never comes near 60, and the rendering is byte-identical with the flag either
+way, which is what says this lifts a limit rather than retuning a voice.
+
+**All four 1995 engines have it, and the 1997 one does not.**  The code is
+`push 65h` for the error, the compare against `3Ch`, and the store of `41h`,
+which between them contain no addresses and so can be searched for across the
+DLLs directly:
+
+| dll | site |
+| --- | --- |
+| CGRM_DE | `0x1001be41` |
+| CGRM_ES | `0x1000f300` |
+| CGRM_FR | `0x10019961` |
+| CGRM_IT | `0x1000f2f4` |
+| CGRM_EN | none |
+
+So French, German and Italian will want the same flag when they are decompiled,
+and it is one more thing the 1995 generation shares.
+
 ## What is next
 
 There are three tests with different reach: `difftest --lang es` asks whether

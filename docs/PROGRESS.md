@@ -264,6 +264,27 @@ against a binary that has no extensions.
   floor the table cannot get under.  Rows 0..25 are untouched and 46..253
   wpm stays bit-for-bit identical to `CGRM_EN.DLL`.
 
+* **`TVTTS_EXT_CLARITY`** -- formant bandwidths widen as the rate climbs, so
+  fast speech does not slur.  It does nothing at or below 253 wpm, which is
+  everywhere the original could reach.  See docs/LIBRARY.md.
+
+* **`TVTTS_EXT_PITCH`** -- Spanish only: the 1995 engine clamps a contour node
+  to 0xc8 where the 1997 one clamps to 0x1f4, and two of the ten voices it
+  ships sit above that, so they come out monotone.  See docs/SPANISH.md.
+
+* **`TVTTS_EXT_CONTOUR`** -- Spanish only: that engine's contour is built from
+  fixed numbers of hertz rather than a fraction of the pitch, so its intonation
+  thins out as the pitch is raised.  The flag scales the excursion by the pitch
+  against a fixed reference of 85, the pitch at which the 1995 and 1997 contours
+  already agree.  One reference for every voice, because neither engine's
+  contour depends on the voice.  See docs/SPANISH.md.
+
+* **`TVTTS_EXT_FLOOR`** -- Spanish only, for now: the 1995 engine treats a pitch
+  track under 60 as an error and substitutes 65, a low C, so the lowest voice of
+  a language cannot reach the pitch it is given.  The 1997 engine has no such
+  check.  The same code is in the German, French and Italian DLLs, so they will
+  want it too.  See docs/SPANISH.md.
+
 ## Test corpus
 
 `tests/corpus/*.txt` (59 inputs), run in 335 configurations: ten voices at

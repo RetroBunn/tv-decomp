@@ -281,7 +281,43 @@ TVTTS_API int TVTTS_CALL tvtts_rate_sequence(char *buf, size_t cap, int wpm);
  */
 #define TVTTS_EXT_PITCH 0x4u
 
-#define TVTTS_EXT_ALL   0x7u
+/*
+ * TVTTS_EXT_CONTOUR keeps the Spanish engine's intonation as the pitch moves.
+ *
+ * That engine builds its pitch contour by adding fixed numbers of hertz to the
+ * base pitch, so the excursion is an interval only at the pitch the voice was
+ * tuned at.  Raise the pitch and the same few hertz shrink to nothing: at 400
+ * the contour spans 2.7 semitones where at 160 it spanned 5.8, and the voice
+ * goes flat while keeping its speed and timbre.  The 1997 English engine takes
+ * its excursion as a fraction of the pitch instead, so its intonation holds
+ * wherever the voice is put.
+ *
+ * With this on, the excursion the Spanish engine works out is scaled by the
+ * pitch against a fixed reference of 85 -- the pitch at which that engine's
+ * contour and the 1997 engine's already agree, measured rather than chosen.
+ * The reference is one number for every voice, because neither engine's contour
+ * depends on which voice is speaking, so at a given pitch they all stay equally
+ * inflected.  At 85 itself nothing changes at all.  It does nothing to English,
+ * which never had the problem.
+ */
+#define TVTTS_EXT_CONTOUR 0x8u
+
+/*
+ * TVTTS_EXT_FLOOR lets the Spanish engine reach the bottom of its range.
+ *
+ * That engine treats a pitch track under 60 as an error and substitutes 65 --
+ * a low C, 65.41 Hz, which is audibly where its bottom stops.  The 1997 English
+ * engine has no such check, and nothing needs it: Stage 2 has already clamped
+ * the track to 50, which is the floor English works down to and a period the
+ * same arithmetic handles there.
+ *
+ * It matters most for the lowest voice of a language.  Jorge and Sidney both
+ * sit at pitch 50, and without this only Sidney can get there; Jorge stops a
+ * fifth short and loses the bottom of every fall.  It does nothing to English.
+ */
+#define TVTTS_EXT_FLOOR 0x10u
+
+#define TVTTS_EXT_ALL   0x1fu
 
 TVTTS_API void TVTTS_CALL tvtts_set_extensions(uint32_t mask);
 TVTTS_API uint32_t TVTTS_CALL tvtts_get_extensions(void);

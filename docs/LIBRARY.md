@@ -266,6 +266,46 @@ it always was -- verified against `CGRM_EN.DLL` itself, not just against the
 classic build.  The voices still sound the way people know them; only the
 range that used to be broken behaves differently.
 
+### TVTTS_EXT_PITCH
+
+Spanish only.  Stage 2 clamps every contour node before storing it, and the
+1995 engine clamps to 0x32..0xc8 where the 1997 one clamps to 0x32..0x1f4 --
+but both DLLs ship the same ten-voice table, in which Carlos is 203 and Josefa
+208.  Those two sit above their own engine's ceiling, so their whole contour
+pins to it and they speak in a monotone.  The flag moves that one constant to
+the value the other generation of the same engine uses.  Below the old ceiling
+nothing changes at all.
+
+### TVTTS_EXT_CONTOUR
+
+Spanish only.  The 1995 engine builds its contour by adding fixed numbers of
+hertz to the base pitch, so the excursion is an interval only at the pitch the
+voice was tuned at; raise the pitch and the voice goes flat while keeping its
+speed and timbre.  The 1997 engine takes its excursion as a fraction of the
+pitch instead, which is why English keeps its intonation wherever it is put.
+
+The flag scales the excursion by the pitch against a fixed reference of 85 --
+the pitch at which the two engines' contours already agree, measured rather than
+chosen -- so the interval is restored across the range and the centre tracks
+what English does.  One reference serves every voice, because neither engine's
+contour depends on who is speaking; at 85 itself the scale is one and every
+voice is byte-identical either way.  Above about pitch 300 the widened contour
+starts to reach the 0x1f4 ceiling and have its peaks taken off, which is the
+same limit English runs into.  See docs/SPANISH.md for the measurements.
+
+### TVTTS_EXT_FLOOR
+
+Spanish only, for now.  The 1995 engine calls a pitch track under 60 an error
+and substitutes 65 -- a low C at 65.41 Hz, and audibly where the bottom of the
+range stops.  The 1997 engine has no such check, and nothing needs it: Stage 2
+has already clamped the track to 50, which is the floor English works down to.
+
+It matters most for whichever voice sits lowest.  Jorge and Sidney both have a
+pitch of 50, and without this only Sidney can get there.  Above the
+substitution the flag changes nothing at all.  The same code is in the German,
+French and Italian DLLs and not in the English one, so those three will want it
+too.  See docs/SPANISH.md.
+
 ### TVTTS_EXT_CLARITY
 
 Fast speech slurs for a physical reason: a formant resonator with a narrow

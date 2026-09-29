@@ -193,6 +193,8 @@ uint8_t TV_THISCALL ByteList_Add(void *list, int32_t byte)
 void es_set_extensions(uint32_t mask)
 {
     tv_es_ext_pitch = (mask & TVTTS_EXT_PITCH) != 0;
+    tv_es_ext_contour = (mask & TVTTS_EXT_CONTOUR) != 0;
+    tv_es_ext_floor = (mask & TVTTS_EXT_FLOOR) != 0;
 }
 
 /* ---- lifetime ------------------------------------------------------------ */

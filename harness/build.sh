@@ -289,6 +289,68 @@ gcc -m64 -O2 -Wall -Wextra -municode -mwindows -o "$OUT/speakwin.exe" \
   -lcomctl32 -lwinmm -lcomdlg32 -lgdi32
 echo "built $OUT/speakwin.exe"
 
+# --- packages, if any have already been built --------------------------------
+# The engine reaches people through packages -- the NVDA add-on, the SAPI 5
+# installer -- and each takes a *copy* of it at packaging time.  A package
+# sitting next to a freshly built DLL and carrying the previous one is worse
+# than no package at all: it looks current, installs cleanly, and quietly
+# speaks with the old engine.  That is exactly how the Spanish contour fix
+# came to be untestable on 2026-09-29.
+#
+# Packaging itself stays opt-in -- someone who has never built one sees nothing
+# here -- but anything already built is rebuilt with everything else, so it can
+# never fall behind the engine.  A new platform target belongs in this block
+# too, on the same terms.
+had64=0
+had32=0
+for a in "$OUT"/*.nvda-addon; do
+  [ -e "$a" ] || continue
+  case "$a" in
+    *-x86.nvda-addon) had32=1 ;;
+    *) had64=1 ;;
+  esac
+done
+if [ "$had64" = 1 ] || [ "$had32" = 1 ]; then
+  rm -f "$OUT"/*.nvda-addon
+  if [ "$had64" = 1 ]; then
+    python tools/make_addon.py >/dev/null && echo "repackaged the 64-bit NVDA add-on"
+  fi
+  if [ "$had32" = 1 ]; then
+    python tools/make_addon.py --32 >/dev/null && echo "repackaged the 32-bit NVDA add-on"
+  fi
+fi
+
+# The SAPI 5 installer carries both tvsapi DLLs, and those have the engine
+# linked into them, so it goes stale the same way.  NSIS is not part of the
+# toolchain this project otherwise needs, so it is looked for rather than
+# assumed; without it the stale installer is removed instead, because leaving
+# one that looks current is the failure being prevented.
+SETUP="$OUT/OpenTV-SAPI5-Setup.exe"
+if [ -e "$SETUP" ]; then
+  NSIS=""
+  if command -v makensis >/dev/null 2>&1; then
+    NSIS=makensis
+  else
+    for c in "/c/Program Files (x86)/NSIS/makensis.exe" \
+             "/c/Program Files/NSIS/makensis.exe"; do
+      if [ -x "$c" ]; then NSIS=$c; break; fi
+    done
+  fi
+  if [ -n "$NSIS" ]; then
+    if "$NSIS" sapi5/installer.nsi >/dev/null 2>&1; then
+      echo "rebuilt $SETUP"
+    else
+      rm -f "$SETUP"
+      echo "warning: makensis failed; removed the stale SAPI 5 installer" >&2
+    fi
+  else
+    rm -f "$SETUP"
+    echo "warning: NSIS not found, so the SAPI 5 installer was stale and has" >&2
+    echo "         been removed.  Rebuild it with:" >&2
+    echo "           makensis sapi5/installer.nsi" >&2
+  fi
+fi
+
 # The build prints a line per target as it goes, which is a lot to read
 # back.  This is the part worth reading: what exists now and where.
 echo
@@ -298,6 +360,8 @@ for f in tvtts.dll tvtts64.dll tvsapi.dll tvsapi64.dll speakwin.exe; do
 done
 echo "  link against it with $OUT/libtvtts.a or $OUT/libtvtts64.a"
 echo "  the NVDA add-on is a separate step: python tools/make_addon.py"
+echo "    (one already packaged is rebuilt here, so it cannot go stale)"
+echo "  the SAPI 5 installer likewise: makensis sapi5/installer.nsi"
 echo "  the SAPI voices are registered by the installer, or by hand:"
 echo "    regsvr32 $OUT/tvsapi64.dll   (64-bit applications)"
 echo "    regsvr32 $OUT/tvsapi.dll     (32-bit, needs the 32-bit regsvr32)"

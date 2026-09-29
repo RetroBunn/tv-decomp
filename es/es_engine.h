@@ -25,6 +25,8 @@
  * engine's 0x32..0xc8, which two of the ten voices sit above.  Set from
  * TVTTS_EXT_PITCH; see es/stage2.c. */
 extern int tv_es_ext_pitch;
+extern int tv_es_ext_contour;
+extern int tv_es_ext_floor;
 
 /* OpenTV's third output rate.  The original offered 8 kHz and 11.025 kHz; this
  * one is an addition, and the tables for it are computed from the formulas that

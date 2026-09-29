@@ -39,6 +39,8 @@
  */
 #include "es_engine.h"
 
+int tv_es_ext_floor = 0;
+
 /* @0x10049910 */
 extern const uint32_t g_bit_mask[8];
 /* @0x1004c540 */
@@ -177,7 +179,29 @@ void TV_THISCALL Prosody_Build(Engine *self)
             par[17] == 0x54 || par[17] == 0x5a)
             par[17]++;
         jit = jitter_step(self);
-        if (par[17] < 0x3c) {
+        /*
+         * OpenTV: the low-pitch substitution.
+         *
+         * This engine treats a pitch track under 0x3c as an error, logs it and
+         * replaces it with 0x41 -- 65, which is a low C at 65.41 Hz and is
+         * audibly where the bottom of the range stops.  The 1997 English engine
+         * has no such check anywhere in the same function; everything around
+         * this is the same in both, down to the ++ on 0x45, 0x4a, 0x4f, 0x54
+         * and 0x5a and the jitter that follows, so the substitution is the one
+         * thing added rather than a difference of design.
+         *
+         * Nothing needs it.  par[17] is twice the node's b15, and Stage2_Adjust
+         * has already clamped b15 to 0x19, so the track cannot come in under
+         * 0x32 -- exactly the floor English works down to, and a period of 220
+         * samples at 11 kHz, which the same division handles there.  Lifting it
+         * gives Jorge his bottom octave back; he and Sidney are the lowest
+         * voices of their engines and both sit at pitch 50, but only one of them
+         * could reach it.
+         *
+         * With the extension off the substitution stands, error and trace and
+         * all, which is what the corpus checks.
+         */
+        if (par[17] < 0x3c && !tv_es_ext_floor) {
             Engine_Error(self, 0x65);
             Engine_Trace(self, g_fmt_parl, par[17]);
             par[17] = 0x41;

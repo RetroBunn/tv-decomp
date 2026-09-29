@@ -34,6 +34,63 @@ static int32_t es_pitch_max(void)
     return tv_es_ext_pitch ? 0x1f4 : 0xc8;
 }
 
+/*
+ * OpenTV: the contour's excursion, against the pitch it sits on.
+ *
+ * Stage2_Contour builds its contour by adding fixed amounts to the base pitch
+ * -- a declining term that starts at 0x32, and a dozen nudges of 5, 7, 0xf and
+ * 0x1e -- so the excursion is a number of hertz and not a ratio.  At a voice's
+ * own pitch that is what it was tuned to be.  Move the pitch up and those same
+ * few hertz become a smaller and smaller musical interval: the voice keeps its
+ * timbre and its speed and loses its intonation.  Measured over one sentence,
+ * the 10th-to-90th percentile of F0 falls from 5.8 semitones at pitch 160 to
+ * 2.7 at 400, which is the flattening this fixes.
+ *
+ * The 1997 English engine does not have the problem, because it does not build
+ * its contour this way: its own Stage2_Contour takes the excursion as
+ * Synth_MulQ15(st->pitch / 3, g_voice_pitch_scale[voice]) -- a third of the
+ * pitch -- so the interval it spans is the same wherever the voice is put, and
+ * only the 0x1f4 clamp ever takes the top off it.  That is the idea borrowed
+ * here, applied to the excursion this engine has already worked out rather
+ * than replacing the rules that produce it.
+ *
+ * The reference is one constant for every voice, and it has to be: neither
+ * engine's contour depends on which voice is speaking.  Nothing in this
+ * function reads st->voice, and English's g_voice_pitch_scale is 32766 for all
+ * ten, so at a given pitch every voice gets the same contour and they sound
+ * uniformly inflected.  Scaling against each voice's own pitch instead -- which
+ * this did at first -- makes a high-pitched voice quieter in its inflection
+ * than a low one at the same setting, and moves its centre as well, because the
+ * declining term is a large offset and not a symmetric excursion.  Josefa and
+ * Carlos, the two highest, came out flattest and a fifth flat.
+ *
+ * TV_CONTOUR_REF is 85 because that is where the two engines already agree.
+ * Rendered at pitch 85 the 1995 engine's fixed contour and the 1997 engine's
+ * proportional one put the median F0 within a hertz of each other, 126.1
+ * against 126.8; above and below they diverge, because only one of them scales.
+ * Scaling from that crossover keeps them together across the range -- at 300
+ * this engine reaches a median of 425.7 where English reaches 447.4, against
+ * 333.3 unscaled.  So the number is measured rather than chosen, and it is also
+ * why a voice at pitch 85 is byte-identical with the extension on or off.
+ *
+ * It also explains an oddity in the data: g_voice_pitch_scale sits in CGRM_ES
+ * with the English values and is read by nothing, because the 1995 engine has
+ * no proportional excursion for it to scale.  See docs/VOICES.md.
+ */
+int tv_es_ext_contour = 0;
+
+
+/* The pitch at which this engine's fixed contour amounts already match the
+ * 1997 engine's proportional ones; see the note above for the measurement. */
+#define TV_CONTOUR_REF 85
+
+static int32_t es_contour_scale(int32_t v, int32_t pitch)
+{
+    if (!tv_es_ext_contour || pitch <= 0 || pitch == TV_CONTOUR_REF)
+        return v;
+    return pitch + (v - pitch) * pitch / TV_CONTOUR_REF;
+}
+
 /* @0x10058618 */
 extern const uint8_t g_10058618[0x200];
 
@@ -717,6 +774,7 @@ void TV_THISCALL Stage2_Contour(Engine *self)
     }
 
     pitch = st->pitch;
+    v = es_contour_scale(v, pitch);
     if (pitch == 0)
         v = 0;
     else if (v > es_pitch_max())
