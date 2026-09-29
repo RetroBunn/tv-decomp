@@ -81,5 +81,8 @@ __pycache__/
 
 # Reference checkouts of other projects, kept locally to work against.
 # TGSpeechBox is MIT and its fast-speech technique is credited in NOTICE,
-# but it is his repository, not ours to redistribute.
+# but it is his repository, not ours to redistribute.  The same goes for
+# Panthera Speech, whose SAPI adapter taught sapi5/ two things no
+# specification states -- also MIT, also credited in NOTICE.
 /TGSpeechBox/
+/panthera-speech/

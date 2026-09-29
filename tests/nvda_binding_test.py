@@ -1,8 +1,8 @@
 """Drive the NVDA add-on without NVDA.
 
-Two halves are testable here.  synthDrivers/_truvoice.py is the binding: the
+Two halves are testable here.  synthDrivers/_opentv.py is the binding: the
 ctypes signatures, the callback ABI, the background thread, and the order
-audio and marks reach the player.  synthDrivers/truvoice.py is the driver,
+audio and marks reach the player.  synthDrivers/opentv.py is the driver,
 and while constructing it wants the whole of NVDA's settings stack, its
 speak() only touches four attributes, so it can be called against a stand-in.
 
@@ -262,40 +262,40 @@ def endsWithEscape(text):
 # ---- the binding -----------------------------------------------------------
 
 
-def binding_tests(_truvoice):
+def binding_tests(_opentv):
 	marks = []
 	done = []
 
 	def onIndex(index):
 		(done if index is None else marks).append(index)
 
-	_truvoice.initialize(onIndex)
-	player = _truvoice.player
+	_opentv.initialize(onIndex)
+	player = _opentv.player
 	check(player.kw.get("samplesPerSec") == 11025, "player opened at 11025 Hz")
 	check(player.kw.get("channels") == 1 and player.kw.get("bitsPerSample") == 16,
 	      "player opened as 16-bit mono")
 
-	nlang = _truvoice.languageCount()
-	check(_truvoice.voiceCount() == 10 * nlang,
+	nlang = _opentv.languageCount()
+	check(_opentv.voiceCount() == 10 * nlang,
 	      "ten voices for every language the library carries")
 	want = ["Peter", "Sidney", "Eager Eddie", "Deep Douglas", "Biff",
 	        "Grandpa Amos", "Melvin", "Alex", "Wanda", "Julia"]
-	got = [_truvoice.voiceName(i) for i in range(10)]
+	got = [_opentv.voiceName(i) for i in range(10)]
 	check(got == want, "the voices are named in the engine's own order")
 	if got != want:
 		print("     got: %s" % ", ".join(got))
-	check(_truvoice.voiceRate(0) == 150 and _truvoice.voiceRate(5) == 120,
+	check(_opentv.voiceRate(0) == 150 and _opentv.voiceRate(5) == 120,
 	      "the elderly voice has its own slower default")
 
 	# Every language says what it is called, and every voice which it speaks.
-	codes = [_truvoice.language(k) for k in range(nlang)]
+	codes = [_opentv.language(k) for k in range(nlang)]
 	check(codes[0] == "en", "English comes first")
-	check(all(_truvoice.languageName(c) for c in codes),
+	check(all(_opentv.languageName(c) for c in codes),
 	      "every language has a name a person can read")
-	check(_truvoice.languageName("en") == "American English",
+	check(_opentv.languageName("en") == "American English",
 	      "and English's is the name the project uses elsewhere")
-	table = _truvoice.voices()
-	check(len(table) == _truvoice.voiceCount(), "the voice table is complete")
+	table = _opentv.voices()
+	check(len(table) == _opentv.voiceCount(), "the voice table is complete")
 	check(all(t[1] in codes for t in table),
 	      "every voice names a language the library has")
 	check([t[2] for t in table[:10]] == list(range(10)),
@@ -311,8 +311,8 @@ def binding_tests(_truvoice):
 		      "Spanish counts from zero as well")
 
 	# --- a plain utterance ---
-	_truvoice.speak("Hello world.")
-	_truvoice.bgQueue.join()
+	_opentv.speak("Hello world.")
+	_opentv.bgQueue.join()
 	check(player.total > 0, "speaking produced audio")
 	check(len(done) == 1, "one done-speaking notification")
 
@@ -320,9 +320,9 @@ def binding_tests(_truvoice):
 	before = player.total
 	marks.clear()
 	done.clear()
-	text = (_truvoice.markSequence(11) + "Alpha "
-	        + _truvoice.markSequence(22) + "beta "
-	        + _truvoice.markSequence(33) + "gamma.")
+	text = (_opentv.markSequence(11) + "Alpha "
+	        + _opentv.markSequence(22) + "beta "
+	        + _opentv.markSequence(33) + "gamma.")
 	audio_at_mark = []
 	orig_feed = player.feed
 
@@ -332,8 +332,8 @@ def binding_tests(_truvoice):
 		orig_feed(data, size, onDone)
 
 	player.feed = spy
-	_truvoice.speak(text)
-	_truvoice.bgQueue.join()
+	_opentv.speak(text)
+	_opentv.bgQueue.join()
 	player.feed = orig_feed
 	check(marks == [11, 22, 33], "marks arrive in order with their own values")
 	check(len(done) == 1, "the utterance still reports done")
@@ -345,71 +345,71 @@ def binding_tests(_truvoice):
 	marks.clear()
 	done.clear()
 	long_text = "This is a considerably longer sentence, " * 8
-	_truvoice.speak(long_text)
-	_truvoice.stop()
-	_truvoice.bgQueue.join()
+	_opentv.speak(long_text)
+	_opentv.stop()
+	_opentv.bgQueue.join()
 	check(player.stopped >= 1, "cancelling stops the player")
 
 	# and the synth still works afterwards
 	after = player.total
-	_truvoice.speak("Still here.")
-	_truvoice.bgQueue.join()
+	_opentv.speak("Still here.")
+	_opentv.bgQueue.join()
 	check(player.total > after, "the synth still speaks after a cancel")
 
-	_truvoice.pause(True)
+	_opentv.pause(True)
 	check(player.paused is True, "pause reaches the player")
-	_truvoice.pause(False)
+	_opentv.pause(False)
 
 	# --- the escapes the driver builds ---
-	check(_truvoice.markSequence(42) == ESC + "[42i", "mark escape")
-	check(_truvoice.breakSequence(0) == ESC + "[49s", "a zero break is silence")
-	check(_truvoice.breakSequence(500) == ESC + "[99s", "500 ms break")
-	check(_truvoice.breakSequence(60000) == ESC + "[255s", "a long break is clamped")
-	check(_truvoice.punctuationSequence(True) == ESC + "[2N", "punctuation on")
-	check(_truvoice.punctuationSequence(False) == ESC + "[2F", "punctuation off")
-	check(_truvoice.pitchSequence(170) == ESC + "[85p", "pitch escape is half the raw value")
-	check(_truvoice.pitchSequence(10) == ESC + "[25p", "a low pitch is clamped")
-	check(_truvoice.pitchSequence(9999) == ESC + "[200p", "a high pitch is clamped")
-	check(_truvoice.rateSequence(150) == ESC + "[150r", "rate escape")
-	check(_truvoice.rateSequence(10) == ESC + "[46r",
+	check(_opentv.markSequence(42) == ESC + "[42i", "mark escape")
+	check(_opentv.breakSequence(0) == ESC + "[49s", "a zero break is silence")
+	check(_opentv.breakSequence(500) == ESC + "[99s", "500 ms break")
+	check(_opentv.breakSequence(60000) == ESC + "[255s", "a long break is clamped")
+	check(_opentv.punctuationSequence(True) == ESC + "[2N", "punctuation on")
+	check(_opentv.punctuationSequence(False) == ESC + "[2F", "punctuation off")
+	check(_opentv.pitchSequence(170) == ESC + "[85p", "pitch escape is half the raw value")
+	check(_opentv.pitchSequence(10) == ESC + "[25p", "a low pitch is clamped")
+	check(_opentv.pitchSequence(9999) == ESC + "[200p", "a high pitch is clamped")
+	check(_opentv.rateSequence(150) == ESC + "[150r", "rate escape")
+	check(_opentv.rateSequence(10) == ESC + "[46r",
 		"a low rate is clamped to the first table row")
-	check(_truvoice.rateSequence(9999) == ESC + "[400r",
+	check(_opentv.rateSequence(9999) == ESC + "[400r",
 		"a high rate is clamped to the last row OpenTV adds")
 
 	def audioOf(text, **kw):
 		start = len(player.data)
-		_truvoice.speak(text, **kw)
-		_truvoice.bgQueue.join()
+		_opentv.speak(text, **kw)
+		_opentv.bgQueue.join()
 		return player.data[start:]
 
 	# --- output rate ---
 	# The engine has three, each with its own resonator tables.  16 kHz is
 	# OpenTV's: the original only ever shipped 8 kHz and 11.025.
-	check(_truvoice.sampleRateHz(0) == 8000 and _truvoice.sampleRateHz(1) == 11025
-		and _truvoice.sampleRateHz(2) == 16000, "three output rates")
-	check(_truvoice.getSampleRate() == 1, "11 kHz is the default")
+	check(_opentv.sampleRateHz(0) == 8000 and _opentv.sampleRateHz(1) == 11025
+		and _opentv.sampleRateHz(2) == 16000, "three output rates")
+	check(_opentv.getSampleRate() == 1, "11 kHz is the default")
 	before = len(player.data)
-	check(_truvoice.setSampleRate(2), "switching to 16 kHz is accepted")
-	check(_truvoice.getSampleRate() == 2, "and takes effect")
-	check(_truvoice.player.kw.get("samplesPerSec") == 16000,
+	check(_opentv.setSampleRate(2), "switching to 16 kHz is accepted")
+	check(_opentv.getSampleRate() == 2, "and takes effect")
+	check(_opentv.player.kw.get("samplesPerSec") == 16000,
 		"the player is reopened at the new rate")
-	_truvoice.speak("Hello world.")
-	_truvoice.bgQueue.join()
-	check(len(_truvoice.player.data) > 0, "and it still speaks")
-	check(_truvoice.setSampleRate(1), "switching back is accepted")
-	check(_truvoice.player.kw.get("samplesPerSec") == 11025, "player follows back")
-	player = _truvoice.player
+	_opentv.speak("Hello world.")
+	_opentv.bgQueue.join()
+	check(len(_opentv.player.data) > 0, "and it still speaks")
+	check(_opentv.setSampleRate(1), "switching back is accepted")
+	check(_opentv.player.kw.get("samplesPerSec") == 11025, "player follows back")
+	player = _opentv.player
 
 	# --- the rate floor ---
 	# Engine_SetSpeed does (wpm - 46) >> 3 unsigned, so below 46 the index
 	# wraps to about 0x1fffffff and the engine reads wildly.  The original
 	# crashes there too, so the setter floors it -- if it did not, this
 	# would take the test process down rather than fail.
-	_truvoice.setRate(1)
-	_truvoice.bgQueue.join()
+	_opentv.setRate(1)
+	_opentv.bgQueue.join()
 	check(len(audioOf("Hello world.")) > 0, "an absurdly low rate does not crash")
-	_truvoice.setRate(_truvoice.voiceRate(0))
-	_truvoice.bgQueue.join()
+	_opentv.setRate(_opentv.voiceRate(0))
+	_opentv.bgQueue.join()
 
 	# --- what the letter bug actually is ---
 	# The engine names a letter given on its own.  It stops doing so as soon
@@ -431,7 +431,7 @@ def binding_tests(_truvoice):
 	check(len(done) == 1, "and the utterance still reports done")
 
 	# --- an inline prosody escape outlives its utterance ---
-	pitch0, rate0 = _truvoice.voicePitch(0), _truvoice.voiceRate(0)
+	pitch0, rate0 = _opentv.voicePitch(0), _opentv.voiceRate(0)
 	base = audioOf("Hello world.")
 	raised = audioOf(ESC + "[150p" + "Hello world.")
 	check(raised != base, "an inline pitch escape changes the audio")
@@ -447,37 +447,37 @@ def binding_tests(_truvoice):
 # ---- the driver ------------------------------------------------------------
 
 
-def driver_tests(_truvoice, commands):
-	from synthDrivers import truvoice
+def driver_tests(_opentv, commands):
+	from synthDrivers import opentv
 
 	sent = []
 	fired = []
-	real_speak = _truvoice.speak
+	real_speak = _opentv.speak
 
 	def fake_speak(text, trailingMarks=(), restore=None):
 		sent.append((text, list(trailingMarks), restore))
 
-	_truvoice.speak = fake_speak
+	_opentv.speak = fake_speak
 
 	# speak() reads only these four, so the class need not be constructed --
 	# that would want NVDA's whole settings stack.
 	driver = types.SimpleNamespace(
 		_enginePitch=85,
 		_engineRate=150,
-		_escapeText=truvoice.SynthDriver._escapeText,
+		_escapeText=opentv.SynthDriver._escapeText,
 		_onIndexReached=fired.append,
 	)
 
 	def say(sequence):
 		sent.clear()
 		fired.clear()
-		truvoice.SynthDriver.speak(driver, sequence)
+		opentv.SynthDriver.speak(driver, sequence)
 		return sent[0] if sent else None
 
 	# Pitch is absolute: picking a voice must move the slider to where that
 	# voice sits, rather than leaving it reading 50% for all ten.
-	pitches = [_truvoice.voicePitch(i) for i in range(10)]
-	percents = [truvoice._pitchToPercent(v) for v in pitches]
+	pitches = [_opentv.voicePitch(i) for i in range(10)]
+	percents = [opentv._pitchToPercent(v) for v in pitches]
 	check(len(set(percents)) == len(set(pitches)),
 		"each voice's pitch maps to its own slider position")
 	check(max(percents) - min(percents) > 50,
@@ -486,7 +486,7 @@ def driver_tests(_truvoice, commands):
 	# Wanda is pitch the engine can reach and no stock voice uses.
 	check(max(percents) < 75,
 		"the slider keeps headroom above the highest voice")
-	check(truvoice._pitchFromPercent(100) > max(pitches) * 2,
+	check(opentv._pitchFromPercent(100) > max(pitches) * 2,
 		"and that headroom is worth having")
 	check([p for _, p in sorted(zip(pitches, percents))] == sorted(percents),
 		"a higher pitch always reads as a higher position")
@@ -495,14 +495,14 @@ def driver_tests(_truvoice, commands):
 	# The slider is 101 steps over a ten-fold range, so one step is about
 	# 2.3% -- a few units at the top.  A voice picked and left alone still
 	# gets its exact pitch; this only bounds what moving the slider costs.
-	check(all(abs(truvoice._pitchFromPercent(truvoice._pitchToPercent(v)) - v)
+	check(all(abs(opentv._pitchFromPercent(opentv._pitchToPercent(v)) - v)
 			<= max(2, v // 20) for v in pitches),
 		"percent and pitch round-trip within a step")
 	# 50..500 is what stage 2 clamps to, and 500 is the largest pitch
 	# whose half still fits the byte it is stored in.
-	check(truvoice._pitchFromPercent(0) == 50,
+	check(opentv._pitchFromPercent(0) == 50,
 		"the bottom of the slider is the engine's lowest pitch")
-	check(truvoice._pitchFromPercent(100) == 500,
+	check(opentv._pitchFromPercent(100) == 500,
 		"and the top is its highest")
 
 	# --- every declared setting must actually resolve --------------------
@@ -511,13 +511,13 @@ def driver_tests(_truvoice, commands):
 	# which lowercases the rest of the id.  A setting whose accessors are
 	# named even slightly wrong raises there, and the whole dialog fails to
 	# open.  That shipped once; this is here so it cannot again.
-	real_init = _truvoice.initialize
-	_truvoice.initialize = lambda cb: None
+	real_init = _opentv.initialize
+	_opentv.initialize = lambda cb: None
 	try:
-		synth = truvoice.SynthDriver()
+		synth = opentv.SynthDriver()
 	finally:
-		_truvoice.initialize = real_init
-	for setting in truvoice.SynthDriver.supportedSettings:
+		_opentv.initialize = real_init
+	for setting in opentv.SynthDriver.supportedSettings:
 		sid = getattr(setting, "id", setting)
 		if not isinstance(sid, str):
 			continue
@@ -542,7 +542,7 @@ def driver_tests(_truvoice, commands):
 	# ids are prefixed now so that adding one later does not renumber anyone's
 	# saved voice, and so NVDA can pick a voice by language.
 	voices = synth.availableVoices
-	codes = [_truvoice.language(k) for k in range(_truvoice.languageCount())]
+	codes = [_opentv.language(k) for k in range(_opentv.languageCount())]
 	want = ["%s:%d" % (c, k) for c in codes for k in range(10)]
 	check(list(voices) == want, "voices are keyed language:index")
 	check(all(v.language in codes for v in voices.values()),
@@ -559,7 +559,7 @@ def driver_tests(_truvoice, commands):
 	# English; migrating it keeps people on the voice they chose.
 	synth.voice = "3"
 	check(synth.voice == "en:3", "a bare saved index migrates to English")
-	check(synth._voiceRate() == _truvoice.voiceRate(3),
+	check(synth._voiceRate() == _opentv.voiceRate(3),
 		"and really selects that voice")
 	synth.voice = "en:5"
 	check(synth.voice == "en:5", "a prefixed id is taken as it is")
@@ -570,7 +570,7 @@ def driver_tests(_truvoice, commands):
 		check(synth.voice == "es:2", "a voice of another language selects")
 		check(synth._voiceIndex("es:2") == 12,
 			"and reaches the library's own index for it")
-		check(synth._voiceRate() == _truvoice.voiceRate(12),
+		check(synth._voiceRate() == _opentv.voiceRate(12),
 			"so its defaults come from the right engine")
 	synth.voice = "zz:99"
 	check(synth.voice == "en:0", "an unknown voice falls back to the first")
@@ -578,7 +578,7 @@ def driver_tests(_truvoice, commands):
 	# The rate slider used to reach 400 wpm, well past the 26th and last row
 	# of the engine's rate table, so its top third made speech slower and
 	# stranger rather than faster.
-	rates = [truvoice._fromPercent(pct, truvoice.MIN_WPM, truvoice.MAX_WPM, 150)
+	rates = [opentv._fromPercent(pct, opentv.MIN_WPM, opentv.MAX_WPM, 150)
 		for pct in range(101)]
 	check(all(46 <= wpm <= 400 for wpm in rates),
 		"every rate slider position lands inside the rate table")
@@ -593,14 +593,14 @@ def driver_tests(_truvoice, commands):
 	driver._voice = "0"
 	moved = []
 	for i in (0, 1, 8):
-		pitch = _truvoice.voicePitch(i)
-		moved.append(truvoice._pitchToPercent(pitch))
+		pitch = _opentv.voicePitch(i)
+		moved.append(opentv._pitchToPercent(pitch))
 	check(len(set(moved)) == 3,
 		"Peter, Sidney and Wanda each report a different slider position")
 	check(moved[1] < moved[0] < moved[2],
 		"lowest voice lowest, highest voice highest")
 
-	check(commands.CharacterModeCommand not in truvoice.SynthDriver.supportedCommands,
+	check(commands.CharacterModeCommand not in opentv.SynthDriver.supportedCommands,
 	      "the driver no longer claims character mode")
 
 	# The sequence NVDA sends for a typed capital, verbatim in shape:
@@ -651,7 +651,7 @@ def driver_tests(_truvoice, commands):
 	text, trailing, restore = say(["a" + ESC + "[2Nb"])
 	check(ESC not in text, "an escape in the text is neutralised")
 
-	_truvoice.speak = real_speak
+	_opentv.speak = real_speak
 
 
 def main():
@@ -661,15 +661,15 @@ def main():
 	install_stubs()
 	commands = install_driver_stubs()
 	sys.path.insert(0, ADDON)
-	from synthDrivers import _truvoice
+	from synthDrivers import _opentv
 
-	check(_truvoice.isAvailable(), "the library is where the driver expects it")
-	binding_tests(_truvoice)
+	check(_opentv.isAvailable(), "the library is where the driver expects it")
+	binding_tests(_opentv)
 	print()
-	driver_tests(_truvoice, commands)
+	driver_tests(_opentv, commands)
 
-	_truvoice.terminate()
-	check(_truvoice.synth is None, "terminate tears the synth down")
+	_opentv.terminate()
+	check(_opentv.synth is None, "terminate tears the synth down")
 
 	print("all passed" if not failures else "FAILED")
 	return 1 if failures else 0

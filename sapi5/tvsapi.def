@@ -1,0 +1,11 @@
+; The four exports a COM in-process server has, and nothing else: the engine
+; is linked into this DLL statically, and none of its symbols are anyone's
+; business from outside.  The names must be undecorated, which is what this
+; file is for -- at 32 bits __stdcall would otherwise export them as
+; _DllGetClassObject@12 and regsvr32 would not find them.
+LIBRARY tvsapi
+EXPORTS
+    DllCanUnloadNow PRIVATE
+    DllGetClassObject PRIVATE
+    DllRegisterServer PRIVATE
+    DllUnregisterServer PRIVATE

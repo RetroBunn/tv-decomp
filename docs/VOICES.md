@@ -238,10 +238,11 @@ index.
 
 ## The other language DLLs
 
-Out of scope for the decompilation, which targets American English only.
-They share the *voice* layout, and `tools/voicedump.py` reads them all, but
-they are not the same engine and this is worth knowing before assuming a
-language can be added by swapping data.
+American English and Castilian Spanish are decompiled; French, German and
+Italian are not, yet.  All five share the *voice* layout, and
+`tools/voicedump.py` reads them all, but English is not the same engine as the
+other four, and that is worth knowing before assuming a language can be added
+by swapping data.
 
 ### English is a different generation
 
@@ -309,6 +310,48 @@ other throughout.  French is the only one that was genuinely retuned:
 eight voices, and only two of its eight rows match any English row -- the
 all-zero baseline, and Henri, who is Alex unchanged.  Its speed table also
 differs (160 wpm against 150, and 150 for the elderly voice against 120).
+
+### What the 1995 engine kept, and what it reads
+
+Now that Spanish is decompiled the comparison can go further than the
+adjustment table.  `python tools/voicedump.py --compare TruVoice/CGRM_EN.DLL
+TruVoice/CGRM_ES.DLL` walks the whole block field by field, and **277 of the
+280 per-voice values are identical**.  The layout is identical too: the same
+fourteen tables in the same order at the same offsets.
+
+The three differing rows differ in exactly one of their fifteen columns each:
+
+| voice | column | EN | ES | and so |
+|---|---|---|---|---|
+| 6, Melvin / Rogelio | `p19` | 8 | 10 | `par[19] = adj[14]`, written outright |
+| 8, Wanda / Josefa | `p2+` | 15 | 21 | 6 more on track 2, to the same `0x6b` clamp |
+| 9, Julia / Isabel | `F3%` | 21 | 17 | Isabel's third formant scales 4 points less |
+
+Track 2 is the aspiration amplitude -- `es/prosody.c` turns it into
+`filt_coef[16]` through `g_par0_a`, and `es/generate.c` mixes it in as
+`((noise * coef[16]) >> 15) + t` -- so of the three, the audible one is that
+Josefa is breathier than Wanda.  All thirteen tables after the adjustment block
+are byte-identical.
+
+Three of those thirteen are also *dead*.  Every absolute address in a DLL's
+code carries a base relocation, and in both DLLs every relocation pointing into
+the voice block points at a table's first element -- nothing reaches the block
+through a base pointer, and nothing outside `.text` points into it at all -- so
+the relocations settle which tables the code reads:
+
+| table | refs in CGRM_EN | refs in CGRM_ES |
+|---|---|---|
+| `breath` | 1 | **0** |
+| `f4max` | 2 | **0** |
+| `pitch_scale` | 2 | **0** |
+
+`breath`, `f4max` and `pitch_scale` sit in CGRM_ES holding the English values
+and are read by nothing.  The 1995 engine was handed the voice block wholesale
+and wires up eleven of its fourteen tables.  Two cost nothing, being uniform
+even in English -- `f4max` is 4090 for all ten voices and `pitch_scale` 32766.
+`breath` is the real loss: it is the one of the three that varies by voice
+(0, 2, -80, -22, 11, -42, 26, -85, -85, -36, the same in both DLLs), so the
+Spanish voices are missing a breathiness axis that their own data describes.
 
 ## 16 kHz, which the original never had
 

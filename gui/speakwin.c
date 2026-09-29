@@ -822,7 +822,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmd, int show)
     g_wave_event = CreateEventW(NULL, FALSE, FALSE, NULL);
     g_synth = tvtts_create(11025);
     if (g_synth == NULL) {
-        MessageBoxW(NULL, L"The TruVoice engine could not be started.",
+        MessageBoxW(NULL, L"The OpenTV engine could not be started.",
                     L"OpenTV Speak", MB_ICONERROR | MB_OK);
         return 1;
     }

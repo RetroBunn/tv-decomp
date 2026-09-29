@@ -5,6 +5,7 @@ __iob_func
 _fileno
 _setmode
 _snprintf
+_snwprintf
 _stricmp
 _strnicmp
 _vsnprintf
@@ -80,3 +81,6 @@ toupper
 vfprintf
 vprintf
 vsprintf
+wcscmp
+wcslen
+wcsncat

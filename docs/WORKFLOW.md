@@ -18,11 +18,16 @@ binaries are not part of this repository; place your own copy in
 | `python tools/covgen.py ...` | grows `tests/corpus/` by keeping only generated lines that reach new blocks |
 | `sh harness/build.sh` | builds `tvh.exe` (oracle), `tvh_hook.exe` (decompiled code hooked in), `tv.exe` (standalone), `tvtts.dll` (the library) and the API tests |
 | `build/check/api_test.exe`, `api_test_dll.exe` | the library tests, statically linked and across the DLL boundary |
+| `build/check/sapi_test.exe <dll>` | drives the SAPI 5 server through its own DllGetClassObject -- no registry, no administrator |
+| `build/check/sapi_test32.exe <dll>` | the same at 32 bits, where the COM decoration differs |
 | `python tools/difftest.py [--full]` | byte-exact comparison of `tvh_hook.exe` against `tvh.exe` over the corpus |
 | `python tools/difftest.py --port [--full]` | the same comparison for `tv.exe`, the standalone build |
 | `python tools/difftest.py --port64 [--full]` | the same comparison for `tv64.exe`, the 64-bit build |
 | `python tools/difftest.py --ref` | checks all three builds against recordings of the real installed engine in `ref/` |
 | `python tools/voicedump.py [dll...]` | prints the per-voice parameter tables out of a language DLL (see docs/VOICES.md) |
+| `python tools/voicedump.py --compare A.DLL B.DLL` | prints only what differs between two DLLs' voice blocks |
+| `python tools/check_sapi_ddk.py` | checks `sapi5/sapi_ddk.h` against Microsoft's own `sapiddk.h` |
+| `makensis sapi5/installer.nsi` | builds the SAPI 5 installer (see docs/SAPI5.md) |
 | `python tools/make_addon.py [--32]` | packages the NVDA add-on (see docs/NVDA.md) |
 | `python tests/nvda_binding_test.py` | drives the add-on's binding layer with NVDA's modules stubbed |
 

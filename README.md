@@ -1,6 +1,6 @@
 # OpenTV
 
-**Open TruVoice** — a decompilation of the Centigram TruVoice text-to-speech system into portable C, verified byte-for-byte against the 1997 binary.
+**OpenTV** — a decompilation of the Centigram TruVoice text-to-speech system into portable C, verified byte-for-byte against the 1997 binary.
 
 TruVoice was a text-to-speech system that was originally developed by Centigram Communications Corp. as an evolution of the original Speech Plus Prose 2000 system, made famous by the late Stephen Hawking in 1985 up until his death in 2018.
 
@@ -18,6 +18,7 @@ add-on, at both 32 and 64 bits.
 | Verified | 335/335 configurations byte-identical, in all three builds |
 | Reference | 3/3 against audio recorded from the shipping engine |
 | Word widths | 32-bit and 64-bit, both byte-identical to the original |
+| Interfaces | a C library, an NVDA driver, and SAPI 5 voices at both word widths |
 | Remaining | SAPI 4 COM glue, config dialogs and `waveOut` playback are documented but not ported |
 
 As far as we know the 64-bit build is the first time TruVoice has ever run as
@@ -86,7 +87,7 @@ inline escapes for marks, pauses, pitch and rate. See
 python tools/make_addon.py
 ```
 
-Produces `build/truvoice-<version>.nvda-addon`. It is a native driver over
+Produces `build/bin/opentv-<version>.nvda-addon`. It is a native driver over
 the library — no SAPI anywhere — and needs NVDA 2026.1 or later.
 See [docs/NVDA.md](docs/NVDA.md).
 
@@ -214,14 +215,17 @@ ones still resolved against the DLL are eleven C runtime entries and the two
 calls the engine makes upward.  [docs/SPANISH.md](docs/SPANISH.md) ends with
 what remains and how to remeasure.
 
-Two things remain, in this order.
+The SAPI 5 interface is done, at both word widths: `sapi5/` is a COM server
+presenting all twenty voices to any SAPI application, with an NSIS installer
+beside it.  What a SAPI 5 voice has to implement was taken from Microsoft's
+published porting guide and from its own `sapiddk.h`, and
+`tools/check_sapi_ddk.py` checks the few declarations that had to be restated
+by hand against that header rather than asking to be trusted.
+[docs/SAPI5.md](docs/SAPI5.md) has the whole of it.
 
-1. **A SAPI 5 interface, 32-bit and 64-bit.**  The library already builds at
-   both word widths, so the new work is the shim rather than the engine.
-   This one waits on documentation: what a SAPI 5 voice has to implement
-   will be taken from a published specification, not written from memory.
+One thing remains.
 
-2. **French, German and Italian.**  All four 1995 engines are one build
+1. **French, German and Italian.**  All four 1995 engines are one build
    with the same layout displaced in blocks, and `tools/xmatch.py` already
    puts a confident counterpart on 454 of Spanish's 766 functions in
    Italian, 439 in French and 423 in German -- before `--near` is used at
@@ -238,6 +242,7 @@ Two things remain, in this order.
 | [docs/NVDA.md](docs/NVDA.md) | the add-on, and the engine quirks a driver has to handle |
 | [docs/VOICES.md](docs/VOICES.md) | voices, the 22 parameter tracks, phoneme input |
 | [docs/SPANISH.md](docs/SPANISH.md) | the second engine, and how far it has got |
+| [docs/SAPI5.md](docs/SAPI5.md) | the SAPI 5 voices, and the two traps that cost time |
 | [docs/SPEAKWIN.md](docs/SPEAKWIN.md) | the speak window, and how it stays accessible |
 
 ## Licence

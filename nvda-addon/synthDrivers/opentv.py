@@ -1,11 +1,11 @@
-# TruVoice for NVDA.
+# OpenTV for NVDA.
 # This file is covered by the GNU General Public License, version 2 or later.
 
-"""Centigram TruVoice, as a native NVDA synthesizer.
+"""OpenTV, as a native NVDA synthesizer.
 
 The engine is a decompilation of the SAPI 4 original, built as an ordinary DLL,
 so none of SAPI is in the way: no COM, no registry, no bridge process.  See the
-OpenTV project for what that means and how it is verified.
+project README for what that means and how it is verified.
 
 The library carries one engine per language it has been taught -- they are not
 variants of one engine but separate decompilations of separate DLLs, two years
@@ -52,7 +52,7 @@ from synthDriverHandler import (
 	synthIndexReached,
 )
 
-from . import _truvoice
+from . import _opentv
 
 #: Words per minute at 0% and 100%.  The engine's own rate table has 26
 #: rows, 46..253 wpm picked by (wpm - 46) // 8, and above them it read
@@ -99,8 +99,8 @@ def _pitchToPercent(pitch: int) -> int:
 
 
 class SynthDriver(SynthDriver):
-	name = "truvoice"
-	description = "Centigram TruVoice"
+	name = "opentv"
+	description = "OpenTV"
 
 	supportedSettings = (
 		SynthDriver.VoiceSetting(),
@@ -125,16 +125,16 @@ class SynthDriver(SynthDriver):
 
 	@classmethod
 	def check(cls) -> bool:
-		return _truvoice.isAvailable()
+		return _opentv.isAvailable()
 
 	def __init__(self):
 		super().__init__()
-		_truvoice.initialize(self._onIndexReached)
+		_opentv.initialize(self._onIndexReached)
 		# Voice id -> the index the library wants, and the ids in library order.
 		# Built once: what the library carries does not change under us.
 		self._voiceIds = {}
 		self._voiceOrder = []
-		for index, code, local, _name, _langName in _truvoice.voices():
+		for index, code, local, _name, _langName in _opentv.voices():
 			vid = "%s:%d" % (code, local)
 			self._voiceIds[vid] = index
 			self._voiceOrder.append(vid)
@@ -144,8 +144,8 @@ class SynthDriver(SynthDriver):
 		# The engine's own units, kept so a PitchCommand or RateCommand can
 		# scale from where the user actually is rather than from a default.
 		first = self._voiceIds[self._voice]
-		self._engineRate = _truvoice.voiceRate(first)
-		self._enginePitch = _truvoice.voicePitch(first)
+		self._engineRate = _opentv.voiceRate(first)
+		self._enginePitch = _opentv.voicePitch(first)
 		# Pitch is absolute, so the slider reads wherever the voice sits;
 		# setting the voice below overwrites both of these.
 		self._pitch = _pitchToPercent(self._enginePitch)
@@ -154,7 +154,7 @@ class SynthDriver(SynthDriver):
 		self.volume = self._volume
 
 	def terminate(self):
-		_truvoice.terminate()
+		_opentv.terminate()
 
 	# ---- speaking ---------------------------------------------------------
 
@@ -183,15 +183,15 @@ class SynthDriver(SynthDriver):
 				held.clear()
 				parts.append(text)
 			elif isinstance(item, IndexCommand):
-				held.append((_truvoice.markSequence(item.index), item.index))
+				held.append((_opentv.markSequence(item.index), item.index))
 			elif isinstance(item, BreakCommand):
-				held.append((_truvoice.breakSequence(item.time), None))
+				held.append((_opentv.breakSequence(item.time), None))
 			elif isinstance(item, PitchCommand):
-				held.append((_truvoice.pitchSequence(
+				held.append((_opentv.pitchSequence(
 					int(round(self._enginePitch * item.multiplier)),
 				), None))
 			elif isinstance(item, RateCommand):
-				held.append((_truvoice.rateSequence(
+				held.append((_opentv.rateSequence(
 					int(round(self._engineRate * item.multiplier)),
 				), None))
 			elif isinstance(item, CharacterModeCommand):
@@ -207,7 +207,7 @@ class SynthDriver(SynthDriver):
 			# An inline pitch or rate escape stays in effect for every later
 			# utterance on this synth, and cannot be closed with a trailing
 			# escape, so the setters put both back once the text is spoken.
-			_truvoice.speak(text, trailing, (self._enginePitch, self._engineRate))
+			_opentv.speak(text, trailing, (self._enginePitch, self._engineRate))
 		else:
 			# Nothing to say, but the caller is still owed the notifications.
 			for index in trailing:
@@ -220,10 +220,10 @@ class SynthDriver(SynthDriver):
 		return text.replace("\x1b", " ")
 
 	def cancel(self):
-		_truvoice.stop()
+		_opentv.stop()
 
 	def pause(self, switch: bool):
-		_truvoice.pause(switch)
+		_opentv.pause(switch)
 
 	def _onIndexReached(self, index: int | None):
 		if index is not None:
@@ -238,11 +238,11 @@ class SynthDriver(SynthDriver):
 	def _get_availableSamplerates(self):
 		return OrderedDict(
 			(str(i), StringParameterInfo(str(i), label))
-			for i, _hz, label in _truvoice.SAMPLE_RATES
+			for i, _hz, label in _opentv.SAMPLE_RATES
 		)
 
 	def _get_samplerate(self) -> str:
-		which = _truvoice.getSampleRate()
+		which = _opentv.getSampleRate()
 		return str(which if which >= 0 else 1)
 
 	def _set_samplerate(self, value: str):
@@ -250,8 +250,8 @@ class SynthDriver(SynthDriver):
 			which = int(value)
 		except (TypeError, ValueError):
 			return
-		if any(which == i for i, _hz, _label in _truvoice.SAMPLE_RATES):
-			_truvoice.setSampleRate(which)
+		if any(which == i for i, _hz, _label in _opentv.SAMPLE_RATES):
+			_opentv.setSampleRate(which)
 
 	def _getAvailableVoices(self) -> OrderedDict[str, VoiceInfo]:
 		"""Voices keyed "<language>:<index>", each tagged with its language.
@@ -262,7 +262,7 @@ class SynthDriver(SynthDriver):
 		carries the language too, because the list runs across all of them.
 		"""
 		voices = OrderedDict()
-		for _index, code, local, name, langName in _truvoice.voices():
+		for _index, code, local, name, langName in _opentv.voices():
 			vid = "%s:%d" % (code, local)
 			voices[vid] = VoiceInfo(vid, "%s (%s)" % (name, langName), code)
 		return voices
@@ -277,7 +277,7 @@ class SynthDriver(SynthDriver):
 		"""
 		value = str(value)
 		return value if ":" in value else "%s:%s" % (
-			_truvoice.DEFAULT_LANGUAGE, value)
+			_opentv.DEFAULT_LANGUAGE, value)
 
 	def _voiceIndex(self, value: str) -> int:
 		"""The index the library wants for one of our ids.
@@ -295,7 +295,7 @@ class SynthDriver(SynthDriver):
 		if value not in self.availableVoices:
 			value = self._voiceOrder[0]
 		self._voice = value
-		_truvoice.setVoice(self._voiceIndex(value))
+		_opentv.setVoice(self._voiceIndex(value))
 		# Rate is relative to the voice's own default, so re-apply the
 		# percentage against the new default rather than the old one.
 		self.rate = self._rate
@@ -303,13 +303,13 @@ class SynthDriver(SynthDriver):
 		# follows it.  The engine value is taken from the table rather
 		# than back through the percentage, which would round it: a voice
 		# picked and left alone sounds exactly as it should.
-		self._enginePitch = _truvoice.voicePitch(self._voiceIndex(value))
+		self._enginePitch = _opentv.voicePitch(self._voiceIndex(value))
 		self._pitch = _pitchToPercent(self._enginePitch)
-		_truvoice.setPitch(self._enginePitch)
+		_opentv.setPitch(self._enginePitch)
 
 	def _voiceRate(self) -> int:
 		"""The current voice's own words per minute, which 50% maps to."""
-		return _truvoice.voiceRate(self._voiceIndex(self._voice))
+		return _opentv.voiceRate(self._voiceIndex(self._voice))
 
 	# ---- rate, pitch, volume ---------------------------------------------
 
@@ -320,7 +320,7 @@ class SynthDriver(SynthDriver):
 		self._rate = max(0, min(100, percent))
 		wpm = self._voiceRate()
 		self._engineRate = _fromPercent(self._rate, MIN_WPM, MAX_WPM, wpm)
-		_truvoice.setRate(self._engineRate)
+		_opentv.setRate(self._engineRate)
 
 	def _get_pitch(self) -> int:
 		return self._pitch
@@ -328,11 +328,11 @@ class SynthDriver(SynthDriver):
 	def _set_pitch(self, percent: int):
 		self._pitch = max(0, min(100, percent))
 		self._enginePitch = _pitchFromPercent(self._pitch)
-		_truvoice.setPitch(self._enginePitch)
+		_opentv.setPitch(self._enginePitch)
 
 	def _get_volume(self) -> int:
 		return self._volume
 
 	def _set_volume(self, percent: int):
 		self._volume = max(0, min(100, percent))
-		_truvoice.setVolume(int(self._volume * 0xFFFF / 100))
+		_opentv.setVolume(int(self._volume * 0xFFFF / 100))

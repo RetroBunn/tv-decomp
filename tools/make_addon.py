@@ -28,7 +28,7 @@ def main():
 
     manifest = open(os.path.join(SRC, "manifest.ini"), encoding="utf-8").read()
     m = re.search(r"^version\s*=\s*(\S+)", manifest, re.M)
-    version = m.group(1) if m else "0.0.0"
+    version = m.group(1) if m else "0.0"
 
     stage = os.path.join(OBJ, "addon")
     shutil.rmtree(stage, ignore_errors=True)
@@ -39,7 +39,7 @@ def main():
     # package never has to know which one it got.
     shutil.copy2(dll, os.path.join(stage, "synthDrivers", "tvtts.dll"))
 
-    name = "truvoice-%s%s.nvda-addon" % (version, "" if bits == 64 else "-x86")
+    name = "opentv-%s%s.nvda-addon" % (version, "" if bits == 64 else "-x86")
     os.makedirs(OUT, exist_ok=True)
     path = os.path.join(OUT, name)
     with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:

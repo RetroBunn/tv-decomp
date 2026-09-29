@@ -4,7 +4,7 @@
 no COM, no registry entries, and no bridge process.
 
 ```
-python tools/make_addon.py          ->  build/truvoice-0.1.0.nvda-addon
+python tools/make_addon.py          ->  build/bin/opentv-<version>.nvda-addon
 python tools/make_addon.py --32     ->  the same, for a 32-bit host
 ```
 
@@ -26,9 +26,9 @@ process.
 
 ## How it is put together
 
-`synthDrivers/_truvoice.py` is the binding: ctypes over `tvtts.dll`, a
+`synthDrivers/_opentv.py` is the binding: ctypes over `tvtts.dll`, a
 background thread, and NVDA's `nvwave.WavePlayer`.  `synthDrivers/
-truvoice.py` is the `SynthDriver` NVDA talks to.  The split follows NVDA's
+opentv.py` is the `SynthDriver` NVDA talks to.  The split follows NVDA's
 own eSpeak driver, which was the model for the threading and for how index
 marks reach the user.
 
@@ -227,7 +227,7 @@ pitch would therefore stay raised for good.
 It cannot be closed with a trailing escape, for the reason above, and it
 should not be: `ESC[<n>p` carries half the pitch, so restoring an odd pitch
 that way lands a unit low and stays there.  Instead the driver hands
-`_truvoice.speak` the pitch and rate to restore, and the setters put both
+`_opentv.speak` the pitch and rate to restore, and the setters put both
 back exactly once the text has been spoken.
 
 An ESC in the text itself would start a command, so `speak` replaces any
@@ -249,5 +249,5 @@ NVDA's own capital -- raise pitch, letter, close pitch -- leaves the letter
 last and restores through the setters.
 It needs a 64-bit Python, since that is the library it loads.
 
-What it does not cover is `truvoice.py` itself, which needs NVDA's speech
+What it does not cover is `opentv.py` itself, which needs NVDA's speech
 machinery to import, and real audio output.  Those want NVDA.

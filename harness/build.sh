@@ -45,7 +45,7 @@ CFLAGS="-m32 -std=gnu11 -O2 -g -Wall -Wno-unused-function -D__USE_MINGW_ANSI_STD
   -fno-asynchronous-unwind-tables -fno-stack-protector -fno-builtin-printf -fwrapv -fno-strict-aliasing \
   -Iharness"
 
-for lib in kernel32 msvcrt user32; do
+for lib in kernel32 msvcrt user32 ole32 advapi32; do
   if [ ! -f "$RT/lib$lib.a" ] || [ "harness/rt/$lib.def" -nt "$RT/lib$lib.a" ]; then
     dlltool -m i386 --as-flags=--32 -k -d "harness/rt/$lib.def" -l "$RT/lib$lib.a"
   fi
@@ -202,6 +202,23 @@ echo "built $OUT/tvtts.dll"
 ld -m i386pe --subsystem console -e _mainCRTStartup@0 --stack 0x800000   --disable-dynamicbase --disable-reloc-section   -o "$CHECK/api_test_dll.exe" "$PORT/obj/api_test.o" $RT_MIN   "$OUT/libtvtts.a" "$RT/libmsvcrt.a" "$RT/libkernel32.a"
 echo "built $CHECK/api_test_dll.exe"
 
+# --- the SAPI 5 voice, 32-bit ------------------------------------------------
+# A COM in-process server with the engine linked into it rather than beside it:
+# a COM DLL is loaded by full path and its own directory is not searched for
+# dependents, so one that needed tvtts.dll next to it would load in some hosts
+# and not others.  Only the four COM entry points are exported.
+gcc $CFLAGS -Isapi5 -Iinclude -c sapi5/tvsapi.c -o "$PORT/obj/tvsapi.o"
+ld -m i386pe --shared --subsystem console -e _DllMainCRTStartup@12   --disable-dynamicbase --disable-reloc-section --enable-stdcall-fixup   -o "$OUT/tvsapi.dll"   "$PORT/obj/tvsapi.o" "$PORT/obj/dllmain.o" $LIB_OBJS   "$RT/libgcc32.o" "$RT/chkstk.o" "$RT/libmsvcrt.a" "$RT/libkernel32.a"   "$RT/libole32.a" "$RT/libadvapi32.a"   sapi5/tvsapi.def
+echo "built $OUT/tvsapi.dll"
+
+# The same server test as at 64 bits, built freestanding against the same
+# import libraries.  32 bits is where a COM vtable can go wrong on its own --
+# __stdcall decoration, and the export names regsvr32 looks for -- so it is
+# worth running here rather than assuming the 64-bit pass covers it.
+gcc $CFLAGS -Isapi5 -c sapi5/sapi_test.c -o "$PORT/obj/sapi_test.o"
+ld -m i386pe --subsystem console -e _mainCRTStartup@0 --stack 0x800000   --disable-dynamicbase --disable-reloc-section   -o "$CHECK/sapi_test32.exe" "$PORT/obj/sapi_test.o" $RT_MIN   "$RT/libmsvcrt.a" "$RT/libkernel32.a" "$RT/libole32.a" "$RT/libadvapi32.a"
+echo "built $CHECK/sapi_test32.exe"
+
 # --- 64-bit ---------------------------------------------------------------
 # The first 64-bit TruVoice.  Nothing freestanding here: at 64 bits a normal
 # hosted toolchain is available, so this is an ordinary gcc build against the
@@ -249,6 +266,18 @@ gcc -m64 -shared -o "$OUT/tvtts64.dll" $LIB64 \
   -Wl,--out-implib,"$OUT/libtvtts64.a" harness/rt/tvtts.def
 echo "built $OUT/tvtts64.dll"
 
+# --- the SAPI 5 voice, 64-bit, and the test that drives it ------------------
+# 64-bit SAPI applications need a 64-bit voice and 32-bit ones a 32-bit voice,
+# so both are built; each registers tokens naming a server of its own width.
+gcc $CF64 -Isapi5 -c sapi5/tvsapi.c -o "$P64/obj/tvsapi.o"
+gcc -m64 -shared -o "$OUT/tvsapi64.dll" "$P64/obj/tvsapi.o" $LIB64   sapi5/tvsapi.def -lole32 -ladvapi32
+echo "built $OUT/tvsapi64.dll"
+
+# The server driven through its own DllGetClassObject, with a site and a token
+# of the test's own -- so it needs no registry entries and no administrator.
+gcc -m64 -std=gnu11 -O2 -Wall -Wextra -Isapi5 -o "$CHECK/sapi_test.exe"   sapi5/sapi_test.c -lole32 -luuid -ladvapi32
+echo "built $CHECK/sapi_test.exe"
+
 # --- the speak window ---------------------------------------------------------
 # A Win32 GUI over the library: type text, pick a voice, hear it, save a WAV.
 # Built 64-bit against tvtts64.dll with an ordinary hosted toolchain -- none of
@@ -264,11 +293,14 @@ echo "built $OUT/speakwin.exe"
 # back.  This is the part worth reading: what exists now and where.
 echo
 echo "Ready to use, in $OUT:"
-for f in tvtts.dll tvtts64.dll speakwin.exe; do
+for f in tvtts.dll tvtts64.dll tvsapi.dll tvsapi64.dll speakwin.exe; do
   [ -f "$OUT/$f" ] && echo "    $f"
 done
 echo "  link against it with $OUT/libtvtts.a or $OUT/libtvtts64.a"
 echo "  the NVDA add-on is a separate step: python tools/make_addon.py"
+echo "  the SAPI voices are registered by the installer, or by hand:"
+echo "    regsvr32 $OUT/tvsapi64.dll   (64-bit applications)"
+echo "    regsvr32 $OUT/tvsapi.dll     (32-bit, needs the 32-bit regsvr32)"
 echo
 echo "Verification binaries, in $CHECK: $(ls "$CHECK" | tr '\n' ' ')"
 echo "  run them with python tools/difftest.py"
