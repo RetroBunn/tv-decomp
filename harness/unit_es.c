@@ -1368,9 +1368,15 @@ static int unit_params(void)
         0, 1, 2, 25, 42, 50, 84, 85, 100, 200, 400, 0x7fffffffu,
         0x80000000u, 0xffffffffu,
     };
-    static const uint32_t VOICE[] = {
-        0, 1, 5, 8, 9, 10, 11, 0x7fffffffu, 0x80000000u, 0xffffffffu,
-    };
+    /* Built at run time rather than written down, because what belongs in it
+     * depends on how many voices OpenTV defines.  The DLL's ten, which have to
+     * agree exactly, then the first number past the voices this engine has,
+     * which both refuse, then the three faults.  The numbers between ten and
+     * that one are OpenTV's own (es/voices.c): the DLL refuses them silently
+     * and there is nothing to compare its behaviour against, which is the whole
+     * point of the bound es/params.c lifts. */
+    uint32_t VOICE[ES_STOCK_VOICES + 4];
+    int nvoice = 0;
     /* every wpm the parameter accepts, and the two faults either side of it:
      * below 46 the shift wraps unsigned, above 254 the index runs off the
      * 26-row table.  The setter only stores, so both are safe to call. */
@@ -1392,12 +1398,19 @@ static int unit_params(void)
     speed[406] = 254;
     speed[407] = 255;
 
+    for (i = 0; i < ES_STOCK_VOICES; i++)
+        VOICE[nvoice++] = (uint32_t)i;
+    VOICE[nvoice++] = (uint32_t)(ES_STOCK_VOICES + es_extra_voice_count);
+    VOICE[nvoice++] = 0x7fffffffu;
+    VOICE[nvoice++] = 0x80000000u;
+    VOICE[nvoice++] = 0xffffffffu;
+
     bad |= cmp_set("Engine_SetPitch", 0x10008a40, (set_fn)Engine_SetPitch,
                    PITCH, (int)(sizeof PITCH / sizeof PITCH[0]));
     bad |= cmp_set("Engine_SetSpeed", 0x10008a70, (set_fn)Engine_SetSpeed,
                    speed, 408);
     bad |= cmp_set("Engine_SetVoice", 0x10008b10, (set_fn)Engine_SetVoice,
-                   VOICE, (int)(sizeof VOICE / sizeof VOICE[0]));
+                   VOICE, nvoice);
 
     vol = (uint32_t *)malloc(0x2200 * sizeof *vol);
     if (vol == NULL) {

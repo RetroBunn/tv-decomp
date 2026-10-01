@@ -690,6 +690,25 @@ int en_speak_bytes(void *vs, const void *text, uint32_t len,
      */
     if (tv_ext_sing && len != 0)
         len = (uint32_t)tv_phone_commands(buf, len);
+    /*
+     * And `CamelCase` read as the words it is made of, which the engine has no
+     * notion of.  After the command rewrite, never before: before, it splits
+     * the command's own name and then the phoneme text the command introduces.
+     */
+    if ((tvtts_get_extensions() & TVTTS_EXT_CAMEL) && len != 0) {
+        uint32_t add = (uint32_t)tv_camel_split(buf, len, NULL);
+
+        if (add != 0) {
+            char *wide = (char *)malloc(len + add + (uint32_t)s->nuls + 1);
+
+            if (wide != NULL) {
+                tv_camel_split(buf, len, wide);
+                free(buf);
+                buf = wide;
+                len += add;
+            }
+        }
+    }
     memset(buf + len, 0, (size_t)s->nuls + 1);
     textlen = len + (uint32_t)s->nuls;
 

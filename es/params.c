@@ -128,7 +128,13 @@ void TV_THISCALL Engine_SetVoice(Engine *self, uint32_t voice)
 {
     int i;
 
-    if (voice >= 10)
+    /*
+     * OpenTV: the stock ten, plus any of our own.  The original bound is 10 and
+     * it fails *silently* -- a voice past it leaves the engine on whichever one
+     * it was already using, so a custom voice that is not let through here
+     * simply sounds like its predecessor and nothing says why.
+     */
+    if (voice >= (uint32_t)(ES_STOCK_VOICES + es_extra_voice_count))
         return;
     self->voice = (int32_t)voice;
     for (i = 0; i < 5; i++)

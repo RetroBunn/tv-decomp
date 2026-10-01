@@ -134,7 +134,7 @@ void TV_THISCALL Prosody_Build(Engine *self)
 
     row = (par[21] & 0xf0) >> 4;
     par[17] *= 2;
-    adj = &g_voice_adj[15 * row];
+    adj = es_v_adjust(row);
     par[9] += adj[0] * par[9] / 100;
     par[13] += adj[1] * par[13] / 100;
     par[10] += adj[2] * par[10] / 100;
@@ -151,6 +151,23 @@ void TV_THISCALL Prosody_Build(Engine *self)
     par[2] += adj[12];
     if (par[2] > 0x6b)
         par[2] = 0x6b;
+
+    /*
+     * OpenTV: breathiness, as a floor rather than an offset -- the same
+     * reasoning as the English engine's, and for the same voice.  adj[12] is an
+     * offset on a curve that is flat zero low down, so on a vowel, whose track 2
+     * is 0, adding to it still asks for silence; a floor is what the parameter
+     * means.  Only while the voice is actually sounding: par[0] is the voicing
+     * amplitude, so the silence test below still sees a silent frame, and an
+     * aspirate that already asks for more keeps its own level.  A stock voice
+     * asks for 0 and nothing here runs.
+     */
+    {
+        int32_t asp = es_v_aspir(self->voice);
+
+        if (asp != 0 && par[0] != 0 && par[2] < asp)
+            par[2] = asp;
+    }
 
     /* Silence is counted so that the output stage can notice a long one. */
     if (par[0] == 0 && par[1] == 0 && par[2] == 0) {
@@ -254,7 +271,10 @@ void TV_THISCALL Prosody_Build(Engine *self)
         self->e_2070 = 2;
     }
 
-    self->filt_coef[16] = (int16_t)g_par0_a[par[2]];
+    /* OpenTV: and a custom voice's source level; a stock voice multiplies by
+     * nothing, so the path is what it was. */
+    self->filt_coef[16] =
+        (int16_t)es_v_gain(self->voice, g_par0_a[par[2]]);
     self->filt_coef[38] = (int16_t)((const int32_t *)self->syn_tab[0])[0];
     self->filt_coef[39] = (int16_t)((const int32_t *)self->syn_tab[1])[0];
     self->filt_coef[37] = (int16_t)((const int32_t *)self->syn_tab[2])[0];
@@ -326,7 +346,7 @@ void TV_THISCALL Prosody_Build(Engine *self)
                 s4 = 0x7ff;
             self->filt_coef[36] = (int16_t)((int16_t)s4 << 4);
         }
-        self->filt_coef[17] = (int16_t)g_voice_c[row];
+        self->filt_coef[17] = (int16_t)es_v_voice_c(row);
         {
             const int32_t *t8b = (const int32_t *)self->syn_tab[8];
             int32_t q = ((((par[16] & 0xfe) << 2) + 0xc0) & ~6) >> 1;

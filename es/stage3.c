@@ -307,7 +307,7 @@ void TV_THISCALL Stage3_Build(Engine *self)
 
     voice = st->voice;
     if (voice != 0) {
-        int32_t g = g_1004c7c0[voice];
+        int32_t g = es_v_c7c0(voice);
         int32_t v;
 
         v = self->trk_param[9][6];

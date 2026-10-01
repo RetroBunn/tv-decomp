@@ -398,7 +398,30 @@ TVTTS_API int TVTTS_CALL tvtts_rate_sequence(char *buf, size_t cap, int wpm);
  */
 #define TVTTS_EXT_SING  0x20u
 
-#define TVTTS_EXT_ALL   0x3fu
+/*
+ * TVTTS_EXT_CAMEL reads a word written in camel case as the words it is made
+ * of: `CamelCase` is said as `Camel Case`, `helloWorld` as `hello World`, and
+ * `HTMLParser` as `HTML Parser`.
+ *
+ * The engine has no notion of it.  A capital inside a word reaches the
+ * letter-to-sound rules and changes nothing: `CamelCase` renders byte for byte
+ * what `camelcase` renders, so the two words run together as one.  NVDA splits
+ * such words before they ever reach a driver, which is why the add-on has
+ * always sounded right and the speak window did not; this puts the same
+ * behaviour under every front end at once.
+ *
+ * The rule is the conventional one, on ASCII letters and digits: a space goes
+ * before a capital that follows a lowercase letter or a digit, and before a
+ * capital that follows another capital and is itself followed by a lowercase
+ * letter -- that second case is what keeps `HTMLParser` from becoming
+ * `H T M L Parser`.  An all-capitals word is left alone.
+ *
+ * Text only.  tvtts_speak_phonemes and tvtts_sing are not touched, because a
+ * capital means something else in the phoneme alphabet.
+ */
+#define TVTTS_EXT_CAMEL 0x40u
+
+#define TVTTS_EXT_ALL   0x7fu
 
 /*
  * How a sung note wavers, both in hundredths of a hertz: the rate, and the

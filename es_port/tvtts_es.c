@@ -47,7 +47,8 @@ extern const int32_t g_voice_speed[10];
 /* @0x100497cc */
 extern const char g_voice_names[];
 
-#define TV_VOICES 10
+/* The DLL's ten, plus any of OpenTV's own; see es/voices.c. */
+#define TV_VOICES (ES_STOCK_VOICES + (int)es_extra_voice_count)
 
 struct es_synth {
     SapiCentral host;
@@ -405,9 +406,13 @@ static const char *voice_entry(int voice)
     const char *q = g_voice_names;
     int i, pos;
 
-    if (voice < 0 || voice >= TV_VOICES)
+    /* The blob holds the DLL's ten only, and the walk counts backwards through
+     * it, so the count it counts with has to be that ten and not however many
+     * voices the library offers.  A voice of ours is named by its own
+     * definition and never reaches here. */
+    if (voice < 0 || voice >= ES_STOCK_VOICES)
         return NULL;
-    pos = voice == 0 ? 0 : TV_VOICES - voice;
+    pos = voice == 0 ? 0 : ES_STOCK_VOICES - voice;
     for (i = 0; i < pos; i++) {
         size_t n = strlen(q) + 1;          /* the ANSI name */
         q += (n + 3) & ~(size_t)3;
@@ -421,17 +426,21 @@ static const char *voice_entry(int voice)
 
 const char *es_voice_name(int voice)
 {
-    return voice_entry(voice);
+    /* A voice of this project's own carries its name in its definition; the
+     * blob voice_entry walks holds the DLL's ten and nothing else. */
+    const char *extra = es_extra_voice_name((int32_t)voice);
+
+    return extra != NULL ? extra : voice_entry(voice);
 }
 
 int es_voice_rate(int voice)
 {
-    return (voice >= 0 && voice < TV_VOICES) ? (int)g_voice_speed[voice] : -1;
+    return (voice >= 0 && voice < TV_VOICES) ? (int)es_v_speed(voice) : -1;
 }
 
 int es_voice_pitch(int voice)
 {
-    return (voice >= 0 && voice < TV_VOICES) ? (int)g_voice_pitch[voice] : -1;
+    return (voice >= 0 && voice < TV_VOICES) ? (int)es_v_pitch(voice) : -1;
 }
 
 /* ---- synthesis ----------------------------------------------------------- */
@@ -458,6 +467,22 @@ int es_speak_bytes(void *p, const void *text, uint32_t len,
         return -1;
     if (len != 0)
         memcpy(buf, text, len);
+    /* OpenTV: `CamelCase` read as the words it is made of; see tv_camel_split.
+     * Spanish has no phoneme-input command, so there is nothing to run first. */
+    if ((tvtts_get_extensions() & TVTTS_EXT_CAMEL) && len != 0) {
+        uint32_t add = (uint32_t)tv_camel_split(buf, len, NULL);
+
+        if (add != 0) {
+            char *wide = (char *)malloc(len + add + (uint32_t)s->nuls + 1);
+
+            if (wide != NULL) {
+                tv_camel_split(buf, len, wide);
+                free(buf);
+                buf = wide;
+                len += add;
+            }
+        }
+    }
     memset(buf + len, 0, (size_t)s->nuls + 1);
     textlen = len + (uint32_t)s->nuls;
 

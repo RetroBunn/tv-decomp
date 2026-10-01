@@ -537,6 +537,55 @@ hundredths of a second of silence -- `ESC[10s` is 100 ms, `ESC[30s` 299,
 adds 49 to its argument, which is right for the text path and wrong for this
 one; that is why the first attempt looked like it had a 489 ms floor.)
 
+A rest's pitch is read and thrown away, which is right: there is nothing to
+sound.  Measured, a rest between two notes is exact -- 300 ms asked gives 299,
+1000 gives 998, 2000 gives 1995 -- and a rest at the end of an utterance is a
+flat 390 ms short, which is added back; see the trim section below.
+
+### A zero length means "not said", and for a rest that is not nothing
+
+The sailor writes `_<0,100>` twice, at the two places a phrase break belongs:
+
+```
+S<110,23>A<218,23>L<106,25>4<189,25>R<72,25>
+_<0,100>
+3<300,23>L<120,20>E<120,20>
+```
+
+This produced no pause at all for a long time, on the reading that a length of
+zero is zero.  That reading is wrong, and DECtalk's own code says so in a
+comment: in `ph_sort.c` the two fields are taken as "User-specified dur **if
+non-zero**" and "User-specified f0 **if non-zero**", and a zero means the value
+was not given, so the phoneme falls to the rules.  Its rules give a silence a
+`dpause` of 14 or 15 frames depending on what follows, floored at 2 and scaled by
+the speech rate -- about **90 to 96 ms** at 6.4 ms a frame.
+
+So a rest with no length of its own gets 100 ms here.  That is DECtalk's number
+rounded, and it is also what the demo's `_<0,100>` says if its two arguments are
+read the other way round, which is the likelier typo.  Both readings land in the
+same place, which is a comfortable thing for a guess to do.
+
+A zero length on a *phoneme* is still nothing.  Left to the rules it became a
+sound of the engine's choosing in the middle of a bar, and the demo never writes
+one, so there is nothing to weigh against that.
+
+### A pitch of 0 is not honoured on a phoneme, and is not faked
+
+`user_f0[n]` is "User-specified f0 if non-zero" and only a non-zero value turns
+DECtalk's singing mode on, so a pitch of 0 means *time this one, do not sing it*.
+On a rest that is the whole of it -- a rest has no pitch to take, so `_<1000,0>`
+and `_<0,100>` differ only in how long they are silent.
+
+On a phoneme it is not implemented.  Handing the exact pitch back is one escape
+and it changes nothing audible: the coarse pitch escape has already moved the
+engine's *base* pitch to the last note, and the duration escape has already gated
+the contour off, so the phoneme comes out flat at the previous note's pitch
+either way -- measured, the period histogram is identical to a single period.
+Doing it properly wants two things this layer has not got: a way to force a
+duration without gating the contour, which is an engine change, and the pitch the
+caller configured, which only the port knows.  The demo never writes a pitch of 0
+on anything but a rest.
+
 One wrinkle, and it is the engine's: **a pitch change across a rest shortens
 it**, by a flat 390 ms whether the rest is 300 ms or 3000.  It is not one escape
 eating another -- every ordering of the two was tried and all four behave the
@@ -673,6 +722,37 @@ it is lost.  "Hello" lands on 11.47 s against the 11.46 its score asks for.
 The sailor is 330 ms long where it used to be 180 short -- both inside one and a
 half per cent, and the compensation is now spent where the engine actually takes
 it rather than on whichever hold happened to precede a pitch change.
+
+## A note needs its attack, which flattening the amplitude had taken away
+
+Track 17 is held flat across a sung phoneme, because a note is held at its pitch
+rather than approached.  Track 0 -- the voicing amplitude -- was held flat too
+for a long time, and that turned out to be a mistake that only showed up once
+the rests started working.
+
+It went in to cure a 500 ms fade on a long note.  It no longer cures anything:
+with the natural curve back, an 1800 ms note measures **6.5 dB of range either
+way**, and the envelope differs only in its first 80 ms.  Whatever caused that
+fade was fixed by the hold and glide work since.
+
+What flattening the amplitude *does* do is remove the attack, because the attack
+is exactly the move from `start` to `target` that flattening abolishes.  Into
+another phoneme that costs nothing -- the level is continuous across the join.
+Out of **silence** it is a note beginning at full level from nothing.  Measured
+out of a rest, the level reached half its peak in:
+
+| | |
+| --- | --- |
+| amplitude flattened | **6 ms** |
+| the engine's own curve | 21 ms |
+
+Six milliseconds from nothing to half level is a click, and that is what it
+sounded like.  The curves are twelve decay tables indexed by how many frames the
+move spreads over, so the engine's own choice is already short; capping it made
+no difference to either number, which is how it became clear the flattening was
+all cost and no benefit.
+
+The release on the way *into* a rest came back with it, for the same reason.
 
 ## What is not right yet
 

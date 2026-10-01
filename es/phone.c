@@ -153,16 +153,16 @@ void TV_THISCALL Stage3_LoadPhone(Engine *self)
     self->trk_param[10][6] = ((int32_t)g_10057e58[id] << 3) + 0x1f4;
     self->trk_param[11][6] = (int32_t)g_10057e88[id] << 4;
     self->trk_param[12][6] = ((int32_t)g_10057eb8[id] << 4) +
-                             g_1004c8a0[voice];
+                             es_v_c8a0(voice);
     self->trk_param[13][6] = (int32_t)g_10057ee8[id] * 2;
     self->trk_param[14][6] = (int32_t)g_10057f18[id] * 2;
     self->trk_param[15][6] = (int32_t)g_10057f48[id] * 2;
     self->trk_param[0][6] = g_10057f78[id];
     self->trk_param[17][6] = (int32_t)ctl->b15 * 2;
-    self->trk_param[18][6] = g_1004c7e8[voice];
-    self->trk_param[19][6] = g_1004c7f8[voice];
-    self->trk_param[20][6] = g_1004c808[voice];
-    self->trk_param[21][6] = g_1004c818[voice];
+    self->trk_param[18][6] = es_v_p18(voice);
+    self->trk_param[19][6] = es_v_p19(voice);
+    self->trk_param[20][6] = es_v_p20(voice);
+    self->trk_param[21][6] = es_v_p21(voice);
 
     if (id >= 0x17) {
         self->trk_param[1][6] = TV_REF(uint8_t, g_100580f8)[id];

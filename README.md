@@ -103,20 +103,30 @@ See [docs/SPEAKWIN.md](docs/SPEAKWIN.md).
 
 ### The voices
 
-Ten, in the engine's own order:
+Ten per language, in the engine's own order:
 
 | 0 | 1 | 2 | 3 | 4 |
 |---|---|---|---|---|
 | Peter | Sidney | Eager Eddie | Deep Douglas | Biff |
+| Pedro | Jorge | Ricardo | Paco | Luis |
 
 | 5 | 6 | 7 | 8 | 9 |
 |---|---|---|---|---|
 | Grandpa Amos | Melvin | Alex | Wanda | Julia |
+| Ezequiel | Rogelio | Carlos | Josefa | Isabel |
 
 A voice is not a recording or a model. It is fifteen integers that bend the
 synthesiser's 22 parameter tracks on the way past, stored as percentage
 deviations from voice 0. [docs/VOICES.md](docs/VOICES.md) has the details,
 and `tools/voicedump.py` prints them out of your own binaries.
+
+Which means a voice can be *written*, and the engine carries the voice in four
+bits, so sixteen fit per language where ten are defined. Two of OpenTV's own sit
+above them: **Frank**, a deep male voice ported from MindMaker's TextAssist build
+of this engine, and **Francisco**, who is Frank speaking Spanish. Each is a
+description of how it differs from one of Centigram's, so no table from the
+original binaries is copied into source, and each is inert below voice ten --
+which is why the corpus is unaffected by either.
 
 ## How it is verified
 
@@ -194,7 +204,7 @@ underneath is right while callers get the better behaviour by default.
 ## What is next
 
 **Spanish is in.**  One library carries both engines, the add-on offers
-twenty voices in two languages, and each is listed with the language it
+twenty-two voices in two languages, and each is listed with the language it
 speaks -- "Peter (American English)", "Pedro (Castilian Spanish)" -- and
 tagged so NVDA's automatic language switching can pick it.  Voices are
 numbered across the languages, so setting one from another language switches
@@ -216,7 +226,7 @@ calls the engine makes upward.  [docs/SPANISH.md](docs/SPANISH.md) ends with
 what remains and how to remeasure.
 
 The SAPI 5 interface is done, at both word widths: `sapi5/` is a COM server
-presenting all twenty voices to any SAPI application, with an NSIS installer
+presenting all twenty-two voices to any SAPI application, with an NSIS installer
 beside it.  What a SAPI 5 voice has to implement was taken from Microsoft's
 published porting guide and from its own `sapiddk.h`, and
 `tools/check_sapi_ddk.py` checks the few declarations that had to be restated

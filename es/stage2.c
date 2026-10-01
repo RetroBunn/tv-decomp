@@ -136,11 +136,25 @@ int tv_es_ext_contour = 0;
  * 1997 engine's proportional ones; see the note above for the measurement. */
 #define TV_CONTOUR_REF 85
 
-static int32_t es_contour_scale(int32_t v, int32_t pitch)
+static int32_t es_contour_scale(int32_t v, int32_t pitch, int32_t voice)
 {
-    if (!tv_es_ext_contour || pitch <= 0 || pitch == TV_CONTOUR_REF)
-        return v;
-    return pitch + (v - pitch) * pitch / TV_CONTOUR_REF;
+    int32_t pct;
+
+    if (tv_es_ext_contour && pitch > 0 && pitch != TV_CONTOUR_REF)
+        v = pitch + (v - pitch) * pitch / TV_CONTOUR_REF;
+
+    /*
+     * OpenTV: and how much of its contour this voice asks for.  IntonLevel is a
+     * percentage of the *excursion*, so it scales the distance from the pitch
+     * and leaves the pitch itself alone -- which is why this needs none of the
+     * half-a-difference lift the English engine's does: there the narrowing is
+     * about a different reference and moves the centre, here it cannot.  A stock
+     * voice asks for 100 and nothing happens.
+     */
+    pct = es_v_inton(voice);
+    if (pct != 100 && pitch > 0)
+        v = pitch + (v - pitch) * pct / 100;
+    return v;
 }
 
 /* @0x10058618 */
@@ -826,7 +840,7 @@ void TV_THISCALL Stage2_Contour(Engine *self)
     }
 
     pitch = st->pitch;
-    v = es_contour_scale(v, pitch);
+    v = es_contour_scale(v, pitch, st->voice);
     if (pitch == 0)
         v = 0;
     else if (v > es_pitch_max())

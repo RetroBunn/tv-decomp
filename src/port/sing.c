@@ -68,6 +68,22 @@
 #define SING_END_REST_MS 390
 
 /*
+ * How long a rest lasts when the score does not say.
+ *
+ * A duration of 0 means "not specified" rather than "no time" -- DECtalk's own
+ * reader says so in as many words, `user_durs[n]` being "User-specified dur if
+ * non-zero" -- and the phoneme then takes the length its rules give it.  Its
+ * rules give a silence `dpause` of 14 or 15 frames depending on what follows,
+ * floored at 2 and scaled by the speech rate, which at 6.4 ms a frame is about
+ * 90 to 96 ms.
+ *
+ * So a hundred, which is also what the demo's own `_<0,100>` says if its two
+ * arguments are read the other way round.  Both readings land in the same
+ * place, which is a comfortable thing for a guess to do.
+ */
+#define SING_REST_DEFAULT_MS 100
+
+/*
  * A note too long for one phoneme is held by the engine rather than repeated;
  * see the hold escape where it is written.  This is the longest one phoneme
  * can carry on its own.
@@ -442,14 +458,6 @@ int TVTTS_CALL tvtts_sing_compile(const char *score, char *buf, size_t cap)
         }
 
         /*
-         * An explicit zero length is zero, not "as long as the rules like".
-         * The score rests between verses with `_<0,100>`, and left to the rules
-         * that became a pause of the engine's choosing.
-         */
-        if (spec && ms == 0)
-            continue;
-
-        /*
          * `_` is a rest.  Like `-` it is that product's notation rather than a
          * phoneme -- it is not in TextAssist's own code table either -- and
          * this engine has no character for it, so written through it rendered
@@ -463,10 +471,52 @@ int TVTTS_CALL tvtts_sing_compile(const char *score, char *buf, size_t cap)
          * which is right for the text path and wrong for this one.)
          */
         if (ph == '_') {
-            pending_rest += ms;
+            /*
+             * A rest with no length of its own gets the default one.  The
+             * sailor asks for exactly that twice, as `_<0,100>`, at the two
+             * places its verses break -- and until this was here those two
+             * rests were nothing at all, so the song ran its verses together.
+             *
+             * The pitch on a rest is read and dropped either way: there is
+             * nothing to sound, so `_<1000,0>` and `_<0,100>` differ only in
+             * how long they are silent for.
+             */
+            pending_rest += (ms > 0) ? ms : SING_REST_DEFAULT_MS;
             last_ph = 0;            /* nothing here for a tie to hold */
             continue;
         }
+
+        /*
+         * An explicit zero length on a *phoneme* is zero, not "as long as the
+         * rules like": left to them it became a sound of the engine's choosing
+         * in the middle of a bar.  A rest is the exception and is handled just
+         * above, because for a rest DECtalk's reading of a zero is the one that
+         * matters -- see SING_REST_DEFAULT_MS.
+         *
+         * The demo never writes a zero length on anything but a rest, so what a
+         * sung `X<0,n>` ought to be has not had to be decided.  DECtalk would
+         * give it the phoneme's own rule duration at pitch n.
+         */
+        if (spec && ms == 0)
+            continue;
+
+        /*
+         * A pitch of 0 means the score is not singing this one, only timing it:
+         * DECtalk reads it that way too -- `user_f0[n]` is "User-specified f0 if
+         * non-zero", and only a non-zero value turns its singing mode on at all.
+         *
+         * **Not honoured on a phoneme**, and deliberately not faked.  Handing
+         * the exact pitch back is one escape, and it changes nothing audible:
+         * the coarse pitch escape has already moved the engine's *base* pitch to
+         * the last note, and the duration escape has already gated the contour
+         * off, so the phoneme comes out flat at the previous note's pitch either
+         * way -- measured, the period histogram is the same to a single period.
+         * Doing it properly needs two things this layer has not got: a way to
+         * force a duration without gating the contour, which is an engine
+         * change, and the pitch the caller configured, which only the port
+         * knows.  The demo never writes a pitch of 0 on anything but a rest, so
+         * nothing in it is waiting on this.
+         */
 
         if (note >= 0) {
             int hz = tvtts_note_hz(note);
@@ -741,6 +791,83 @@ static size_t skip_blank(const char *t, size_t len, size_t i)
     while (i < len && (t[i] == ' ' || t[i] == '\t'))
         i++;
     return i;
+}
+
+/*
+ * Where one word is written as two: `CamelCase` said as `Camel Case`.
+ *
+ * The engine has no notion of it.  A capital inside a word reaches the
+ * letter-to-sound rules and changes nothing, so `CamelCase` renders byte for
+ * byte what `camelcase` renders and the two words run together.  NVDA splits
+ * such words above its drivers, which is why the add-on sounded right where the
+ * speak window did not, so this belongs in the library: `tv`, the speak window
+ * and the SAPI voice then all agree.
+ *
+ * Returns how many spaces the text wants; with `buf` non-NULL it writes the
+ * split text there, which needs `len` plus that many bytes.
+ *
+ * **It has to run after `tv_phone_commands`, not before.**  Before, it splits
+ * the command's own name -- `[:phone Tru Voice on]` matches nothing -- and then
+ * splits the phoneme text the command introduces, where a capital names a
+ * different phoneme: `HeLO` became `He LO`.  Afterwards there is one thing to
+ * avoid instead of two, and it is keyed off a single byte: an escape.  Nothing
+ * inside `ESC [ ... <letter>` is touched, and `ESC[1I` and `ESC[0I` are watched
+ * going past, because between them the text is phonemes rather than words.
+ */
+size_t tv_camel_split(const char *t, size_t len, char *buf)
+{
+    size_t i, added = 0;
+    int phone = 0;
+
+    for (i = 0; i < len; i++) {
+        unsigned char c = (unsigned char)t[i];
+
+        if (c == ESC) {
+            /* copy the escape whole, and note a switch of input mode */
+            int val = 0, seen = 0;
+
+            while (i < len) {
+                c = (unsigned char)t[i];
+                if (buf != NULL)
+                    buf[i + added] = (char)c;
+                if (c >= '0' && c <= '9') {
+                    val = val * 10 + (c - '0');
+                    seen = 1;
+                } else if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')) {
+                    if (c == 'I')
+                        phone = seen ? (val != 0) : 0;
+                    break;              /* the letter ends it */
+                }
+                i++;
+            }
+            continue;
+        }
+
+        /*
+         * A capital after a lowercase letter or a digit starts a word.  So does
+         * a capital that follows another capital and is followed by a lowercase
+         * letter, which is what keeps `HTMLParser` from coming out as
+         * `H T M L Parser`; an all-capitals word has no such letter after it and
+         * stays whole.
+         */
+        if (!phone && c >= 'A' && c <= 'Z' && i > 0) {
+            unsigned char prev = (unsigned char)t[i - 1];
+            unsigned char next = (i + 1 < len) ? (unsigned char)t[i + 1] : 0;
+            int prev_low = (prev >= 'a' && prev <= 'z') ||
+                           (prev >= '0' && prev <= '9');
+            int prev_up = (prev >= 'A' && prev <= 'Z');
+            int next_low = (next >= 'a' && next <= 'z');
+
+            if (prev_low || (prev_up && next_low)) {
+                if (buf != NULL)
+                    buf[i + added] = ' ';
+                added++;
+            }
+        }
+        if (buf != NULL)
+            buf[i + added] = (char)c;
+    }
+    return added;
 }
 
 size_t tv_phone_commands(char *text, size_t len)

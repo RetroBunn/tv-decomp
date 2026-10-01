@@ -348,6 +348,46 @@ untouched, and it changes timbre and intonation only -- the duration of an utter
 given rate is identical with it on or off, to the sample.  `TV_BW_ROW_START`
 and `TV_BW_MAX_Q8` in `src/engine.h` are where to tune it.
 
+### TVTTS_EXT_CAMEL
+
+A word written in camel case is read as the words it is made of: `CamelCase`
+says `Camel Case`, `helloWorld` says `hello World`, `HTMLParser` says
+`HTML Parser`.
+
+The engine has no notion of it.  A capital inside a word reaches the
+letter-to-sound rules and changes nothing -- measured, `CamelCase` renders
+**byte for byte** what `camelcase` renders -- so without this the two words run
+together as one.
+
+This arrived as a difference between front ends: NVDA splits such words above
+its drivers, so the add-on has always sounded right, while the speak window
+said them joined.  The fix belongs in the library rather than in one window, so
+`tv`, the speak window and the SAPI voice all now agree, and the add-on is
+unaffected because NVDA has already split the text by the time it arrives.
+
+The rule is the conventional one, over ASCII letters and digits:
+
+| | |
+| --- | --- |
+| a capital after a lowercase letter or a digit | `camelCase`, `Camel2Case` |
+| a capital after a capital, followed by a lowercase letter | `HTMLParser` -> `HTML Parser` |
+| anything else | left alone: `HTML`, `CAMELCASE`, `camelcase` |
+
+That second row is what keeps an initialism whole: without it `HTMLParser`
+comes out `H T M L Parser`.
+
+**It runs after the `[:phone ...]` rewrite and never before**, which took a
+failed attempt to see.  Before, it splits the command's own name -- `[:phone Tru
+Voice on]` matches nothing -- and then splits the phoneme text that command
+introduces, where a capital names a different phoneme: `HeLO` became `He LO`.
+Afterwards there is one thing to avoid rather than two, and it is keyed off a
+single byte: nothing inside `ESC [ ... <letter>` is touched, and `ESC[1I` and
+`ESC[0I` are watched going past, because between them the text is phonemes
+rather than words.  `tvtts_speak_phonemes` and `tvtts_sing` do not pass this way
+at all.
+
+Accented capitals are not split; the rule is ASCII only.
+
 ## How this is tested
 
 `tv.exe` is built on the API rather than beside it, so `tools/difftest.py`

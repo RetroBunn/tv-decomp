@@ -170,7 +170,7 @@ int main(int argc, char **argv)
         else { fprintf(stderr, "unknown option %s\n", argv[i]); return 2; }
     }
     if (argc - i != 2 || voice < 0 || voice >= tvtts_voice_count()) {
-        fprintf(stderr, "usage: tv [-v 0-9] [-8] [-H] [-m] [-G] [-M mode] [-p pitch] [-s wpm]"
+        fprintf(stderr, "usage: tv [-v voice] [-8] [-H] [-m] [-G] [-M mode] [-p pitch] [-s wpm]"
                         " [-V volume] [-B rate,depth] [-N ms] [-C] [-X mask] [-P0] [-T0] [-z nuls]"
                         " [-L word=phonemes] <text|@file> <out.wav>\n");
         return 2;

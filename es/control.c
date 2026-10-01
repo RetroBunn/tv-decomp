@@ -151,12 +151,12 @@ uint8_t TV_THISCALL Engine_RunControl(Engine *self)
         break;
     case 'V':
         st->voice = arg;
-        self->stage->pitch = g_voice_pitch[self->stage->voice];
-        self->stage->rate_index = g_voice_rate_index[self->stage->voice];
+        self->stage->pitch = es_v_pitch(self->stage->voice);
+        self->stage->rate_index = es_v_rate_index(self->stage->voice);
         if (stage != 3)
             break;
         self->cur_voice = (int16_t)arg;
-        self->cur_speed = (uint32_t)g_voice_speed[(int16_t)arg];
+        self->cur_speed = (uint32_t)es_v_speed((int16_t)arg);
         self->cur_pitch = (uint32_t)self->stage->pitch;
         if (sapi == NULL)
             break;

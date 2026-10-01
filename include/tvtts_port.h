@@ -33,6 +33,14 @@
  */
 size_t tv_phone_commands(char *text, size_t len);
 
+/*
+ * OpenTV: `CamelCase` split into `Camel Case`, gated on TVTTS_EXT_CAMEL.
+ * Returns the spaces wanted; with buf non-NULL it writes the result, which
+ * needs len plus that many bytes.  Run it *after* tv_phone_commands.  See
+ * src/port/sing.c.
+ */
+size_t tv_camel_split(const char *t, size_t len, char *buf);
+
 /* One language's engine, as the dispatcher sees it.  Every function takes the
  * synth its own create returned. */
 typedef struct {

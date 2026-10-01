@@ -6,8 +6,6 @@
  * frame, using the per-phoneme target tables and the transition rules that
  * say how each parameter travels from one phoneme to the next.
  */
-#include <stdlib.h>
-
 #include "engine.h"
 
 /* @0x100c8aa0 with the signed index the original uses; see stage0.c */
@@ -702,10 +700,17 @@ void TV_THISCALL Stage3_Write(Engine *self, int32_t param)
     /*
      * OpenTV: a sung phoneme laid down as part of a longer note.
      *
-     * Track 0 and track 17 are held flat across any sung phoneme -- the first
-     * because the blend into it otherwise spans everything between the write
-     * and read cursors, which faded a 1500 ms note in over 500 ms, and the
-     * second because a note is held at its pitch rather than approached.
+     * Track 17 is held flat across a sung phoneme, because a note is held at
+     * its pitch rather than approached.
+     *
+     * Track 0 was held flat too, for a while, because the amplitude took 500 ms
+     * to come up on a long note.  That is no longer true -- the hold and the
+     * glide work differently now -- and holding it flat had become purely
+     * harmful: it is the attack, so removing it left a note starting at full
+     * level out of nothing.  Measured out of a rest, the level reached half its
+     * peak in **6 ms** flat against 25 ms natural, which is heard as a click.
+     * With the natural curve back, a 1800 ms note measures the same 6.5 dB of
+     * range it did flattened, so nothing was gained by it at all.
      *
      * The articulation across a join is *not* dealt with here, and it was
      * tried: a note sung as the same phoneme repeated has the engine widen B2
@@ -715,7 +720,7 @@ void TV_THISCALL Stage3_Write(Engine *self, int32_t param)
      * a boundary is drawn by the rule passes rather than from these three, so
      * it is held off in frame.c instead -- see tv_sing_bw.
      */
-    if (tv_ext_sing && tv_sing_dur[3] != 0 && (param == 17 || param == 0))
+    if (tv_ext_sing && tv_sing_dur[3] != 0 && param == 17)
         lead = start = target;
 
 

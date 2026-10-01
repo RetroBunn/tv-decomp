@@ -614,8 +614,45 @@ corrects one picked an octave high, so harmonic picks sit in its tails -- and
 how many depends on the formants.  Against Frank and Peter it could not tell
 them apart at *any* percentile band from 5/95 to 40/60.  `yin_spread` is the
 replacement, YIN's cumulative mean normalized difference in integer arithmetic
-so the freestanding 32-bit build still needs no maths library; it puts the two
-at 370 and 604 parts per thousand above monotone, a ratio of 0.61.
+so the freestanding 32-bit build still needs no maths library.
+
+YIN picks the right lag far more often, but not always, and the deciles are the
+wrong place to be wrong: one frame in ten that landed on a harmonic, or on
+`YIN_HI` because the voice dipped below sixty hertz, moves a decile further than
+any contour does.  So the deciles are taken from the frames **within a factor of
+1.6 of the median period**, and the two things that factor has to separate are
+far enough apart to leave it a wide choice.  An octave error sits at 2.0 or 0.5.
+A real decile sits much closer in: across all 22 voices, each saying a sentence
+with four contours in it, the furthest any decile strays from its own median is
+**1.40** -- Isabel's, upwards -- and the next furthest is Josefa's 1.38.  1.6 is
+between them with room either side.
+
+Francisco is what showed this up.  Measured across every frame he reads 5250
+parts per thousand where Pedro reads 1296, and the engine moves him *less* far
+than Pedro; a deep, breathy voice is where YIN is least sure, and a deep,
+breathy voice is exactly what this file now has to measure.
+
+With the window, Frank and Peter come out at 352 and 545 parts per thousand
+above monotone, a ratio of 0.65.  The window moves those two by under four per
+cent, which is the other half of the check: it takes the outliers off without
+taking anything else with them.
+
+### Francisco: the same voice, in the other engine
+
+`Francisco` is Frank's definition on the 1995 Spanish engine, over Pedro rather
+than Peter, and the first voice of OpenTV's own there.  Everything above carries
+over unchanged -- the same adjustment row, the same `F0Def` of 72, the same
+`aspir`, `gain` and `IntonLevel` -- because the two generations take the same
+fifteen-wide row and the same pitch units.
+
+The mechanism is mirrored, not shared: `es/voices.c` beside this file, because
+the 1995 engine keeps its per-voice data in differently named tables.
+[SPANISH.md](SPANISH.md#a-voice-of-its-own-francisco) has what differed and where
+each of the three added fields had to be put.
+
+He is called Francisco rather than Frank so that he is a Spanish name among
+Spanish names.  `Franco`, the obvious form, is taken -- it is what the Italian
+DLL calls its Alex.
 
 ## The other language DLLs
 

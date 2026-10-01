@@ -484,15 +484,38 @@ static int yin_taus(const sink *s, int *out, int cap)
 /*
  * The contour's width, as the ratio of the longest period to the shortest in
  * parts per thousand.
+ *
+ * The deciles are taken from the frames within a factor of 1.6 of the median
+ * period, not from all of them.  A frame that lands on a harmonic, or on
+ * YIN_HI because the voice dipped below sixty hertz, is off by a factor of two
+ * or more, and one such frame in ten moves a decile further than any contour
+ * does: measured across the lot, Francisco reads 5250 where the engine moves
+ * him less far than Pedro, who reads 1296.  A deep, breathy voice is where YIN
+ * is least sure, which is exactly the kind of voice this file now carries, so
+ * the window is the difference between measuring the contour and measuring the
+ * tracker.  1.6 separates the two comfortably: an octave error sits at 2.0 or
+ * 0.5, and across all 22 voices the furthest a real decile strays from its own
+ * median is 1.40.
  */
 static int yin_spread(const sink *s)
 {
     static int t[4096];
     int n = yin_taus(s, t, 4096);
+    int m, a, b, lo, hi;
 
-    if (n < 8 || t[n / 10] <= 0)
+    if (n < 8)
         return 0;
-    return 1000 * t[n - 1 - n / 10] / t[n / 10];
+    m = t[n / 2];                       /* yin_taus hands them back sorted */
+    for (a = 0; a < n && t[a] * 16 < m * 10; a++)
+        ;
+    for (b = n - 1; b > a && t[b] * 10 > m * 16; b--)
+        ;
+    n = b - a + 1;
+    if (n < 8 || t[a + n / 10] <= 0)
+        return 0;
+    lo = t[a + n / 10];
+    hi = t[a + n - 1 - n / 10];
+    return 1000 * hi / lo;
 }
 
 /* The same, with the monotone taken off, to read as "how much contour is
@@ -683,6 +706,84 @@ static void test_custom_voices(void)
         check(same(&a, &b), "a voice number nobody has leaves the voice alone");
         sink_free(&a);
         sink_free(&b);
+    }
+}
+
+/*
+ * Francisco: the same mechanism on the 1995 Spanish engine.
+ *
+ * es/voices.c mirrors src/engine/voices.c rather than sharing it, because the
+ * two generations keep their per-voice data in differently named tables, so
+ * each of the three things that can quietly fail -- the voice being named, the
+ * tract reaching the synthesiser, IntonLevel reaching the contour -- is worth
+ * checking twice.  Francisco is Frank's definition over Pedro.
+ */
+static void test_es_custom_voices(void)
+{
+    static const char *const TXT = "Hola, me llamo Francisco.";
+    int i, n = tvtts_voice_count(), fran = -1, pedro = -1;
+
+    for (i = 0; i < n; i++) {
+        const char *nm = tvtts_voice_name(i);
+        if (nm == NULL || strcmp(tvtts_voice_language(i), "es") != 0)
+            continue;
+        if (strcmp(nm, "Francisco") == 0)
+            fran = i;
+        else if (strcmp(nm, "Pedro") == 0)
+            pedro = i;
+    }
+    check(fran >= 0, "Francisco is one of the Spanish voices");
+    check(pedro >= 0, "and Pedro is still there beside him");
+    if (fran < 0 || pedro < 0)
+        return;
+
+    /* He is named Francisco, not Frank: a Spanish name among Spanish names,
+     * and clear of the Italian engine's Franco. */
+    check(strcmp(tvtts_voice_name(fran), "Francisco") == 0,
+          "under the name Francisco");
+    check(tvtts_voice_pitch(fran) == 72, "his pitch is Frank's 72, not Pedro's");
+    check(tvtts_voice_rate(fran) == tvtts_voice_rate(pedro),
+          "and what the definition leaves out is Pedro's");
+
+    {
+        sink f = {0}, p_same = {0}, p_own = {0};
+
+        say_at("es", fran, tvtts_voice_pitch(fran), TVTTS_EXT_ALL, TXT, &f);
+        /* Pedro moved to Francisco's pitch.  Were Engine_SetVoice still
+         * refusing anything past its ten -- silently, as it did -- these two
+         * would come out identical. */
+        say_at("es", pedro, 72, TVTTS_EXT_ALL, TXT, &p_same);
+        say_at("es", pedro, tvtts_voice_pitch(pedro), TVTTS_EXT_ALL, TXT,
+                &p_own);
+
+        check(f.n > 4000, "Francisco speaks");
+        check(!same(&f, &p_own), "and does not sound like Pedro");
+        check(!same(&f, &p_same),
+              "nor like Pedro moved to the same pitch -- the tract differs too");
+
+        sink_free(&f);
+        sink_free(&p_same);
+        sink_free(&p_own);
+    }
+
+    /* IntonLevel, out of the audio: 0.7 against Pedro's 1.0, both at pitch 72
+     * so that only the contour differs. */
+    {
+        sink f = {0}, p = {0};
+        int ef, ep;
+
+        say_at("es", fran, 72, TVTTS_EXT_ALL, TXT, &f);
+        say_at("es", pedro, 72, TVTTS_EXT_ALL, TXT, &p);
+        ef = yin_excursion(&f);
+        ep = yin_excursion(&p);
+        printf("    [inton, contour in parts per thousand of period: Francisco "
+               "%d, Pedro %d, both at pitch 72]\n", ef, ep);
+        check(ef > 0 && ep > 0, "both voices have a contour at pitch 72");
+        check(ef * 10 < ep * 9,
+              "Francisco's contour reaches less far than Pedro's, as "
+              "IntonLevel asks");
+        sink_free(&f);
+        sink_free(&p);
     }
 }
 
@@ -885,7 +986,14 @@ static void test_contour(void)
      * it, every voice changes, so none is being quietly left alone.
      */
     {
-        int same_at_ref = 1, changed_away = 1, tested = 0;
+        int same_at_ref = 1, changed_away = 1, tested = 0, n_es = 0;
+
+        /* However many Spanish voices there are -- the DLL's ten and any of
+         * OpenTV's own -- the loop below has to cover all of them, so the count
+         * is taken rather than written down. */
+        for (i = 0; i < tvtts_voice_count(); i++)
+            if (strcmp(tvtts_voice_language(i), "es") == 0)
+                n_es++;
 
         for (i = 0; i < tvtts_voice_count(); i++) {
             sink a = {0}, b = {0}, c = {0}, d = {0};
@@ -908,7 +1016,8 @@ static void test_contour(void)
             sink_free(&c);
             sink_free(&d);
         }
-        check(tested == 10, "all ten Spanish voices were tried");
+        check(tested == n_es && n_es >= 10,
+              "every Spanish voice was tried, the DLL's ten at least");
         check(same_at_ref,
               "at the reference pitch every voice is byte-identical either way");
         check(changed_away,
@@ -1548,6 +1657,70 @@ static void test_pitch_after_song(void)
     sink_free(&after); sink_free(&fresh);
 }
 
+/*
+ * Camel case read as the words it is made of.  The engine has no notion of it --
+ * a capital inside a word changes nothing in the letter-to-sound rules -- so
+ * this is the library splitting the text, and the test is that a split word says
+ * what the same words with a space say.
+ */
+static void test_camel_case(void)
+{
+    tvtts_synth *s = tvtts_create(11025);
+    sink a, b;
+    int i;
+    static const struct { const char *joined, *spaced; } cases[] = {
+        { "CamelCase",  "Camel Case" },
+        { "helloWorld", "hello World" },
+        { "HTMLParser", "HTML Parser" },   /* not H T M L Parser */
+        { "Camel2Case", "Camel2 Case" },
+        { "HTML",       "HTML" },          /* all capitals stays whole */
+        { "CAMELCASE",  "CAMELCASE" },
+        { "camelcase",  "camelcase" },
+    };
+
+    for (i = 0; i < (int)(sizeof cases / sizeof cases[0]); i++) {
+        say(s, cases[i].joined, &a);
+        say(s, cases[i].spaced, &b);
+        if (!same(&a, &b))
+            printf("     [%s did not match %s]\n",
+                   cases[i].joined, cases[i].spaced);
+        check(same(&a, &b), cases[i].joined);
+        sink_free(&a); sink_free(&b);
+    }
+
+    /* Gated, and with it off a capital inside a word means nothing again. */
+    tvtts_set_extensions(TVTTS_EXT_ALL & ~TVTTS_EXT_CAMEL);
+    say(s, "CamelCase", &a);
+    say(s, "camelcase", &b);
+    tvtts_set_extensions(TVTTS_EXT_ALL);
+    check(same(&a, &b), "with the extension off it is one word again");
+    sink_free(&a); sink_free(&b);
+
+    /*
+     * Phonemes and scores are text to nobody: a capital names a different
+     * phoneme there, so neither entry may be split.
+     */
+    memset(&a, 0, sizeof a);
+    tvtts_speak_phonemes(s, "HeLO", on_event, &a);
+    tvtts_set_extensions(TVTTS_EXT_ALL & ~TVTTS_EXT_CAMEL);
+    memset(&b, 0, sizeof b);
+    tvtts_speak_phonemes(s, "HeLO", on_event, &b);
+    tvtts_set_extensions(TVTTS_EXT_ALL);
+    check(same(&a, &b), "phonemes are never split");
+    sink_free(&a); sink_free(&b);
+
+    memset(&a, 0, sizeof a);
+    tvtts_sing(s, "H<100,20>e<600,20>L<100,20>O<400,20>", on_event, &a);
+    tvtts_set_extensions(TVTTS_EXT_ALL & ~TVTTS_EXT_CAMEL);
+    memset(&b, 0, sizeof b);
+    tvtts_sing(s, "H<100,20>e<600,20>L<100,20>O<400,20>", on_event, &b);
+    tvtts_set_extensions(TVTTS_EXT_ALL);
+    check(same(&a, &b), "and neither is a score");
+    sink_free(&a); sink_free(&b);
+
+    tvtts_destroy(s);
+}
+
 static void test_phone_command(void)
 {
     tvtts_synth *s = tvtts_create(11025);
@@ -1670,6 +1843,22 @@ static void test_singing(void)
     check(strchr(buf, 'g') != NULL,
           "and the rest of it is held, not sung again");
 
+    /*
+     * A rest with no length of its own takes the default one, which is what the
+     * demo's own `_<0,100>` asks for: a zero duration means "not specified", so
+     * the rest is the length the rules would give it rather than nothing.  An
+     * explicit length is still exactly itself.
+     */
+    tvtts_sing_compile("A<400,20>_<0,100>A<400,25>", buf, sizeof buf);
+    check(strstr(buf, "[10s") != NULL,
+          "a rest with no length given is the default 100 ms");
+    tvtts_sing_compile("A<400,20>_<300,0>A<400,25>", buf, sizeof buf);
+    check(strstr(buf, "[30s") != NULL,
+          "and an explicit length is itself");
+    tvtts_sing_compile("A<400,20>A<0,20>A<400,25>", buf, sizeof buf);
+    check(count_char(buf, 'A') == 2,
+          "a zero length on a phoneme is still nothing");
+
     /* A phoneme with no note keeps its ordinary length. */
     tvtts_sing_compile("HeLO", buf, sizeof buf);
     check(strstr(buf, "\x1b[98p") == NULL, "a score with no notes sets no pitch");
@@ -1710,7 +1899,9 @@ int main(void)
     test_pitch_floor();
     test_es_rate();
     test_custom_voices();
+    test_es_custom_voices();
     test_singing();
+    test_camel_case();
     test_phone_command();
     test_pitch_after_song();
     printf("%s\n", failures ? "FAILED" : "all passed");

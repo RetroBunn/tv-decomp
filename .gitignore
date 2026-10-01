@@ -65,6 +65,11 @@ dkms.conf
 # definitions out of.  Another company's product, and not ours to
 # redistribute -- what OpenTV takes from it is described in NOTICE.
 /TruVoice from text assist/
+# The DECtalk source release, kept locally to read its singing model out of.
+# Someone else's code under someone else's licence: it is read, never copied,
+# and never redistributed from here.  What was read is described in NOTICE and
+# in docs/SINGING.md.
+/dectalk/
 /work/
 /build/
 /ref/

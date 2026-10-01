@@ -761,4 +761,42 @@ void TV_THISCALL Stage3_StopClosure(Engine *self);
  * left in the tree, in es/textin.c: the mode 4 header handlers, which nothing
  * can reach yet. */
 
+
+/*
+ * OpenTV: voices of our own, past the ten the DLL carries.  The mechanism is
+ * the English engine's mirrored for this one; see es/voices.c.
+ */
+#define ES_STOCK_VOICES 10
+#define ES_V_INHERIT    (-0x7fffffff)
+
+typedef struct {
+    const char *name;
+    int32_t     base;           /* the stock voice anything unset comes from */
+    int32_t     adjust[15];     /* the fifteen-wide row, or ES_V_INHERIT */
+    int32_t     pitch, speed, rate_index;
+    int32_t     c8a0;
+    int32_t     p18, p19, p20, p21;
+    int32_t     c7c0, voice_c;
+    int32_t     gain;           /* OpenTV's own: source level, per cent */
+    int32_t     inton;          /* OpenTV's own: contour depth, per cent */
+    int32_t     aspir;          /* OpenTV's own: breathiness floor */
+} EsVoiceDef;
+
+extern const int32_t es_extra_voice_count;
+const char *es_extra_voice_name(int32_t v);
+const int32_t *es_v_adjust(int32_t v);
+int32_t es_v_gain(int32_t voice, int32_t v);
+int32_t es_v_aspir(int32_t voice);
+int32_t es_v_inton(int32_t voice);
+int32_t es_v_pitch(int32_t v);
+int32_t es_v_rate_index(int32_t v);
+int32_t es_v_speed(int32_t v);
+int32_t es_v_c8a0(int32_t v);
+int32_t es_v_p18(int32_t v);
+int32_t es_v_p19(int32_t v);
+int32_t es_v_p20(int32_t v);
+int32_t es_v_p21(int32_t v);
+int32_t es_v_c7c0(int32_t v);
+int32_t es_v_voice_c(int32_t v);
+
 #endif /* TV_ES_ENGINE_H */

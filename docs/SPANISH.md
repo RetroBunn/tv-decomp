@@ -2524,6 +2524,80 @@ word per minute is.  The tables are different data: English's slowest row is
 seconds against 7.09 at 46 wpm -- and roughly agrees only around 150.  That is
 a calibration question rather than a defect, and it is not addressed here.
 
+### A voice of its own: Francisco
+
+The 1997 engine gained voices past the ten in its DLL -- see
+[VOICES.md](VOICES.md#voices-of-opentvs-own) for the mechanism and for where
+Frank's numbers come from.  This engine now has the same, and `Francisco` is the
+first: **Frank's definition, speaking Spanish.**
+
+The mechanism is mirrored rather than shared.  `es/voices.c` is a copy of
+`src/engine/voices.c`'s shape, not a second caller of it, because the two
+generations keep their per-voice data in differently named tables -- the 1995
+engine's are `g_1004c7e8`, `g_1004c7f8`, `g_1004c808`, `g_1004c818`,
+`g_1004c8a0`, `g_1004c7c0`, beside the `g_voice_*` it shares the names of.  Ten
+read sites across `control.c`, `phone.c`, `prosody.c` and `stage3.c` now go
+through an accessor; below `ES_STOCK_VOICES` each one is exactly the subscript it
+replaced, which is why the 205-input corpus is byte-identical.
+
+Four bits of track 21 carry the voice here too -- `es/stage3.c:327` ORs
+`st->voice << 4` into it -- so this engine is also capped at sixteen, and the
+stock ten leave room for six.
+
+What carried over without a change, and what had to be built:
+
+| | Frank, 1997 | Francisco, 1995 |
+| --- | --- | --- |
+| based on | Peter | Pedro |
+| adjustment row | -9% on F1-F4 and B1-B3 | the same |
+| `F0Def` | 72 | 72 |
+| Creakiness | jitter 0, shimmer 0 | the same |
+| Breathiness | `aspir` 76 | the same, floored in `es/prosody.c` |
+| `IntonLevel` | 70 | 70, applied in `es_contour_scale` |
+| `gain` | 100 | 100 |
+
+The three fields OpenTV adds to a voice definition each needed a site in this
+engine, and each is inert for a stock voice, so none of them costs the corpus
+anything:
+
+- **`aspir`** is a floor under the aspiration level, after `par[2] += adj[12]`
+  in `es/prosody.c`.  A stock voice's is 0 and the line does nothing.
+- **`gain`** scales the source level at `es_v_gain(self->voice, g_par0_a[par[2]])`,
+  and is a multiply by 100/100 for a stock voice.
+- **`IntonLevel`** multiplies into `es_contour_scale`, which already narrowed the
+  contour for fast speech, so the two narrowings compose and that function's
+  existing half-the-difference lift covers both.  It took a `voice` parameter to
+  get there; a stock voice is 100 and the expression is skipped outright.
+
+`Engine_SetVoice`'s bound moves out the same way, from a literal 10 to
+`ES_STOCK_VOICES + es_extra_voice_count`.  That bound is the one that bites
+silently: past it the engine keeps whichever voice it had, so a custom voice that
+is not let through *sounds like its predecessor and nothing says why*.
+`unit_es`'s `Engine_SetVoice` suite builds its argument list from that count
+rather than writing it down, so it still compares all ten of the DLL's voices
+against the DLL and the first number past OpenTV's own, which both refuse.
+
+### Why he is called Francisco
+
+Frank would have been a name in the wrong language sitting among Pedro, Jorge
+and Ricardo.  `Franco` was the obvious Spanish form and is taken: it is what the
+Italian DLL calls its Alex.  So `Francisco`, which is Spanish, is unmistakably
+the same voice, and collides with nothing.
+
+Measured against Pedro, on "Hola, me llamo Francisco.":
+
+| | Francisco | Pedro |
+| --- | --- | --- |
+| median F0 | 97.6 Hz | 129.7 Hz |
+| energy above 2 kHz | 0.1002 | 0.0549 |
+| contour, 10th to 90th percentile of period | 125 ppt | 296 ppt |
+
+The first row is `F0Def`, the second is the breathiness, and the third is
+`IntonLevel`: 0.42 where the field asks for 0.70, because that measurement
+includes jitter and tracker noise which do not scale with it.  What matters is
+that the ratio sits on the same side as Frank's against Peter, 0.65, so the field
+reaches the contour in both engines.
+
 ## What is next
 
 There are three tests with different reach: `difftest --lang es` asks whether
@@ -2539,10 +2613,11 @@ objects begin at 0x1002345a; everything below that address is the engine's own):
 written in all.  Rerun the measurement with
 `python tools/covrun.py --lang es --full`.
 
-An NVDA user can hear Spanish now.  The driver lists all twenty voices, each as
-its name and the language it speaks -- "Pedro (Castilian Spanish)" -- because a
-list of twenty names with no language between them says nothing about which is
-which, and two languages could one day share a name.  The id is still
+An NVDA user can hear Spanish now.  The driver lists every voice, each as its
+name and the language it speaks -- "Pedro (Castilian Spanish)" -- because a list
+of names with no language between them says nothing about which is which, and
+two languages could one day share a name.  The list is twenty-two long now --
+eleven in each language, the DLL's ten and one of OpenTV's own.  The id is still
 `"<language>:<index within that language>"`, so nobody's saved voice moved; what
 the driver keeps now is a map from that to the index the library wants, since the
 library counts across the languages and the id counts within one.  They part
