@@ -27,6 +27,7 @@ binaries are not part of this repository; place your own copy in
 | `python tools/voicedump.py [dll...]` | prints the per-voice parameter tables out of a language DLL (see docs/VOICES.md) |
 | `python tools/voicedump.py --compare A.DLL B.DLL` | prints only what differs between two DLLs' voice blocks |
 | `python tools/check_sapi_ddk.py` | checks `sapi5/sapi_ddk.h` against Microsoft's own `sapiddk.h` |
+| `build/check/voicediag.exe [voice]` | how hard a voice drives the filter bank, and whether any state leaves 16 bits |
 | `makensis sapi5/installer.nsi` | builds the SAPI 5 installer (see docs/SAPI5.md) |
 | `python tools/make_addon.py [--32]` | packages the NVDA add-on (see docs/NVDA.md) |
 | `python tests/nvda_binding_test.py` | drives the add-on's binding layer with NVDA's modules stubbed |

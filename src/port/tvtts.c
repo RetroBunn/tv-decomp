@@ -37,6 +37,8 @@ void en_set_extensions(uint32_t mask)
 {
     tv_ext_rate = (mask & TVTTS_EXT_RATE) != 0;
     tv_ext_clarity = (mask & TVTTS_EXT_CLARITY) != 0;
+    tv_ext_sing = (mask & TVTTS_EXT_SING) != 0;
+    tv_ext_pitch = (mask & TVTTS_EXT_PITCH) != 0;
 }
 
 /* The engine object has no allocator of its own -- in the original it lives
@@ -55,11 +57,28 @@ void en_set_extensions(uint32_t mask)
 
 extern uint8_t UserLex_Add(const char *word, const char *phonemes);
 
-#define TV_VOICES 10
+/* The ten the DLL carries, plus whatever src/engine/voices.c adds. */
+#define TV_VOICES (TV_STOCK_VOICES + (int)tv_extra_voice_count)
 
 struct en_synth {
     /* First, so Sapi_QueuePush can get back here from Engine.sapi. */
     SapiCentral host;
+    /*
+     * OpenTV: what the *caller* asked for, which is not what `host` holds.
+     * `host` is the block the engine reports into -- Engine.sapi points at it
+     * -- and an `ESC[<n>p` in the text writes its new pitch straight back
+     * there (see control.c, `case 'p'`).  That is right for a host being told
+     * what is playing and wrong for a record of what was configured: a score
+     * sets the pitch for every note, so the setting the caller made is gone by
+     * the end of the song.  These four are only ever written from the setters.
+     */
+    struct {
+        int      voice;
+        int16_t  pitch;
+        int32_t  speed;
+        int32_t  volume;
+        uint32_t ctx;
+    } cfg;
     Engine     *eng;
     uint8_t    *outbuf;
     uint32_t    rate;
@@ -392,6 +411,11 @@ void *en_create(uint32_t sample_rate)
     s->host.speed = (int32_t)g_voice_speed[0];
     s->host.volume = 0xffff;
     s->host.ctx = 0;
+    s->cfg.voice = s->host.voice;
+    s->cfg.pitch = s->host.pitch;
+    s->cfg.speed = s->host.speed;
+    s->cfg.volume = s->host.volume;
+    s->cfg.ctx = s->host.ctx;
 
     en_set_extensions(tvtts_get_extensions());
     Engine_Construct(s->eng);
@@ -428,8 +452,10 @@ void en_set_voice(void *vs, int voice)
 {
     struct en_synth *s = (struct en_synth *)vs;
 
-    if (s != NULL && voice >= 0 && voice < TV_VOICES)
+    if (s != NULL && voice >= 0 && voice < TV_VOICES) {
         s->host.voice = voice;
+        s->cfg.voice = voice;
+    }
 }
 
 void en_set_rate(void *vs, int wpm)
@@ -443,45 +469,51 @@ void en_set_rate(void *vs, int wpm)
      * ceiling is deliberately not enforced: past 253 the engine reads
      * off the end of the table, which is nonsense but is the original's
      * nonsense, and the corpus checks it at 260 and 400. */
-    if (s != NULL)
+    if (s != NULL) {
         s->host.speed = wpm < TVTTS_RATE_MIN ? TVTTS_RATE_MIN : wpm;
+        s->cfg.speed = s->host.speed;
+    }
 }
 
 void en_set_pitch(void *vs, int pitch)
 {
     struct en_synth *s = (struct en_synth *)vs;
 
-    if (s != NULL)
+    if (s != NULL) {
         s->host.pitch = (int16_t)pitch;
+        s->cfg.pitch = s->host.pitch;
+    }
 }
 
 void en_set_volume(void *vs, uint32_t volume)
 {
     struct en_synth *s = (struct en_synth *)vs;
 
-    if (s != NULL)
+    if (s != NULL) {
         s->host.volume = (int32_t)volume;
+        s->cfg.volume = s->host.volume;
+    }
 }
 
 int en_get_voice(const void *vs)
 {
     const struct en_synth *s = (const struct en_synth *)vs;
 
-    return s != NULL ? s->host.voice : -1;
+    return s != NULL ? s->cfg.voice : -1;
 }
 
 int en_get_rate(const void *vs)
 {
     const struct en_synth *s = (const struct en_synth *)vs;
 
-    return s != NULL ? (int)s->host.speed : -1;
+    return s != NULL ? (int)s->cfg.speed : -1;
 }
 
 int en_get_pitch(const void *vs)
 {
     const struct en_synth *s = (const struct en_synth *)vs;
 
-    return s != NULL ? (int)(uint16_t)s->host.pitch : -1;
+    return s != NULL ? (int)(uint16_t)s->cfg.pitch : -1;
 }
 
 /* ---- output rate ---------------------------------------------------------- */
@@ -584,9 +616,11 @@ static const char *voice_entry(int voice)
     const char *p = g_voice_names;
     int i, pos;
 
-    if (voice < 0 || voice >= TV_VOICES)
+    /* The blob holds the DLL's ten only; a voice of ours is named by
+     * its own definition and never reaches here. */
+    if (voice < 0 || voice >= TV_STOCK_VOICES)
         return NULL;
-    pos = voice == 0 ? 0 : TV_VOICES - voice;
+    pos = voice == 0 ? 0 : TV_STOCK_VOICES - voice;
     for (i = 0; i < pos; i++) {
         size_t n = strlen(p) + 1;          /* the ANSI name */
         p += (n + 3) & ~(size_t)3;
@@ -600,17 +634,21 @@ static const char *voice_entry(int voice)
 
 const char *en_voice_name(int voice)
 {
-    return voice_entry(voice);
+    /* A voice of this project's own carries its name in its definition; the
+     * blob voice_entry walks holds the DLL's ten and nothing else. */
+    const char *extra = tv_extra_voice_name((int32_t)voice);
+
+    return extra != NULL ? extra : voice_entry(voice);
 }
 
 int en_voice_rate(int voice)
 {
-    return (voice >= 0 && voice < TV_VOICES) ? (int)g_voice_speed[voice] : -1;
+    return (voice >= 0 && voice < TV_VOICES) ? (int)tv_v_speed(voice) : -1;
 }
 
 int en_voice_pitch(int voice)
 {
-    return (voice >= 0 && voice < TV_VOICES) ? (int)g_voice_pitch[voice] : -1;
+    return (voice >= 0 && voice < TV_VOICES) ? (int)tv_v_pitch(voice) : -1;
 }
 
 int TVTTS_CALL tvtts_add_lexicon(const char *word, const char *phonemes)
@@ -644,11 +682,71 @@ int en_speak_bytes(void *vs, const void *text, uint32_t len,
         return -1;
     if (len != 0)
         memcpy(buf, text, len);
+    /*
+     * `[:phone TruVoice on|off]` is a command in the text rather than an
+     * escape, so it is turned into one here, before the engine sees any of
+     * it.  Gated, and the rewrite only shortens, so the buffer above still
+     * holds it.
+     */
+    if (tv_ext_sing && len != 0)
+        len = (uint32_t)tv_phone_commands(buf, len);
     memset(buf + len, 0, (size_t)s->nuls + 1);
     textlen = len + (uint32_t)s->nuls;
 
-    if (s->started)
+    if (s->started) {
         Engine_Reset(E);
+        /*
+         * OpenTV: and give the caller's settings back.
+         *
+         * `ESC[<n>p` moves the engine's pitch and reports itself into `host`,
+         * so by the end of an utterance both the engine and this layer's idea
+         * of the pitch are the song's rather than the caller's.  Engine_Reset
+         * does not touch either.  Measured: "hello there" after one 300 ms C4
+         * came out at 355 Hz against 105 on a synth that had not sung, and
+         * stayed there for every utterance after it.
+         *
+         * So `host` is put back from `cfg` -- which only the setters write --
+         * and the pitch is pushed into the engine, the two places it lives.
+         * The block further down then finds speed, volume and voice changed
+         * and re-sends those for the same reason.
+         */
+        s->host.voice = s->cfg.voice;
+        s->host.pitch = s->cfg.pitch;
+        s->host.speed = s->cfg.speed;
+        s->host.volume = s->cfg.volume;
+        s->host.ctx = s->cfg.ctx;
+        E->cur_pitch = (uint32_t)(uint16_t)s->cfg.pitch;
+        Engine_SetPitch(E, (int32_t)E->cur_pitch);
+    }
+    /*
+     * OpenTV: start every utterance with the singing state clear.
+     *
+     * tv_sing_dur and tv_sing_f0q are globals -- they have to be, since they
+     * carry a value from one stage of the pipeline to the next -- so
+     * Engine_Reset cannot reach them.  A score ends with `ESC[0;0q` to hand the
+     * pitch back, and that is not enough on its own: the pitch is applied at
+     * stage 4, which only advances as the synthesiser consumes frames, so an
+     * escape sitting after the last phoneme of a score has nothing left to
+     * carry it and never runs.  The forced period then survives into whatever
+     * the synth says next.
+     *
+     * The utterance boundary is this layer's to know, so this is where they are
+     * cleared.
+     */
+    {
+        int k;
+
+        for (k = 0; k < 5; k++) {
+            tv_sing_dur[k] = 0;
+            tv_sing_f0q[k] = 0;
+        }
+        tv_sing_per = 0;
+        tv_sing_f0_fx = 0;
+        tv_sing_f0_tgt = 0;
+        tv_sing_f0_step = 0;
+        tv_sing_vib_ph = 0;
+    }
+
     s->started = 1;
     E->preformat = (uint8_t)s->preformat;
     E->textin_on = (uint8_t)s->textin;

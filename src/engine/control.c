@@ -58,6 +58,17 @@ uint8_t TV_THISCALL Engine_RunControl(Engine *self)
     case 'I':
         st->p_1c = arg;
         break;
+    case 'd':
+        /* OpenTV: the sung duration, taken where the phoneme it belongs to is
+         * about to be measured.  Stage 2 is the only stage that spends it. */
+        if (stage >= 0 && stage < 5)
+            tv_sing_dur[stage] = arg;
+        break;
+    case 'q':
+        /* OpenTV: the exact pitch wanted, rebuilt from its two bytes. */
+        if (stage >= 0 && stage < 5)
+            tv_sing_f0q[stage] = ((int32_t)b15 << 8) | arg;
+        break;
     case 'N':
         st->p_34 = ((int32_t)b15 << 8) | arg;
         break;
@@ -66,12 +77,12 @@ uint8_t TV_THISCALL Engine_RunControl(Engine *self)
         break;
     case 'V':
         st->voice = arg;
-        self->stage->pitch = (int32_t)g_voice_pitch[self->stage->voice];
-        self->stage->rate_index = (int32_t)g_voice_rate_index[self->stage->voice];
+        self->stage->pitch = tv_v_pitch(self->stage->voice);
+        self->stage->rate_index = tv_v_rate_index(self->stage->voice);
         if (stage != 3)
             break;
         self->cur_voice = (int16_t)arg;
-        self->cur_speed = g_voice_speed[(int16_t)arg];
+        self->cur_speed = (uint32_t)tv_v_speed((int16_t)arg);
         self->cur_pitch = (uint32_t)self->stage->pitch;
         if (sapi == NULL)
             break;

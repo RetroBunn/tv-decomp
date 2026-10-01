@@ -262,6 +262,25 @@ gcc $CF64 -c tests/api_test.c -o "$P64/obj/api_test.o"
 gcc -m64 -o "$CHECK/api_test64.exe" "$P64/obj/api_test.o" $LIB64
 echo "built $CHECK/api_test64.exe"
 
+# --- the filter-state diagnostic ---------------------------------------------
+# Built with TV_DIAG, which is the only thing that compiles the counters in, so
+# nothing above is affected.  It says how hard a voice drives the filter bank
+# and whether any state leaves 16 bits -- which is how a custom voice is told
+# apart from a broken one.  See docs/VOICES.md.
+VD=$OBJ/voicediag
+mkdir -p "$VD"
+VD_OBJS=""
+for src in src/engine/generate.c src/engine/frame.c tools/voicediag.c; do
+  obj="$VD/$(basename "$src" .c).o"
+  gcc $CF64 -DTV_DIAG -c "$src" -o "$obj"
+  VD_OBJS="$VD_OBJS $obj"
+done
+VD_REST=$(echo "$LIB64" | tr ' ' '
+' |   grep -vE 'engine_generate\.o$|engine_frame\.o$' | tr '
+' ' ')
+gcc -m64 -o "$CHECK/voicediag.exe" $VD_OBJS $VD_REST
+echo "built $CHECK/voicediag.exe"
+
 gcc -m64 -shared -o "$OUT/tvtts64.dll" $LIB64 \
   -Wl,--out-implib,"$OUT/libtvtts64.a" harness/rt/tvtts.def
 echo "built $OUT/tvtts64.dll"

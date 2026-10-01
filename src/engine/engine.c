@@ -135,7 +135,13 @@ void TV_THISCALL Engine_SetVolume(Engine *self, uint32_t vol)
 void TV_THISCALL Engine_SetVoice(Engine *self, uint32_t voice)
 {
     int i;
-    if (voice >= 10)
+    /* The original refuses anything past its ten and leaves the voice alone.
+     * OpenTV's own voices sit above them (src/engine/voices.c), and the four
+     * bits track 21 carries the voice in hold sixteen, so the bound moves out
+     * to however many are defined.  Nothing below ten changes, and nothing
+     * could reach a number above it before: the port clamped to the same ten,
+     * which is why the corpus neither covers this nor is affected by it. */
+    if (voice >= (uint32_t)(TV_STOCK_VOICES + tv_extra_voice_count))
         return;
     self->voice = (int32_t)voice;
     for (i = 0; i < 5; i++)

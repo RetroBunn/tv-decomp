@@ -2480,6 +2480,50 @@ DLLs directly:
 So French, German and Italian will want the same flag when they are decompiled,
 and it is one more thing the 1995 generation shares.
 
+### The rate runs off the end of three tables at once
+
+`Engine_SetSpeed` turns words per minute into a row with `(wpm - 46) >> 3`, and
+hands that row to three tables that are not the same length:
+
+| table | rows | what it holds |
+| --- | --- | --- |
+| `g_rate_pause` | 26 | pause length, 1350% down to 30% |
+| `g_rate_phone` | 24 | phoneme length, 300% down to 69% |
+| `g_pause_pattern` | 16 | which chances get an extra pause |
+
+The index reaches 44 at 400 wpm, so all three are read past their ends, and
+what lies beyond them decides what happens.  It is not a graceful slowdown: at
+254 wpm the engine comes out **longer** than at 253, and by 300 the phoneme
+percentage it lands on leaves a whole sentence taking a tenth of a second.  A
+listener hears that as the voice refusing to speak, which is how it was
+reported.
+
+The 1997 engine has the same fault and `TVTTS_EXT_RATE` has always fixed it
+there; the flag simply did nothing to this engine, because nothing had been
+ported.  Now each table is held inside its own length, and past the last
+phoneme row the durations are scaled down instead -- the table has no faster
+rows to offer -- on the same ramp English uses, reaching 40% by row 44.
+
+Measured on "Uno dos tres cuatro cinco seis siete ocho nueve diez.":
+
+| wpm | 46 | 150 | 200 | 253 | 254 | 300 | 400 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| the original | 16.46 | 4.50 | 3.32 | 3.00 | 3.66 | **0.10** | **0.10** |
+| with the flag | 16.46 | 4.50 | 3.32 | 2.77 | 2.72 | 2.41 | 1.45 |
+| English | 7.09 | 4.32 | 2.59 | 2.39 | 1.98 | 1.98 | 1.62 |
+
+Every row the phoneme table has is untouched, which here means **46 to 237 wpm
+is byte-identical** with the flag on or off -- not 253 as in English, because
+that table is 24 rows where English's is 26.  Above 237 the original was
+already reading past the end, so there is no behaviour there to be faithful to.
+
+One thing this does **not** fix is that the two engines disagree about what a
+word per minute is.  The tables are different data: English's slowest row is
+200% and its first four rows are all the same, where this engine's slowest is
+300% with pauses at 1350%.  So the same setting is much slower here -- 16.46
+seconds against 7.09 at 46 wpm -- and roughly agrees only around 150.  That is
+a calibration question rather than a defect, and it is not addressed here.
+
 ## What is next
 
 There are three tests with different reach: `difftest --lang es` asks whether

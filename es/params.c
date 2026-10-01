@@ -88,6 +88,16 @@ void TV_THISCALL Engine_SetSpeed(Engine *self, int32_t wpm)
     int32_t idx = (int32_t)((uint32_t)(wpm - 46) >> 3);
     int i;
 
+    /* OpenTV: the original lets this run off the end of every table it feeds,
+     * and wraps unsigned below 46 into a wild one.  Held inside the rows that
+     * exist with the extension on; left alone with it off, so the corpus still
+     * checks both faults.  See es_rate_row in stage2.c. */
+    if (tv_es_ext_rate) {
+        if (wpm < 46)
+            idx = 0;
+        else if (idx > ES_RATE_ROW_MAX_PUBLIC)
+            idx = ES_RATE_ROW_MAX_PUBLIC;
+    }
     self->speed_wpm = wpm;
     self->rate_index = idx;
     for (i = 0; i < 5; i++)

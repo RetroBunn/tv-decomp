@@ -291,10 +291,43 @@ void TV_THISCALL Preformat_Run(Engine *self)
         nargs = 2;
         self->cfg_bytes[p0] = (uint8_t)param[1];
         break;
+    case 'q':
+        /* OpenTV: the pitch to sing, in quarter-hertz, low byte then high.
+         * Two bytes because a note wants more than 255 of them. */
+        if (!tv_ext_sing || cnt > 2)
+            break;
+        p0 = (p0 < 0) ? 0 : (p0 & 0xff);
+        param[1] = (cnt > 1 && param[1] > 0) ? (param[1] & 0xff) : 0;
+        nargs = 2;
+        break;
+    case 'd':
+        /* OpenTV: hold the next phoneme for p0 hundredths of a second.  With
+         * the extension off this falls through to the default and is an
+         * unknown command, exactly as it was before, so the corpus cannot see
+         * it.  60 is the ceiling the track window imposes; see stage2.c. */
+        if (!tv_ext_sing || cnt > 1)
+            break;
+        p0 = p0 < 0 ? 0 : clamp(p0, 0, 60);
+        nargs = 1;
+        break;
     case 'p':
         if (cnt > 1)
             break;
-        p0 = p0 < 0 ? 42 : clamp(p0, 25, 200);
+        /*
+         * OpenTV: a score reaches as high as the engine actually goes.  The
+         * command has always stopped at 200, which is 400 Hz, and the top of a
+         * singing scale needs more than that.
+         *
+         * 243 rather than 250, and the seven matter.  Measured: 480 Hz comes
+         * out at 479, 490 saturates at 479, and 495 and 500 come out at
+         * **408** -- a wrap, not a clamp, four semitones adrift.  So the
+         * ceiling stops at 486 Hz, the last value that still sounds.  B4 lands
+         * 1.6 per cent flat and C5 about a semitone flat; wrapping would be far
+         * worse than either.
+         */
+        p0 = p0 < 0 ? 42
+                    : clamp(p0, 25,
+                            tv_ext_pitch ? 255 : tv_ext_sing ? 243 : 200);
         nargs = 1;
         self->pitch = p0 * 2;
         break;

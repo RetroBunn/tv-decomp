@@ -87,6 +87,16 @@ static int32_t jitter(Engine *self)
     return nv & 0x3f;
 }
 
+/*
+ * OpenTV: one cycle of a cosine in sixteen steps, scaled to +-256, for the
+ * waver a sung note carries.  Sixteen frames is 160 ms, so advancing one step
+ * a frame is 6.25 Hz.
+ */
+static const int16_t g_sing_cos[16] = {
+     256,  237,  181,   98,    0,  -98, -181, -237,
+    -256, -237, -181,  -98,    0,   98,  181,  237
+};
+
 int tv_ext_clarity = 0;
 
 /* Widen a formant's bandwidth at high speech rates.
@@ -118,9 +128,50 @@ static int32_t bw_widen(const Engine *self, int32_t off)
 }
 
 /* The coefficient tables are indexed by byte offset. */
+#ifdef TV_DIAG
+/* The widest byte offset each resonator table is read at, so a voice that
+ * walks off the end of one can be caught saying so.  Tables 6 and 7 are 180
+ * int32 (720 bytes) and table 8 is 700 (2800); see docs/VOICES.md. */
+long tv_diag_syn[10];
+static int32_t syn_at(const Engine *self, int i, int32_t off);
+#define SYN(i, off) syn_at(self, (i), (int32_t)(off))
+#else
 #define SYN(i, off) (*(const int32_t *)((const uint8_t *)self->syn_tab[i] + (off)))
+#endif
 
 /* @0x10002a40 */
+#ifdef TV_DIAG
+/* The five Q13 pole coefficients scaled to Q15 by multiplying by four.  A
+ * radius near one puts the product at 32768, which does not fit, and a wrapped
+ * coefficient is a filter that no longer decays.  Slot order follows
+ * filt_coef: 5, 7, 9, 11, 15. */
+long tv_diag_q15[5];
+long tv_diag_q15_over[5];
+
+static int32_t q15(int slot, int32_t v)
+{
+    long a = v < 0 ? -(long)v : (long)v;
+
+    if (a > tv_diag_q15[slot])
+        tv_diag_q15[slot] = a;
+    if (v > 32767 || v < -32768)
+        tv_diag_q15_over[slot]++;
+    return v;
+}
+#define Q15(slot, v) q15((slot), (int32_t)(v))
+#else
+#define Q15(slot, v) (v)
+#endif
+
+#ifdef TV_DIAG
+static int32_t syn_at(const Engine *self, int i, int32_t off)
+{
+    if (off > tv_diag_syn[i])
+        tv_diag_syn[i] = off;
+    return *(const int32_t *)((const uint8_t *)self->syn_tab[i] + off);
+}
+#endif
+
 void TV_THISCALL Synth_Frame(Engine *self)
 {
     int32_t p[22];
@@ -158,7 +209,7 @@ void TV_THISCALL Synth_Frame(Engine *self)
 
     /* ---- per-voice adjustments -------------------------------------- */
     t1c = (p[21] & 0xf0) >> 4;
-    adj = &g_voice_adjust[t1c * 15];
+    adj = tv_v_adjust(t1c);
     p[9] += (adj[0] * p[9]) / 100;
     p[13] += (adj[1] * p[13]) / 100;
     p[10] += (adj[2] * p[10]) / 100;
@@ -181,6 +232,81 @@ void TV_THISCALL Synth_Frame(Engine *self)
     if (p[2] > 0x6b)
         p[2] = 0x6b;
 
+    /*
+     * OpenTV: breathiness, as a floor rather than an offset.  Only while the
+     * voice is actually sounding -- p[0] is the voicing amplitude -- so the
+     * silence test below still sees a silent frame, and so an /h/ that already
+     * asks for more than this keeps its own level.  A stock voice asks for 0
+     * and nothing here runs.
+     */
+    {
+        int32_t asp = tv_v_aspir(self->cur_voice);
+
+        if (asp != 0 && p[0] != 0 && p[2] < asp)
+            p[2] = asp;
+    }
+
+    /*
+     * OpenTV: a sung note held across a join does not widen its bandwidths.
+     *
+     * A note longer than stage 3 will give one phoneme is sung as that phoneme
+     * repeated, and the engine articulates across every pair of phonemes --
+     * which for a repeat is wrong, because a repeat is not a boundary.  What it
+     * does is widen the bandwidths: measured frame by frame through an A-to-A
+     * join, B2 walks 60, 71, 74 ... 125 over the eighteen frames before it and
+     * B3 walks 100 to 200, then both drop back.  A wide bandwidth is a shallow
+     * resonance, so the level follows them down **13 dB for about 150 ms** and
+     * a sustained note pulses once a chunk.
+     *
+     * Stage 3 is the wrong place to stop it -- the travel is drawn by the rule
+     * passes and not from the lead, start and target that Stage3_Write lays
+     * down, so flattening all 22 of those changes nothing.  Here is the last
+     * place the parameters pass before they become filter coefficients, so here
+     * the three bandwidths are simply not allowed above what the note began
+     * with.  Narrower is left alone: the vowel may still close up, it may just
+     * not blow open at a seam that is not really there.
+     *
+     * Only a tied phoneme is held.  A note made of different phonemes -- which
+     * is most of a song -- articulates between them as it always did.
+     */
+    /*
+     * OpenTV: a sung note held across a join keeps its vowel.
+     *
+     * A note longer than stage 3 will give one phoneme is sung as that phoneme
+     * repeated, and the engine articulates across every pair of phonemes --
+     * which for a repeat is wrong, because a repeat is not a boundary.  Left
+     * alone it drops the level **13 dB for about 150 ms** at each join, so a
+     * sustained note pulses once a chunk.
+     *
+     * What carries that drop is the **formant frequencies**, which was not the
+     * obvious answer.  The bandwidths move at the same time and look like the
+     * culprit -- B2 walks 60 to 125 across a join, B3 100 to 200, and a wide
+     * bandwidth is a shallow resonance -- but holding them changes almost
+     * nothing.  Freezing one group of parameters at a time across the join
+     * settles it:
+     *
+     *      nothing held                 16.5 dB of level range
+     *      p0-p2    amplitudes          13.7
+     *      p3-p8                        16.5
+     *      **p9-p12  formants            4.3**
+     *      p13-p15  bandwidths          13.5
+     *      p16-p21                      16.5
+     *      everything                    2.5
+     *
+     * The engine walks the formants toward a boundary position -- F1 from 105
+     * down to 74 -- and that moves the resonances off the harmonics they were
+     * reinforcing.  So the resonator shape is held: the four formants and the
+     * three bandwidths together, which measures 3.3 dB against a floor of 2.5.
+     *
+     * Everything else is left alone, which is the point.  The amplitudes, the
+     * aspiration and the glottal parameters go on coming from real frames and
+     * the pitch goes on wavering, so a long note is a sustained vowel rather
+     * than a frozen one; `ESC[<n>g`, which repeated a single frame and was what
+     * "robotic" meant, is no longer used by a score at all.
+     *
+     * Only a tied phoneme is held.  A note made of several different phonemes,
+     * which is most of a song, articulates between them as it always did.
+     */
     /* ---- silence detection ------------------------------------------ */
     if (p[0] == 0 && p[1] == 0 && p[2] == 0) {
         if (self->e_2074 == 0)
@@ -221,6 +347,146 @@ void TV_THISCALL Synth_Frame(Engine *self)
         w = self->filt_coef[30];
         self->filt_coef[31] = (int16_t)((sr2 / (int32_t)self->filt_coef[31]) / 2);
 
+        /*
+         * OpenTV: a sung note's pitch -- glided into, wavering, and then put
+         * on the sample grid.
+         *
+         * The shape is DECtalk's, because that is plainly where the product
+         * that drove this engine took its score syntax from, and it is what a
+         * sung note is missing otherwise.  A note is reached over 100 ms
+         * rather than stepped to, and it wavers at 6.25 Hz by plus and minus
+         * 2.05 Hz.  A frequency written out in hertz instead of a note is
+         * what a glide is written with, so it travels over the whole phoneme
+         * and does not waver -- DECtalk sets its vibrato switch for a note
+         * from the table and clears it for a straight line, and this is the
+         * same distinction.
+         *
+         * The period itself is a whole number of samples and the same in
+         * both slots, so nothing alternates; see below.
+         */
+        if (tv_ext_sing && (tv_sing_f0q[4] & TV_SING_Q_MASK) > 0) {
+            int32_t want = tv_sing_f0q[4] & TV_SING_Q_MASK;
+            int32_t is_note = (tv_sing_f0q[4] & TV_SING_Q_HZ) == 0;
+            int32_t q, h2;
+
+            /* a target it has not heard yet starts a new glide */
+            if (want != tv_sing_f0_tgt) {
+                int32_t frames, glide;
+
+                tv_sing_f0_tgt = want;
+                if (tv_sing_f0_fx <= 0)
+                    tv_sing_f0_fx = want << 8;      /* the first note of a score */
+                /*
+                 * A note takes 100 ms.  A frequency takes the phoneme it was
+                 * written on, which is what makes a glide a glide; the
+                 * duration escape has it in hundredths and a hundredth is a
+                 * frame.
+                 */
+                glide = (tv_sing_glide_ms + 5) / 10;
+                if (glide < 1)
+                    glide = 1;
+                frames = is_note ? glide
+                                 : (tv_sing_dur[4] > 0 ? tv_sing_dur[4]
+                                                       : glide);
+                if (frames < 1)
+                    frames = 1;
+                tv_sing_f0_step = ((want << 8) - tv_sing_f0_fx) / frames;
+            }
+
+            /* travel, without overshooting */
+            if (tv_sing_f0_step != 0) {
+                tv_sing_f0_fx += tv_sing_f0_step;
+                if ((tv_sing_f0_step > 0 &&
+                     tv_sing_f0_fx >= (tv_sing_f0_tgt << 8)) ||
+                    (tv_sing_f0_step < 0 &&
+                     tv_sing_f0_fx <= (tv_sing_f0_tgt << 8))) {
+                    tv_sing_f0_fx = tv_sing_f0_tgt << 8;
+                    tv_sing_f0_step = 0;
+                }
+            }
+
+            q = tv_sing_f0_fx;
+            if (is_note && tv_sing_vib_depth > 0) {
+                /* a quarter of a hertz is four, and the table is +-256 */
+                int32_t depth = (tv_sing_vib_depth * 1024) / 100;
+
+                tv_sing_vib_ph = (tv_sing_vib_ph +
+                                  (tv_sing_vib_rate * 65536) / 10000) & 0xffff;
+                q += (depth * (int32_t)g_sing_cos[(tv_sing_vib_ph >> 12) & 15])
+                     >> 8;
+            }
+            q >>= 8;
+            if (q < 1)
+                q = 1;
+
+            /*
+             * q is quarter-hertz, so the period is 4*sr/q samples, rounded to
+             * a whole one.  It is kept in half samples because generate.c
+             * counts in them, but it is always an even number of them: both
+             * slots get the same period and the oscillator does not alternate.
+             *
+             * It used to.  Coefficients 30 and 31 are swapped at every period
+             * boundary, so setting them a sample apart puts the *average*
+             * half a sample from either, and that bought about three cents of
+             * tuning accuracy -- 4.4 against 7.1 mean over the scale.  It also
+             * meant the oscillator ran 56 samples, then 57, then 56, for the
+             * whole length of a note, and a sample is a wide interval: 31
+             * cents at G3.  The spectrum says the artefact is 57 dB down,
+             * which is why it survived three rounds of measurement; the ear
+             * says it is a warble, and the ear is right.  Dither is dither
+             * however it is dressed up, and a note that is a few cents flat
+             * and steady beats one that is exactly right on average.
+             */
+            h2 = 2 * (((int32_t)self->sample_rate * 4 + q / 2) / q);
+
+            /*
+             * And do not let the grid turn a small waver into a large one.
+             *
+             * The period is a whole number of samples, so the step between
+             * neighbouring pitches widens as the scale climbs: around 15 cents
+             * at the bottom of the range, 31 at G3 and **over 80 at C5**,
+             * where the period is only 21 samples.  A waver of 2.05 Hz is 38
+             * cents at the bottom and 7 at the top, so before long it is
+             * smaller than one step, and quantising it does not make it small
+             * -- it
+             * makes it snap between neighbouring steps, slowly and
+             * erratically.  Measured before this guard, C5 wavered **74 cents
+             * at 2 Hz** where 7 at 6.25 was asked for, which is a wobble
+             * rather than a waver.  DECtalk worried about the same thing from
+             * the other end: a comment in its vocal tract model keeps extra
+             * fractional bits to "preserve vibrato at high notes".
+             *
+             * So a period is only taken if the pitch it really gives is
+             * inside the waver that was asked for, with half as much again
+             * for rounding.  Where it is not, the note is sung without one.
+             * The waver thins out towards the top of the scale, which is the
+             * engine's grid showing through and is the honest answer to it.
+             */
+            if (h2 >= 4 && tv_sing_vib_depth > 0 && is_note) {
+                int32_t base = tv_sing_f0_fx >> 8;
+                int32_t got = ((int32_t)self->sample_rate * 8 + h2 / 2) / h2;
+                int32_t off = got - base;
+                int32_t room = (tv_sing_vib_depth * 4 * 3) / (100 * 2);
+
+                if (off < 0)
+                    off = -off;
+                if (off > room) {
+                    if (base < 1)
+                        base = 1;
+                    h2 = ((int32_t)self->sample_rate * 8 + base / 2) / base;
+                }
+            }
+            if (h2 >= 4) {
+                tv_sing_per = h2;
+                self->filt_coef[30] = (int16_t)(h2 / 2);
+                self->filt_coef[31] = (int16_t)(h2 - h2 / 2);
+            } else {
+                tv_sing_per = 0;
+            }
+        } else {
+            tv_sing_per = 0;
+        }
+
         self->filt_coef[0] = (int16_t)p[18];
         v = Synth_MulQ15((int32_t)w, p[19] << 11);
         v = Synth_MulQ15(v, g_tab_57c8[p[18]]);
@@ -233,6 +499,9 @@ void TV_THISCALL Synth_Frame(Engine *self)
         self->filt_coef[34] = (int16_t)v;
         v = Synth_MulQ15((int32_t)self->filt_coef[34], g_tab_5af8[p[19]]);
         v >>= 3;
+        /* OpenTV: a voice of our own can ask for a quieter source, which is
+         * what keeps its filter states inside 16 bits.  See TvVoiceDef. */
+        v = tv_v_gain(self->cur_voice, v);
         self->filt_coef[34] = (int16_t)v;
         w = (int16_t)((int16_t)(self->filt_coef[30] >> 2) * (int16_t)v);
         self->filt_coef[34] = w;
@@ -256,7 +525,11 @@ void TV_THISCALL Synth_Frame(Engine *self)
     }
 
     /* ---- the nasal branch and the first formant ---------------------- */
-    self->filt_coef[16] = (int16_t)g_tab_1239bc[p[2]];
+    /* OpenTV: the aspiration source follows the voice's gain too, or a
+     * quieter voice is only half quieter and the noise still drives the
+     * resonators as hard as ever. */
+    self->filt_coef[16] =
+        (int16_t)tv_v_gain(self->cur_voice, g_tab_1239bc[p[2]]);
     self->filt_coef[38] = (int16_t)*(const int32_t *)self->syn_tab[0];
     self->filt_coef[39] = (int16_t)*(const int32_t *)self->syn_tab[1];
     self->filt_coef[37] = (int16_t)*(const int32_t *)self->syn_tab[2];
@@ -273,13 +546,14 @@ void TV_THISCALL Synth_Frame(Engine *self)
         v = SYN(7, o9);
         lo = Synth_MulShr12(SYN(6, o9), SYN(8, ((t24 & ~6) >> 1)), &t14);
         self->filt_coef[4] = (int16_t)lo;
-        self->filt_coef[5] = (int16_t)(v * 4);
+        self->filt_coef[5] = (int16_t)Q15(0, v * 4);
         self->filt_coef[21] = (int16_t)((int16_t)((int16_t)v - (int16_t)t14) + 0x2000);
     }
 
     v = (int32_t)(int16_t)((int32_t)self->sample_rate / 2);
     if ((p[12] << 4) >= v)
         p[12] = (v - 0xa) >> 4;
+
 
     /* ---- F1: from adj[7] and p[12] ---------------------------------- */
     {
@@ -288,7 +562,7 @@ void TV_THISCALL Synth_Frame(Engine *self)
         c23 = SYN(7, o7);
         lo = Synth_MulShr12(SYN(6, o7), SYN(8, p[12] * 8), &t14);
         self->filt_coef[6] = (int16_t)lo;
-        self->filt_coef[7] = (int16_t)(c23 * 4);
+        self->filt_coef[7] = (int16_t)Q15(1, c23 * 4);
         c23 = c23 - t14 + 0x2000;
         self->filt_coef[23] = (int16_t)c23;
     }
@@ -301,7 +575,7 @@ void TV_THISCALL Synth_Frame(Engine *self)
         c25 = SYN(7, off);
         lo = Synth_MulShr12(SYN(6, off), SYN(8, bwoff), &t14);
         self->filt_coef[8] = (int16_t)lo;
-        self->filt_coef[9] = (int16_t)(c25 * 4);
+        self->filt_coef[9] = (int16_t)Q15(2, c25 * 4);
         c25 = c25 - t14 + 0x2000;
         self->filt_coef[25] = (int16_t)c25;
     }
@@ -314,7 +588,7 @@ void TV_THISCALL Synth_Frame(Engine *self)
         c27 = SYN(7, off);
         lo = Synth_MulShr12(SYN(6, off), SYN(8, bwoff), &t14);
         self->filt_coef[10] = (int16_t)lo;
-        self->filt_coef[11] = (int16_t)(c27 * 4);
+        self->filt_coef[11] = (int16_t)Q15(3, c27 * 4);
         c27 = c27 - t14 + 0x2000;
         self->filt_coef[27] = (int16_t)c27;
     }
@@ -328,7 +602,7 @@ void TV_THISCALL Synth_Frame(Engine *self)
         c36 = SYN(7, off);
         lo = Synth_MulShr12(SYN(6, off), SYN(8, bwoff), &t14);
         self->filt_coef[14] = (int16_t)lo;
-        self->filt_coef[15] = (int16_t)(c36 * 4);
+        self->filt_coef[15] = (int16_t)Q15(4, c36 * 4);
         c36 = c36 - t14 + 0x2000;
         if (c36 > 0x7ff)
             c36 = 0x7ff;

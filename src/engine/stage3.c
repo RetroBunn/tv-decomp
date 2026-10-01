@@ -6,6 +6,8 @@
  * frame, using the per-phoneme target tables and the transition rules that
  * say how each parameter travels from one phoneme to the next.
  */
+#include <stdlib.h>
+
 #include "engine.h"
 
 /* @0x100c8aa0 with the signed index the original uses; see stage0.c */
@@ -322,9 +324,64 @@ int32_t TV_THISCALL Stage3_Hold(Engine *self, int32_t ch, int32_t n,
     if (restart != 0) {
         self->s3_hold_pitch = 0;
         if ((uint8_t)ch == 'g') {
-            /* hold whatever the parameters were left at */
-            for (i = 0; i < 22; i++)
-                self->s3_hold[i] = self->s3_param_raw[i];
+            /*
+             * The comment this replaced said "hold whatever the parameters were
+             * left at", which is what it looks like and is not what it does:
+             * s3_param_raw is written only from cfg_bytes, so what `g` holds is
+             * the engine's *configured defaults* -- a neutral vowel at the
+             * default pitch.  Sustaining a sung note that way drops it to about
+             * 99 Hz and changes the vowel, which is exactly what it sounds
+             * like.
+             *
+             * OpenTV holds the note instead, which is what a held note means.
+             * Gated, so the original behaviour is what the corpus still sees.
+             *
+             * Which frame to freeze is the whole question.  The last one
+             * written is the obvious answer and it is wrong: a phoneme is
+             * already releasing where it ends -- sung alone, `A` for 600 ms
+             * fades over its last 500, down 6.5 dB before it is a third of
+             * the way out -- so freezing its final frame holds the fade, and
+             * a 1500 ms note steps down 6.6 dB two fifths of the way through
+             * and sits there.  That step is heard as the next note arriving
+             * early, which is exactly what it sounds like.
+             *
+             * So walk back out of the release first.  What the release moves
+             * is not the amplitude -- track 0 holds its 60 right through --
+             * but the three bandwidths, and it moves them abruptly: through
+             * the note they drift about one a frame, and in the two frames
+             * where the phoneme ends they go 94, 89, 83 and 163, 167, 171.
+             * Stepping back while a frame differs sharply from the one before
+             * it leaves that edge behind and lands on the note's own last
+             * steady frame.  Eight frames is the most it will give up, which
+             * is 80 ms, so a phoneme that really is moving that fast keeps
+             * nearly all of itself.
+             */
+            if (tv_ext_sing) {
+                int32_t back = 0;
+                int32_t j = (self->trk_wr[0] - 1) & 0xff;
+
+                while (back < 8) {
+                    int32_t prev = (j - 1) & 0xff;
+                    int32_t moved = 0;
+
+                    for (i = 0; i < 22; i++) {
+                        int32_t d = (int32_t)self->trk_buf[i][j] -
+                                    (int32_t)self->trk_buf[i][prev];
+                        moved += d < 0 ? -d : d;
+                    }
+                    if (moved <= 3)
+                        break;
+                    j = prev;
+                    back++;
+                }
+                for (i = 0; i < 22; i++)
+                    self->s3_hold[i] =
+                        self->trk_buf[i][(self->trk_wr[i] - 1 - back) & 0xff];
+
+            } else {
+                for (i = 0; i < 22; i++)
+                    self->s3_hold[i] = self->s3_param_raw[i];
+            }
         } else if ((uint8_t)ch == 's') {
             for (i = 0; i < 22; i++)
                 self->s3_hold[i] = g_hold_silence[i];
@@ -633,6 +690,35 @@ void TV_THISCALL Stage3_Write(Engine *self, int32_t param)
     if (start < 0)
         start = 0;
 
+    /*
+     * OpenTV: a sung note is held, not approached.  The rules lay track 17
+     * down as a travel -- lead, then start, then target -- and across a
+     * phoneme that reads as a glide: six flat notes of 200 ms measured 101,
+     * 105, 108, 111, 115 Hz climbing towards 131 and never arriving.  A long
+     * note gets close enough that its median looks right, which is how this
+     * hid behind phrase-length measurements; a short one never lands, and that
+     * is the melody smearing.
+     */
+    /*
+     * OpenTV: a sung phoneme laid down as part of a longer note.
+     *
+     * Track 0 and track 17 are held flat across any sung phoneme -- the first
+     * because the blend into it otherwise spans everything between the write
+     * and read cursors, which faded a 1500 ms note in over 500 ms, and the
+     * second because a note is held at its pitch rather than approached.
+     *
+     * The articulation across a join is *not* dealt with here, and it was
+     * tried: a note sung as the same phoneme repeated has the engine widen B2
+     * from 60 to 125 and B3 from 100 to 200 across every join, which takes the
+     * resonance gain with it, and setting lead, start and target to the same
+     * value for all 22 parameters changes none of it.  The bandwidth travel at
+     * a boundary is drawn by the rule passes rather than from these three, so
+     * it is held off in frame.c instead -- see tv_sing_bw.
+     */
+    if (tv_ext_sing && tv_sing_dur[3] != 0 && (param == 17 || param == 0))
+        lead = start = target;
+
+
     /* the formants and the amplitudes are held wider than a byte */
     switch (param) {
     case 9:
@@ -744,6 +830,15 @@ void TV_THISCALL Stage3_Phone(Engine *self)
     uint8_t c, d;
 
     c = st->ctl->value;
+    /*
+     * OpenTV: is this the same phoneme over again?  A note longer than stage 3
+     * will give one phoneme is sung as that phoneme repeated, and the engine
+     * treats every pair of phonemes as a boundary to articulate across: at an
+     * A-to-A seam it widens B2 from 60 to 125 and B3 from 100 to 200, which
+     * takes the resonance gain with it and drops the level **13 dB** for about
+     * 150 ms.  A repeat is not a boundary, so it is marked here and laid down
+     * flat in Stage3_Write.
+     */
     Stage3_Targets(self);
     Stage3_Defaults(self);
 
@@ -825,17 +920,17 @@ void TV_THISCALL Stage3_Phone(Engine *self)
     if (voice != 0) {
         /* the voice's own nasal colouring */
         v = self->s3_param[9].target;
-        self->s3_param[9].target = Synth_MulQ15(v, g_voice_nasal_rate[voice]) + v;
+        self->s3_param[9].target = Synth_MulQ15(v, tv_v_nasal_rate(voice)) + v;
         v = self->s3_param[10].target;
         self->s3_param[10].target =
-            Synth_MulQ15(v, g_voice_nasal_rate[st->voice]) + v;
+            Synth_MulQ15(v, tv_v_nasal_rate(st->voice)) + v;
         v = self->s3_param[11].target;
-        v = Synth_MulQ15(v, g_voice_nasal_rate[st->voice]) + v;
+        v = Synth_MulQ15(v, tv_v_nasal_rate(st->voice)) + v;
         self->s3_param[11].target = v;
         self->s3_param[12].target +=
-            Synth_MulQ15(v, g_voice_nasal_rate[st->voice]);
-        if (self->s3_param[12].target > g_voice_nasal_max[st->voice])
-            self->s3_param[12].target = g_voice_nasal_max[st->voice];
+            Synth_MulQ15(v, tv_v_nasal_rate(st->voice));
+        if (self->s3_param[12].target > tv_v_f4max(st->voice))
+            self->s3_param[12].target = tv_v_f4max(st->voice);
     }
 
     self->s3_param[21].target |= st->voice << 4;
@@ -2345,16 +2440,16 @@ void TV_THISCALL Stage3_Targets(Engine *self)
     self->s3_param[10].target = ((int32_t)g_pt_f2[cls_ctl] << 3) + 0x1f4;
     self->s3_param[11].target = (int32_t)g_pt_f3[cls_ctl] << 4;
     self->s3_param[12].target = ((int32_t)g_pt_f4[cls_ctl] << 4) +
-                                g_voice_f4[voice];
+                                tv_v_f4(voice);
     self->s3_param[13].target = (int32_t)g_pt_b1[cls_ctl] * 2;
     self->s3_param[14].target = (int32_t)g_pt_b2[cls_ctl] * 2;
     self->s3_param[15].target = (int32_t)g_pt_b3[cls_ctl] * 2;
     self->s3_param[0].target  = (int32_t)g_pt_av[cls_ctl];
     self->s3_param[17].target = (int32_t)ctl->b15 * 2;
-    self->s3_param[18].target = (int32_t)g_voice_p18[voice];
-    self->s3_param[19].target = (int32_t)g_voice_p19[voice];
-    self->s3_param[20].target = (int32_t)g_voice_p20[voice];
-    self->s3_param[21].target = (int32_t)g_voice_p21[voice];
+    self->s3_param[18].target = tv_v_p18(voice);
+    self->s3_param[19].target = tv_v_p19(voice);
+    self->s3_param[20].target = tv_v_p20(voice);
+    self->s3_param[21].target = tv_v_p21(voice);
 
     if (cls_ctl < 0x1e) {
         /* a class with no noise of its own */
@@ -6412,7 +6507,7 @@ void TV_THISCALL Stage3_Op13(Engine *self)
     }
 
     if (p[0].target > 0 || p[2].target > 0) {
-        v = g_voice_f4max[st->voice];
+        v = tv_v_f4max(st->voice);
         if (p[12].target > v)
             p[12].target = v;
         for (i = 0; i < 3; i++)

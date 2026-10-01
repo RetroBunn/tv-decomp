@@ -337,6 +337,185 @@ static int excursion(const sink *s, int pitch)
     return r > 1000 ? r - 1000 : 0;
 }
 
+/*
+ * How wide the contour is, as the ratio of the longest period to the shortest
+ * in parts per thousand -- the same units as period_spread, by a different
+ * estimator.
+ *
+ * period_spread picks the best autocorrelation peak, which is sound enough to
+ * compare a voice against itself (the contour and rate checks do exactly
+ * that), but it halves a doubled lag and never corrects one picked an octave
+ * high, so harmonic picks sit in its tails.  How much contamination there is
+ * depends on the formants, so comparing two *different* voices needs tails
+ * that can be trusted: on Frank against Peter below, no percentile band from
+ * 5/95 to 40/60 told them apart, while this estimator separates them cleanly.
+ *
+ * This is YIN's cumulative mean normalized difference, which is what tells it
+ * apart: a period is accepted only when its difference function is small
+ * *relative to the running mean of every shorter lag*, so an octave-high pick
+ * is rejected for being no better than its own subharmonics.  Kept in
+ * integers, with the threshold as a fraction, so the freestanding 32-bit build
+ * needs no maths library.
+ */
+#define YIN_FRAME  1024
+#define YIN_LO     (11025 / 700)        /* 15 samples, 700 Hz */
+#define YIN_HI     (11025 / 60)         /* 183 samples, 60 Hz */
+#define YIN_THRESH 15                   /* accept d' below 0.15 */
+/*
+ * And if nothing crosses that, take the best lag there was, provided the frame
+ * was at least this periodic.  A voice with jitter never crosses 0.15 -- Frank
+ * does not, once he has Grandpa Amos's perturbation -- so without a fallback
+ * he measures as no frames at all; with an *ungated* one, fricatives and
+ * transitions come in as octave errors and both voices measure at five times
+ * their real spread.  Swept: 300 to 500 all agree, 600 and above blow up.
+ */
+#define YIN_GATE   500                  /* d' x 1000 */
+
+static int yin_taus(const sink *s, int *out, int cap)
+{
+    static int tau_of[4096], smooth[4096];
+    static long long d[YIN_HI + 1];
+    long long gsum = 0, gms;
+    size_t i, f;
+    int n = 0;
+
+    if (s->n < (size_t)YIN_FRAME * 4)
+        return 0;
+    for (i = 0; i < s->n; i++)
+        gsum += (long long)s->pcm[i] * s->pcm[i];
+    gms = gsum / (long long)s->n;
+    if (gms <= 0)
+        return 0;
+
+    for (f = 0; f + YIN_FRAME + YIN_HI < s->n && n < 4096; f += F0_HOP) {
+        const int16_t *x = s->pcm + f;
+        long long e = 0, run = 0;
+        int tau, best = 0, k;
+
+        for (k = 0; k < YIN_FRAME; k++)
+            e += (long long)x[k] * x[k];
+        if ((e / YIN_FRAME) * 100 < gms * 9)
+            continue;                   /* a closure between syllables */
+
+        for (tau = 1; tau <= YIN_HI; tau++) {
+            long long v = 0;
+            for (k = 0; k < YIN_FRAME; k++) {
+                long long t = (long long)x[k] - x[k + tau];
+                v += t * t;
+            }
+            d[tau] = v;
+        }
+        /*
+         * d'(tau) = d[tau] / (mean of d[1..tau]).  Scaled by a thousand it
+         * stays inside 64 bits (4.4e12 * 183 * 1000), so no floating point and
+         * no overflow, and two lags can be compared directly.
+         */
+        {
+            long long lowest = 0;
+            int at_lowest = 0;
+
+            for (tau = 1; tau <= YIN_HI; tau++) {
+                long long dp;
+
+                run += d[tau];
+                if (tau < YIN_LO || run <= 0)
+                    continue;
+                dp = d[tau] * (long long)tau * 1000 / run;
+                if (at_lowest == 0 || dp < lowest) {
+                    lowest = dp;
+                    at_lowest = tau;
+                }
+                if (dp < YIN_THRESH * 10) {
+                    best = tau;
+                    break;
+                }
+            }
+            /* YIN's own fallback: nothing crossed the threshold, so take the
+             * best lag there was.  A rough voice -- one with jitter, which is
+             * exactly what this file now has to measure -- never crosses. */
+            if (best == 0 && lowest < YIN_GATE)
+                best = at_lowest;
+        }
+        if (best == 0)
+            continue;
+        while (best < YIN_HI && d[best + 1] < d[best])
+            best++;                     /* on to the bottom of the dip */
+        tau_of[n++] = best;
+    }
+
+    /*
+     * A median of five along the utterance first.  Intonation is a slow
+     * trajectory and jitter is a fast one, and a voice with jitter has both;
+     * without this the cycle-to-cycle spread would be counted as contour and
+     * the two would be impossible to tell apart.
+     */
+    if (n < 8)
+        return 0;
+    for (i = 0; i + 5 <= (size_t)n; i++) {
+        int w[5], a, b;
+
+        for (a = 0; a < 5; a++)
+            w[a] = tau_of[i + a];
+        for (a = 1; a < 5; a++) {       /* insertion sort of five */
+            int v = w[a];
+            for (b = a - 1; b >= 0 && w[b] > v; b--)
+                w[b + 1] = w[b];
+            w[b + 1] = v;
+        }
+        smooth[i] = w[2];
+    }
+    n = n - 4;
+
+    for (i = 1; i < (size_t)n; i++) {   /* insertion sort */
+        int v = smooth[i], j = (int)i - 1;
+        while (j >= 0 && smooth[j] > v) {
+            smooth[j + 1] = smooth[j];
+            j--;
+        }
+        smooth[j + 1] = v;
+    }
+    if (n > cap)
+        n = cap;
+    for (i = 0; i < (size_t)n; i++)
+        out[i] = smooth[i];
+    return n;
+}
+
+/*
+ * The contour's width, as the ratio of the longest period to the shortest in
+ * parts per thousand.
+ */
+static int yin_spread(const sink *s)
+{
+    static int t[4096];
+    int n = yin_taus(s, t, 4096);
+
+    if (n < 8 || t[n / 10] <= 0)
+        return 0;
+    return 1000 * t[n - 1 - n / 10] / t[n / 10];
+}
+
+/* The same, with the monotone taken off, to read as "how much contour is
+ * there" beside excursion() above. */
+static int yin_excursion(const sink *s)
+{
+    int r = yin_spread(s);
+    return r > 1000 ? r - 1000 : 0;
+}
+
+static void say_rate(const char *lang, int voice, int wpm, unsigned ext,
+                     const char *text, sink *out)
+{
+    tvtts_synth *s;
+
+    tvtts_set_extensions(ext);
+    s = tvtts_create_lang(11025, lang);
+    tvtts_set_voice(s, voice);
+    tvtts_set_rate(s, wpm);
+    say(s, text, out);
+    tvtts_destroy(s);
+}
+
 static void say_at(const char *lang, int voice, int pitch, unsigned ext,
                    const char *text, sink *out)
 {
@@ -348,6 +527,248 @@ static void say_at(const char *lang, int voice, int pitch, unsigned ext,
     tvtts_set_pitch(s, pitch);
     say(s, text, out);
     tvtts_destroy(s);
+}
+
+/*
+ * Voices this project defines itself, past the ten in the DLL.
+ *
+ * Frank is the first: a deep male voice from MindMaker's TextAssist build,
+ * which is Peter at 72 Hz with a vocal tract a tenth longer.  See
+ * src/engine/voices.c for where those two numbers come from and NOTICE for
+ * what was and was not taken from that product.
+ */
+/* How many times a character appears, for checking a compiled score. */
+static int count_char(const char *s, char c)
+{
+    int n = 0;
+    while (*s != '\0')
+        if (*s++ == c)
+            n++;
+    return n;
+}
+
+/* The value of the pitch escape in a compiled score -- the one ending in 'p',
+ * which is not the first escape in the string. */
+static int pitch_esc(const char *s)
+{
+    const char *e;
+
+    for (e = strchr(s, '['); e != NULL; e = strchr(e + 1, '[')) {
+        const char *q = e + 1;
+
+        while (*q >= '0' && *q <= '9')
+            q++;
+        if (*q == 'p' && q > e + 1)
+            return atoi(e + 1);
+    }
+    return 0;
+}
+
+/* Sing a score into a sink, at the default voice. */
+static void sing_at(const char *score, sink *out)
+{
+    tvtts_synth *s;
+
+    memset(out, 0, sizeof *out);
+    tvtts_set_extensions(TVTTS_EXT_ALL);
+    s = tvtts_create_lang(11025, "en");
+    tvtts_sing(s, score, on_event, out);
+    tvtts_destroy(s);
+}
+
+/*
+ * The pitch a sung note came out at, in whole hertz: the median of the
+ * per-frame periods yin_spread already finds, turned back into a frequency.
+ */
+static int sung_hz(const sink *s)
+{
+    static int tau[4096];
+    int n = yin_taus(s, tau, 4096);
+
+    return n < 8 ? 0 : 11025 / tau[n / 2];
+}
+
+static void test_custom_voices(void)
+{
+    static const char *const TXT = "Hello there, my name is Frank.";
+    int i, n = tvtts_voice_count(), kit = -1, peter = -1;
+
+    for (i = 0; i < n; i++) {
+        const char *nm = tvtts_voice_name(i);
+        if (nm == NULL)
+            continue;
+        if (strcmp(nm, "Frank") == 0)
+            kit = i;
+        else if (strcmp(nm, "Peter") == 0)
+            peter = i;
+    }
+    check(kit >= 0, "Frank is one of the voices");
+    check(peter == 0, "and Peter is still voice 0");
+    if (kit < 0)
+        return;
+
+    check(kit >= 10, "Frank sits past the ten the DLL carries");
+    check(strcmp(tvtts_voice_language(kit), "en") == 0, "Frank speaks English");
+    check(tvtts_voice_pitch(kit) == 72, "Frank's pitch is F0Def from Frank.tav");
+    check(tvtts_voice_rate(kit) == tvtts_voice_rate(peter),
+          "and what Frank.tav does not give is Peter's");
+
+    {
+        sink k = {0}, p_same = {0}, p_own = {0};
+        tvtts_synth *s;
+
+        s = tvtts_create(11025);
+        tvtts_set_voice(s, kit);
+        say(s, TXT, &k);
+        tvtts_destroy(s);
+
+        /* Peter at Kit's pitch.  If only the pitch were being applied the two
+         * would be identical -- which is exactly what happened while
+         * Engine_SetVoice still refused anything past its ten, and the voice
+         * silently stayed as it was.  This is the check for that. */
+        s = tvtts_create(11025);
+        tvtts_set_voice(s, peter);
+        tvtts_set_pitch(s, 72);
+        say(s, TXT, &p_same);
+        tvtts_destroy(s);
+
+        s = tvtts_create(11025);
+        tvtts_set_voice(s, peter);
+        say(s, TXT, &p_own);
+        tvtts_destroy(s);
+
+        check(k.n > 4000, "Frank speaks");
+        check(!same(&k, &p_own), "and does not sound like Peter");
+        check(!same(&k, &p_same),
+              "nor like Peter moved to the same pitch -- the tract differs too");
+
+        sink_free(&k);
+        sink_free(&p_same);
+        sink_free(&p_own);
+    }
+
+    /*
+     * IntonLevel: how far the contour moves.  Frank.tav gives 0.7 where Bill
+     * gives 1.0, so at the same pitch his contour has to reach less far than
+     * Peter's -- measured out of the audio, not read back from the field.
+     */
+    {
+        sink f = {0}, p = {0};
+        int ef, ep;
+
+        say_at("en", kit, 72, TVTTS_EXT_ALL, TXT, &f);
+        say_at("en", peter, 72, TVTTS_EXT_ALL, TXT, &p);
+        ef = yin_excursion(&f);
+        ep = yin_excursion(&p);
+        printf("    [inton, contour in parts per thousand of period: Frank %d, "
+               "Peter %d, both at pitch 72]\n", ef, ep);
+        check(ef > 0 && ep > 0, "both voices have a contour at pitch 72");
+        check(ef * 10 < ep * 9,
+              "Frank's contour reaches less far than Peter's, as IntonLevel asks");
+        sink_free(&f);
+        sink_free(&p);
+    }
+
+    /* Selecting a voice that does not exist still does nothing, as it always
+     * did; the bound moved out to the voices defined, not away entirely. */
+    {
+        sink a = {0}, b = {0};
+        tvtts_synth *s = tvtts_create(11025);
+
+        tvtts_set_voice(s, peter);
+        say(s, TXT, &a);
+        tvtts_set_voice(s, n + 50);
+        say(s, TXT, &b);
+        tvtts_destroy(s);
+        check(same(&a, &b), "a voice number nobody has leaves the voice alone");
+        sink_free(&a);
+        sink_free(&b);
+    }
+}
+
+/*
+ * TVTTS_EXT_RATE on the Spanish engine, which never had it until now.
+ *
+ * Engine_SetSpeed hands (wpm - 46) >> 3 to three tables of 26, 24 and 16 rows,
+ * and the index reaches 44 at 400 wpm, so the original reads off the end of all
+ * three.  What that does is not a graceful slowdown: at 254 wpm it comes out
+ * *longer* than at 253, and by 300 the phoneme percentage it lands on leaves a
+ * whole sentence taking a tenth of a second -- the engine, in effect, refusing
+ * to speak.
+ */
+static void test_es_rate(void)
+{
+    static const char *const TXT =
+        "Uno dos tres cuatro cinco seis siete ocho nueve diez.";
+    const unsigned NOR = TVTTS_EXT_ALL & ~TVTTS_EXT_RATE;
+    const char *es = NULL;
+    int i, pedro = -1;
+
+    for (i = 0; i < tvtts_language_count(); i++)
+        if (strcmp(tvtts_language(i), "es") == 0)
+            es = tvtts_language(i);
+    if (es == NULL)
+        return;
+    for (i = 0; i < tvtts_voice_count(); i++)
+        if (strcmp(tvtts_voice_language(i), "es") == 0 && pedro < 0)
+            pedro = i;
+    if (pedro < 0)
+        return;
+
+    /*
+     * Every row the phoneme table actually has is untouched.  That table is 24
+     * rows where English's is 26, so the range this holds over is 46..237 wpm
+     * rather than 46..253; above it the original was already reading past the
+     * end, which is the thing being fixed rather than behaviour to preserve.
+     */
+    {
+        static const int SAME[] = { 46, 100, 150, 200, 230, 237 };
+        int all_same = 1;
+
+        for (i = 0; i < (int)(sizeof SAME / sizeof SAME[0]); i++) {
+            sink a = {0}, b = {0};
+            say_rate(es, pedro, SAME[i], NOR, TXT, &a);
+            say_rate(es, pedro, SAME[i], TVTTS_EXT_ALL, TXT, &b);
+            if (!same(&a, &b))
+                all_same = 0;
+            sink_free(&a);
+            sink_free(&b);
+        }
+        check(all_same, "up to 237 wpm the rate extension changes nothing");
+    }
+
+    /* Past them it stops breaking and starts going faster. */
+    {
+        sink off253 = {0}, off400 = {0};
+        sink on253 = {0}, on300 = {0}, on400 = {0};
+
+        say_rate(es, pedro, 253, NOR, TXT, &off253);
+        say_rate(es, pedro, 400, NOR, TXT, &off400);
+        say_rate(es, pedro, 253, TVTTS_EXT_ALL, TXT, &on253);
+        say_rate(es, pedro, 300, TVTTS_EXT_ALL, TXT, &on300);
+        say_rate(es, pedro, 400, TVTTS_EXT_ALL, TXT, &on400);
+
+        printf("    [rate, samples at 253/300/400 wpm: off %u/-/%u, "
+               "on %u/%u/%u]\n",
+               (unsigned)off253.n, (unsigned)off400.n,
+               (unsigned)on253.n, (unsigned)on300.n, (unsigned)on400.n);
+
+        /* the fault: the top of the range says almost nothing at all */
+        check(off400.n * 8 < off253.n,
+              "without it the top of the range barely speaks");
+        /* and the fix: it speaks, and it speaks faster */
+        check(on400.n * 8 > off253.n, "with it the top of the range speaks");
+        check(on400.n < on300.n && on300.n < on253.n,
+              "and each step up in rate is genuinely shorter");
+
+        sink_free(&off253);
+        sink_free(&off400);
+        sink_free(&on253);
+        sink_free(&on300);
+        sink_free(&on400);
+    }
+
+    tvtts_set_extensions(TVTTS_EXT_ALL);
 }
 
 /*
@@ -674,8 +1095,14 @@ static void test_voices(void)
     sink a, b;
     tvtts_synth *s;
 
-    check(n == 10 * tvtts_language_count(),
-          "ten voices for every language the library carries");
+    /*
+     * Ten per language out of the DLLs, and then however many
+     * src/engine/voices.c adds on top -- Kit, so far.  Counted rather than
+     * assumed, because the whole point of that file is that the number moves,
+     * and a language listed after the one a voice joins shifts along with it.
+     */
+    check(n >= 10 * tvtts_language_count(),
+          "at least ten voices for every language the library carries");
     for (i = 0; i < n; i++) {
         const char *nm = tvtts_voice_name(i);
         int j;
@@ -712,10 +1139,18 @@ static void test_voices(void)
                 ok = 0;
         check(ok, "the English voices are named in the engine's own order");
         if (tvtts_language_count() > 1) {
-            ok = 1;
-            for (i = 0; i < 10; i++)
-                if (tvtts_voice_name(10 + i) == NULL ||
-                    strcmp(tvtts_voice_name(10 + i), want_es[i]) != 0)
+            /* Where Spanish starts is found rather than assumed: it was 10
+             * until Kit was added to English ahead of it. */
+            int es_base = -1;
+
+            for (i = 0; i < n && es_base < 0; i++)
+                if (strcmp(tvtts_voice_language(i), "es") == 0)
+                    es_base = i;
+            check(es_base >= 10, "the Spanish voices come after the English");
+            ok = es_base >= 0;
+            for (i = 0; ok && i < 10; i++)
+                if (tvtts_voice_name(es_base + i) == NULL ||
+                    strcmp(tvtts_voice_name(es_base + i), want_es[i]) != 0)
                     ok = 0;
             check(ok, "and so are the Spanish ones");
         }
@@ -1072,6 +1507,192 @@ static void test_clarity(void)
     tvtts_set_extensions(TVTTS_EXT_ALL);
 }
 
+/*
+ * Singing.  The score compiler is pure, so most of this needs no audio: what
+ * it produces is checked directly, and only the pitch of a sung note is
+ * measured out of the sound.
+ */
+/*
+ * `[:phone TruVoice on|off]`: the command in the text, against the phoneme
+ * entry point it stands for.  Reachable from the API, from `tv` and from the
+ * speak window; NVDA and the SAPI driver strip inline commands before the
+ * text arrives, so neither route sees it.
+ */
+/*
+ * A score sets the engine's pitch with ESC[<n>p, and nothing puts it back:
+ * Engine_Reset does not touch self->pitch, and the port only re-applies pitch
+ * when it differs from what it last sent.  So speech after a song has to be
+ * checked, not assumed.
+ */
+static void test_pitch_after_song(void)
+{
+    tvtts_synth *s1 = tvtts_create(11025);
+    tvtts_synth *s2 = tvtts_create(11025);
+    sink sung, after, fresh;
+    int fa, ff;
+
+    memset(&sung, 0, sizeof sung);
+    tvtts_sing(s1, "A<300,25>", on_event, &sung);   /* C4, well above speech */
+    sink_free(&sung);
+
+    say(s1, "hello there, this is a test", &after);
+    say(s2, "hello there, this is a test", &fresh);
+
+    fa = sung_hz(&after);
+    ff = sung_hz(&fresh);
+    printf("     [after a song %d Hz, on a fresh synth %d Hz]\n", fa, ff);
+    check(fa > 0 && ff > 0, "both utterances have a pitch to measure");
+    check(fa < ff * 5 / 4, "speech after a song is not pitched up by the song");
+
+    tvtts_destroy(s1); tvtts_destroy(s2);
+    sink_free(&after); sink_free(&fresh);
+}
+
+static void test_phone_command(void)
+{
+    tvtts_synth *s = tvtts_create(11025);
+    sink viacmd, viaapi, a, b;
+
+    memset(&viaapi, 0, sizeof viaapi);
+    tvtts_speak_phonemes(s, "HeLO", on_event, &viaapi);
+
+    say(s, "[:phone TruVoice on]HeLO[:phone TruVoice off]", &viacmd);
+    check(viacmd.n > 0, "the command produces audio");
+    check(same(&viacmd, &viaapi),
+          "and says what tvtts_speak_phonemes says, byte for byte");
+
+    /* Case and spacing are not the point of the command. */
+    say(s, "[: PHONE   truvoice   ON ]HeLO[:phone TruVoice off]", &a);
+    check(same(&a, &viaapi), "case and spacing do not matter");
+    sink_free(&a);
+
+    /*
+     * Anything that is not the command is text and has to come through
+     * untouched, which is strongest said this way: with the rewrite off, the
+     * same text must render the same.  A fresh synth either side, because an
+     * utterance in phoneme mode colours the first word of the next one -- see
+     * docs/SINGING.md, which is a separate fault and not this one.
+     */
+    {
+        tvtts_synth *f1, *f2;
+
+        f1 = tvtts_create(11025);
+        say(f1, "a [b] c, and [:phone arpa] as well", &a);
+        tvtts_destroy(f1);
+        tvtts_set_extensions(0);
+        f2 = tvtts_create(11025);
+        say(f2, "a [b] c, and [:phone arpa] as well", &b);
+        tvtts_destroy(f2);
+        tvtts_set_extensions(TVTTS_EXT_ALL);
+    }
+    check(same(&a, &b), "text that is not the command is left byte for byte");
+    sink_free(&a); sink_free(&b);
+
+    /* Off again hands what follows back to the letter rules. */
+    say(s, "[:phone TruVoice on]HeLO[:phone TruVoice off]hello", &a);
+    say(s, "[:phone TruVoice on]HeLO[:phone TruVoice off]", &b);
+    check(a.n > b.n, "off ends phoneme input");
+    sink_free(&a); sink_free(&b);
+
+    /* Gated, like every other extension. */
+    tvtts_set_extensions(0);
+    say(s, "[:phone TruVoice on]HeLO[:phone TruVoice off]", &a);
+    tvtts_set_extensions(TVTTS_EXT_ALL);
+    check(!same(&a, &viaapi), "with the extensions off it is only text");
+    sink_free(&a);
+
+    tvtts_destroy(s);
+    sink_free(&viacmd); sink_free(&viaapi);
+}
+
+
+static void test_singing(void)
+{
+    char buf[512];
+    int n;
+
+    printf("%csinging%c", 10, 10);
+
+    /* The note table is DECtalk's: 1..37 chromatic from C2, 38 up is hertz. */
+    check(tvtts_note_hz(1) == 65, "note 1 is low C at 65 Hz");
+    check(tvtts_note_hz(22) == 220, "note 22 is A3 at 220 Hz");
+    check(tvtts_note_hz(34) == 440, "note 34 is A4 at 440 Hz");
+    check(tvtts_note_hz(37) == 523, "note 37 is C5, the top of the scale");
+    /* Within the rounding: C2 is 65.41 and rounds down, C3 is 130.81 and
+     * rounds up, so the whole-hertz table is an octave plus one. */
+    check(tvtts_note_hz(13) - 2 * tvtts_note_hz(1) == 1 &&
+          tvtts_note_hz(25) - 2 * tvtts_note_hz(13) == 0,
+          "twelve semitones up is an octave, to the rounding");
+    check(tvtts_note_hz(200) == 200, "200 is past the scale, so it is hertz");
+    check(tvtts_note_hz(0) == 0, "0 is a rest");
+
+    /* The compiler reports what it wants the way snprintf does. */
+    n = tvtts_sing_compile("A<600,20>", NULL, 0);
+    check(n > 0, "compiling with no buffer still says how much is needed");
+    check(tvtts_sing_compile("A<600,20>", buf, sizeof buf) == n,
+          "and writing it wants exactly as much");
+    check((int)strlen(buf) == n - 1, "the count includes the terminator");
+
+    /* A note becomes a pitch escape, a duration escape and its phoneme. */
+    /*
+     * A pitch escape is emitted, and a higher note emits a larger one.  The
+     * exact number is deliberately not asserted: the compiler corrects for the
+     * engine singing flat, so pinning it here would only re-state the
+     * correction.  What the note is actually sung at is measured below, out of
+     * the audio, which is the check that matters.
+     */
+    check(strstr(buf, "\x1b[") != NULL && strchr(buf, 'p') != NULL,
+          "a note compiles to a pitch escape");
+    {
+        char lo[256], hi[256];
+
+        tvtts_sing_compile("A<600,8>", lo, sizeof lo);
+        tvtts_sing_compile("A<600,20>", hi, sizeof hi);
+        check(pitch_esc(hi) > pitch_esc(lo) && pitch_esc(lo) > 0,
+              "and a higher note compiles to a higher one");
+    }
+    check(strstr(buf, "\x1b[1I") != NULL && strstr(buf, "\x1b[0I") != NULL,
+          "and the score is wrapped in phoneme mode");
+
+    /* 600 ms fits one phoneme; 1500 does not, and is sung as repeats. */
+    tvtts_sing_compile("A<600,20>", buf, sizeof buf);
+    check(count_char(buf, 'A') == 1, "a 600 ms note is one phoneme");
+    /*
+     * A long note is one phoneme and then a hold.  Singing the remainder as
+     * more of the same phoneme re-articulates it -- the engine treats every
+     * pair of phonemes as a boundary -- and suppressing that needs a frame to
+     * hold, which no rule picked reliably across phonemes.  See
+     * docs/SINGING.md.
+     */
+    tvtts_sing_compile("A<1500,20>", buf, sizeof buf);
+    check(count_char(buf, 'A') == 1,
+          "a 1500 ms note is still one phoneme");
+    check(strchr(buf, 'g') != NULL,
+          "and the rest of it is held, not sung again");
+
+    /* A phoneme with no note keeps its ordinary length. */
+    tvtts_sing_compile("HeLO", buf, sizeof buf);
+    check(strstr(buf, "\x1b[98p") == NULL, "a score with no notes sets no pitch");
+
+    /* And the sung pitch is the note, not the note plus an intonation
+     * contour -- which is what it was before the contour was gated. */
+    {
+        sink lo = {0}, hi = {0};
+        int flo, fhi;
+
+        sing_at("A<600,8>A<600,8>A<600,8>", &lo);
+        sing_at("A<600,20>A<600,20>A<600,20>", &hi);
+        flo = sung_hz(&lo);
+        fhi = sung_hz(&hi);
+        printf("    [sung: note 8 wants 98 Hz got %d, note 20 wants 196 got %d]\n",
+               flo, fhi);
+        check(flo > 88 && flo < 108, "note 8 sings within a semitone of 98 Hz");
+        check(fhi > 186 && fhi < 206, "note 20 sings within a semitone of 196 Hz");
+        sink_free(&lo);
+        sink_free(&hi);
+    }
+}
+
 int main(void)
 {
     test_reuse();
@@ -1087,6 +1708,11 @@ int main(void)
     test_pitch_ceiling();
     test_contour();
     test_pitch_floor();
+    test_es_rate();
+    test_custom_voices();
+    test_singing();
+    test_phone_command();
+    test_pitch_after_song();
     printf("%s\n", failures ? "FAILED" : "all passed");
     return failures != 0;
 }

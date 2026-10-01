@@ -31,7 +31,7 @@
  * TruVoice", which does not distinguish a variety.
  */
 #define EN_LANG                                                               \
-    { "en", "American English", 10, en_create, en_destroy,                    \
+    { "en", "American English", en_create, en_destroy,                    \
       en_set_voice, en_set_rate, en_set_pitch, en_set_volume,                 \
       en_get_voice, en_get_rate, en_get_pitch,                                \
       en_get_rate_hz, en_set_rate_hz, en_set_compat, en_set_textin_mode,      \
@@ -39,7 +39,7 @@
       en_speak_bytes, en_set_extensions }
 
 #define ES_LANG                                                               \
-    { "es", "Castilian Spanish", 10, es_create, es_destroy,                   \
+    { "es", "Castilian Spanish", es_create, es_destroy,                   \
       es_set_voice, es_set_rate, es_set_pitch, es_set_volume,                 \
       es_get_voice, es_get_rate, es_get_pitch,                                \
       es_get_rate_hz, es_set_rate_hz, es_set_compat, es_set_textin_mode,      \
@@ -88,6 +88,56 @@ void TVTTS_CALL tvtts_set_extensions(uint32_t mask)
         g_langs[i].set_extensions(g_ext);
 }
 
+void TVTTS_CALL tvtts_set_portamento(int ms)
+{
+    extern int32_t tv_sing_glide_ms;
+
+    if (ms < 0)
+        ms = 0;
+    else if (ms > 1000)
+        ms = 1000;
+    tv_sing_glide_ms = ms;
+}
+
+int TVTTS_CALL tvtts_get_portamento(void)
+{
+    extern int32_t tv_sing_glide_ms;
+
+    return (int)tv_sing_glide_ms;
+}
+
+/*
+ * The waver a sung note carries.  English is the only language that sings, so
+ * this reaches into its engine rather than going through the language table.
+ */
+void TVTTS_CALL tvtts_set_vibrato(int rate_chz, int depth_chz)
+{
+    extern int32_t tv_sing_vib_rate;
+    extern int32_t tv_sing_vib_depth;
+
+    if (rate_chz < 1)
+        rate_chz = 1;
+    else if (rate_chz > 5000)
+        rate_chz = 5000;
+    if (depth_chz < 0)
+        depth_chz = 0;
+    else if (depth_chz > 5000)
+        depth_chz = 5000;
+    tv_sing_vib_rate = rate_chz;
+    tv_sing_vib_depth = depth_chz;
+}
+
+void TVTTS_CALL tvtts_get_vibrato(int *rate_chz, int *depth_chz)
+{
+    extern int32_t tv_sing_vib_rate;
+    extern int32_t tv_sing_vib_depth;
+
+    if (rate_chz != NULL)
+        *rate_chz = (int)tv_sing_vib_rate;
+    if (depth_chz != NULL)
+        *depth_chz = (int)tv_sing_vib_depth;
+}
+
 uint32_t TVTTS_CALL tvtts_get_extensions(void)
 {
     return g_ext;
@@ -113,12 +163,12 @@ static const tvtts_lang *lang_of_voice(int voice, int *local)
     if (voice < 0)
         return NULL;
     for (i = 0; i < NLANGS; i++) {
-        if (voice < g_langs[i].voices) {
+        if (voice < g_langs[i].voice_count()) {
             if (local != NULL)
                 *local = voice;
             return &g_langs[i];
         }
-        voice -= g_langs[i].voices;
+        voice -= g_langs[i].voice_count();
     }
     return NULL;
 }
@@ -131,7 +181,7 @@ static int lang_base(const tvtts_lang *l)
     for (i = 0; i < NLANGS; i++) {
         if (&g_langs[i] == l)
             return base;
-        base += g_langs[i].voices;
+        base += g_langs[i].voice_count();
     }
     return 0;
 }
@@ -167,7 +217,7 @@ int TVTTS_CALL tvtts_voice_count(void)
     int i, n = 0;
 
     for (i = 0; i < NLANGS; i++)
-        n += g_langs[i].voices;
+        n += g_langs[i].voice_count();
     return n;
 }
 
@@ -423,6 +473,34 @@ int TVTTS_CALL tvtts_speak_phonemes(tvtts_synth *s, const char *phonemes,
     if (s == NULL || s->lang != &g_langs[0])
         return -1;
     return en_speak_phonemes(s->impl, phonemes, cb, user);
+}
+
+/*
+ * Sing a score.  English only, for the same reason the phoneme entry points
+ * are: the alphabet is this engine's and the 1995 engines do not share it.
+ *
+ * The compiler is pure and lives in sing.c, so what it produces can be checked
+ * without listening to anything; all this does is give it somewhere to write
+ * and hand the result to the ordinary byte path.
+ */
+int TVTTS_CALL tvtts_sing(tvtts_synth *s, const char *score,
+                          tvtts_callback cb, void *user)
+{
+    char *buf;
+    int n, rc;
+
+    if (s == NULL || score == NULL || s->lang != &g_langs[0])
+        return -1;
+    n = tvtts_sing_compile(score, NULL, 0);
+    if (n <= 0)
+        return -1;
+    buf = (char *)malloc((size_t)n);
+    if (buf == NULL)
+        return -1;
+    tvtts_sing_compile(score, buf, (size_t)n);
+    rc = s->lang->speak_bytes(s->impl, buf, (uint32_t)(n - 1), cb, user);
+    free(buf);
+    return rc;
 }
 
 int TVTTS_CALL tvtts_text_to_phonemes(tvtts_synth *s, const char *text,

@@ -1,2 +1,0 @@
-Hola.
-Este es un ejemplo de síntesis de voz en español con TruVoice.

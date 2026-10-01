@@ -27,6 +27,9 @@
 extern int tv_es_ext_pitch;
 extern int tv_es_ext_contour;
 extern int tv_es_ext_floor;
+extern int tv_es_ext_rate;
+/* (400 - 46) >> 3; the row Engine_SetSpeed will not go past. */
+#define ES_RATE_ROW_MAX_PUBLIC 44
 
 /* OpenTV's third output rate.  The original offered 8 kHz and 11.025 kHz; this
  * one is an addition, and the tables for it are computed from the formulas that

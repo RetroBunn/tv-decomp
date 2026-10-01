@@ -195,6 +195,7 @@ void es_set_extensions(uint32_t mask)
     tv_es_ext_pitch = (mask & TVTTS_EXT_PITCH) != 0;
     tv_es_ext_contour = (mask & TVTTS_EXT_CONTOUR) != 0;
     tv_es_ext_floor = (mask & TVTTS_EXT_FLOOR) != 0;
+    tv_es_ext_rate = (mask & TVTTS_EXT_RATE) != 0;
 }
 
 /* ---- lifetime ------------------------------------------------------------ */

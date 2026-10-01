@@ -66,6 +66,7 @@
  */
 #include "es_engine.h"
 
+
 /* @0x10049b78 */
 extern const int16_t g_pulse_gain[32];
 /* @0x10049970 */

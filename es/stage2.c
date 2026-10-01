@@ -27,6 +27,58 @@
  * With the extension off this is 0xc8 and the engine is the 1995 one, bug and
  * all, which is what the corpus checks.
  */
+int tv_es_ext_rate = 0;
+
+/*
+ * OpenTV: the speaking rate above the table.
+ *
+ * Engine_SetSpeed turns words per minute into a row with (wpm - 46) >> 3 and
+ * hands that to three tables -- and they are not the same length.  The pause
+ * percentage has 26 rows, the phoneme percentage 24, and the extra-pause
+ * pattern 16, while the index reaches 44 at 400 wpm.  So the original reads off
+ * the end of all three, and how badly depends on what happens to follow them:
+ * at 254 wpm this engine comes out *slower* than at 253, and by 300 it reads a
+ * phoneme percentage that leaves nothing to say at all -- a whole sentence in a
+ * tenth of a second.  That is the original's behaviour, reproduced exactly with
+ * the extension off, and the corpus checks it at 260 and 400.
+ *
+ * The 1997 engine has the same fault and OpenTV already fixes it there; this is
+ * the same fix, which had simply never been ported.  Each table is held inside
+ * its own length, and past the last phoneme row the durations are scaled down
+ * instead, because the table has no faster rows to offer.  The ramp runs to 40%
+ * by row 44, the figure English uses, and the existing floor of 2 still stops a
+ * phoneme vanishing.
+ */
+#define ES_RATE_PAUSE_ROWS    26
+#define ES_RATE_PHONE_ROWS    24
+#define ES_PAUSE_PATTERN_ROWS 16
+#define ES_RATE_ROW_MAX       44        /* (400 - 46) >> 3, as English */
+
+/* Which row to actually read, given how long that table is. */
+static int32_t es_rate_row(int32_t i, int32_t rows)
+{
+    if (!tv_es_ext_rate)
+        return i;
+    if (i < 0)
+        return 0;
+    return i >= rows ? rows - 1 : i;
+}
+
+/* How much to shorten a phoneme by, past the last row the table has.  100 for
+ * every row the original had, so nothing it could say changes. */
+static int32_t es_rate_scale(int32_t i, int32_t v)
+{
+    int32_t pct;
+
+    if (!tv_es_ext_rate || i < ES_RATE_PHONE_ROWS)
+        return v;
+    if (i > ES_RATE_ROW_MAX)
+        i = ES_RATE_ROW_MAX;
+    pct = 100 - (i - (ES_RATE_PHONE_ROWS - 1)) * 60 /
+                (ES_RATE_ROW_MAX - (ES_RATE_PHONE_ROWS - 1));
+    return v * pct / 100;
+}
+
 int tv_es_ext_pitch = 0;
 
 static int32_t es_pitch_max(void)
@@ -988,7 +1040,8 @@ Node *TV_THISCALL Stage2_ScanWord(Engine *self)
 
                     g_pause_step++;
                     if (g_bit_mask[step] &
-                        g_pause_pattern[st->rate_index])
+                        g_pause_pattern[es_rate_row(st->rate_index,
+                                                    ES_PAUSE_PATTERN_ROWS)])
                         Engine_NodeAlloc(self, n, 0, 3, ')');
                 }
 
@@ -1186,9 +1239,9 @@ uint8_t TV_THISCALL Stage2_Word(Engine *self)
  * percentages and both indexed by the speaking rate: 1350% down to 30% for a
  * pause, 300% down to 74% for a phoneme. */
 /* @0x10048970 */
-extern const int32_t g_rate_pause[20];
+extern const int32_t g_rate_pause[ES_RATE_PAUSE_ROWS];
 /* @0x100489d8 */
-extern const int32_t g_rate_phone[20];
+extern const int32_t g_rate_phone[ES_RATE_PHONE_ROWS];
 /* Indexed by the syllables in the word, one to four. */
 /* @0x10048a38 */
 extern const int32_t g_syl_pct[5];
@@ -1249,7 +1302,9 @@ void TV_THISCALL Stage2_Duration(Engine *self)
 
     c = self->s2_3e1;
     if (c == ' ') {
-        v = (int32_t)((uint32_t)(g_rate_pause[st->rate_index] * arg0) / 100u);
+        v = (int32_t)((uint32_t)(g_rate_pause[es_rate_row(
+                          st->rate_index, ES_RATE_PAUSE_ROWS)] * arg0)
+                      / 100u);
         if (v < 1)
             v = 1;
         if (self->s2_380 != 0)
@@ -1526,9 +1581,11 @@ consonant:
         dur = 0x19;
     ctl->arg = (uint32_t)dur;
     if (ctl->value != 'r') {
-        int32_t k = g_rate_phone[st->rate_index] >> 1;
+        int32_t k = g_rate_phone[es_rate_row(st->rate_index,
+                                             ES_RATE_PHONE_ROWS)] >> 1;
 
         ctl->arg = (uint32_t)((uint32_t)(k * dur) / 50u);
+        ctl->arg = (uint32_t)es_rate_scale(st->rate_index, (int32_t)ctl->arg);
         if (ctl->arg <= 2u)
             ctl->arg = 2;
     }

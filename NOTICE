@@ -55,6 +55,39 @@ reason.
 If you hold these rights and would rather the data were not distributed
 here, please open an issue on the repository and it will be removed.
 
+Read from DECtalk
+-----------------
+
+How a sung note moves in `src/engine/frame.c` follows DECtalk's model rather
+than one invented here, because the score syntax this engine's demo songs are
+written in is DECtalk's and so, in all likelihood, was the behaviour the
+product expected. What was taken is the shape of it:
+
+  - a note is approached linearly over 100 ms rather than jumped to
+  - it wavers at 6.25 Hz by plus and minus 2.05 Hz, as a free-running cosine
+  - a pitch written as a frequency rather than a note travels over the whole
+    phoneme instead, and does not waver
+  - the speech flutter is switched off while singing
+
+No DECtalk code is in this repository and none was copied; the two
+implementations do not resemble each other. Its note table was worked through
+as a check on ours rather than adopted -- it agrees with equal temperament to
+1.5 cents -- and ours is computed, not tabulated. See docs/SINGING.md.
+
+The checkout read was:
+
+    https://github.com/dectalk/dectalk
+
+whose own README states that the files were shared by their original
+developer, the late Edward Bruckert, on the DECtalk mailing list in 2015 and
+have been publicly preserved since. Individual files in it carry headers
+asserting that they embody confidential technology of FONIX Corporation. The
+two accounts disagree; the checkout is kept out of this repository by
+`.gitignore` either way, and nothing here is derived from its text.
+
+If you hold rights in DECtalk and would rather this behaviour were not
+modelled here, please open an issue on the repository and it will be removed.
+
 Borrowed from TGSpeechBox
 -------------------------
 
@@ -142,6 +175,49 @@ No Panthera code is copied here.  Panthera's adapter is C++ over a pipe to an
 emulated Apple engine; `sapi5/tvsapi.c` is C over this project's own library,
 and the two have no line in common.  What crossed over is the two findings
 above and the confidence that the shape is right.
+
+The voice named Frank
+---------------------
+
+`src/engine/voices.c` defines a deep male voice called Frank, and its
+description comes from MindMaker's TextAssist build of this engine.  Those files were
+supplied to read and are not redistributed here -- `.gitignore` keeps them out.
+
+TextAssist put a voice layer of its own over the engine and shipped each voice
+as a plain-text file of Klatt-style parameters.  `Frank.tav` is twenty-three of
+them, and against Bill -- that product's name for voice 0, which is Centigram's
+Peter -- eleven differ.  Three of the eleven are carried over, because they are
+the three this engine has somewhere to put: `F0Def` 72 rather than 100,
+`HeadSize` 1.1 rather than 1.0, and `IntonLevel` 0.7 rather than 1.0.  The
+other eight are two shelf filters, a source richness, a noise rate and a sung
+pitch rate, all of which shape the spectrum in that product's own synthesiser,
+and none of them is reproduced.
+
+`Frank.tav` also carries a 225-point array of glottal pulse samples that
+`Bill.tav` does not.  That is data out of the product rather than a description
+of it, so it is **not** reproduced here and no part of it appears in this
+repository; this engine keeps its own single pulse table.
+
+The product's help screen names its six voice sliders, which identifies two more
+of the eleven: `Breath` is Breathiness and `Larynx` is Creakiness.  Frank reads
+Breathiness 10 and Creakiness 0, so he is given breathiness -- as aspiration
+held under the voice, which is this project's own mechanism, not the product's
+-- and no creak at all.  Nothing else of the product
+is used, and there was nothing else to take: its engine DLL carries Centigram's
+ten-voice table byte-identical to CGRM_EN.DLL's, so the eight voices it
+advertises are built above the engine rather than inside it.
+
+What its version resources say, rather than what is remembered about it:
+
+    TAEngine.dll, TTSVoice.dll    Copyright Mindmaker, Inc. 1999
+    Clapi.dll                     L&H Copyright, "L&H English clapi"
+
+So the engine in that product is an L&H build of the same synthesiser, as
+SPMtv160.dll is -- see docs/SPANISH.md -- and the suite around it is
+MindMaker's.
+
+If you hold rights in that product and would rather the voice were not
+described here, please open an issue on the repository and it will be removed.
 
 The original binaries
 ---------------------

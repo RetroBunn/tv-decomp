@@ -25,12 +25,19 @@
 
 #include "tvtts.h"
 
+/*
+ * OpenTV: `[:phone TruVoice on|off]` rewritten in place into the engine's
+ * phoneme-mode escape, `ESC[1I` / `ESC[0I`.  Returns the new length; the
+ * text only ever shrinks, so the caller's buffer is always big enough.
+ * English spells the command, so English calls this.  See src/port/sing.c.
+ */
+size_t tv_phone_commands(char *text, size_t len);
+
 /* One language's engine, as the dispatcher sees it.  Every function takes the
  * synth its own create returned. */
 typedef struct {
     const char *code;                   /* "en", "es" */
     const char *name;                   /* "American English" */
-    int         voices;                 /* how many it has */
 
     void       *(*create)(uint32_t sample_rate);
     void        (*destroy)(void *s);

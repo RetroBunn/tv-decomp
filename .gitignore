@@ -61,6 +61,10 @@ dkms.conf
 # deliberately committed instead, so a build needs no Centigram binary.
 # See NOTICE for whose work those are.
 /TruVoice/
+# MindMaker's TextAssist build of TruVoice, kept locally to read voice
+# definitions out of.  Another company's product, and not ours to
+# redistribute -- what OpenTV takes from it is described in NOTICE.
+/TruVoice from text assist/
 /work/
 /build/
 /ref/
@@ -77,12 +81,3 @@ dkms.conf
 __pycache__/
 *.pyc
 
-/nvda/
-
-# Reference checkouts of other projects, kept locally to work against.
-# TGSpeechBox is MIT and its fast-speech technique is credited in NOTICE,
-# but it is his repository, not ours to redistribute.  The same goes for
-# Panthera Speech, whose SAPI adapter taught sapi5/ two things no
-# specification states -- also MIT, also credited in NOTICE.
-/TGSpeechBox/
-/panthera-speech/

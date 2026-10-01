@@ -122,7 +122,7 @@ static int on_event(const tvtts_event *ev, void *user)
 int main(int argc, char **argv)
 {
     int voice = 0, phone = 0, i, verbose = 0, textin_mode = 0;
-    int nuls = 2, opt_preformat = 1, opt_textin = 1;
+    int nuls = 2, opt_preformat = 1, opt_textin = 1, opt_sing = 0;
     long opt_pitch = -1, opt_speed = -1, opt_volume = -1;
     int hifi = 0;
     const char *lex_add[16];
@@ -151,13 +151,27 @@ int main(int argc, char **argv)
             tvtts_set_extensions((uint32_t)strtoul(argv[++i], NULL, 0));
         else if (!strcmp(argv[i], "-P0")) opt_preformat = 0;
         else if (!strcmp(argv[i], "-T0")) opt_textin = 0;
+        else if (!strcmp(argv[i], "-G")) opt_sing = 1;
+        /* -N <ms>: how long a note takes to slide in from the one before */
+        else if (!strcmp(argv[i], "-N") && i + 1 < argc)
+            tvtts_set_portamento(atoi(argv[++i]));
+        /* -B <rate>,<depth> in hundredths of a hertz; depth 0 is no waver */
+        else if (!strcmp(argv[i], "-B") && i + 1 < argc) {
+            const char *v = argv[++i];
+            char *end;
+            long r = strtol(v, &end, 10);
+            long d = (*end == ',') ? strtol(end + 1, NULL, 10) : -1;
+
+            if (d < 0) { d = r; tvtts_get_vibrato((int *)&r, NULL); }
+            tvtts_set_vibrato((int)r, (int)d);
+        }
         else if (!strcmp(argv[i], "-L") && i + 1 < argc && n_lex < 16)
             lex_add[n_lex++] = argv[++i];
         else { fprintf(stderr, "unknown option %s\n", argv[i]); return 2; }
     }
     if (argc - i != 2 || voice < 0 || voice >= tvtts_voice_count()) {
-        fprintf(stderr, "usage: tv [-v 0-9] [-8] [-H] [-m] [-M mode] [-p pitch] [-s wpm]"
-                        " [-V volume] [-C] [-X mask] [-P0] [-T0] [-z nuls]"
+        fprintf(stderr, "usage: tv [-v 0-9] [-8] [-H] [-m] [-G] [-M mode] [-p pitch] [-s wpm]"
+                        " [-V volume] [-B rate,depth] [-N ms] [-C] [-X mask] [-P0] [-T0] [-z nuls]"
                         " [-L word=phonemes] <text|@file> <out.wav>\n");
         return 2;
     }
@@ -199,7 +213,10 @@ int main(int argc, char **argv)
     /* The corpus is bytes on disk in the engine's own encoding, so it goes
      * in unconverted; a normal caller would use the utf8 or utf16 entry. */
     text = load_text(textarg, &textlen);
-    tvtts_speak_bytes(s, text, textlen, on_event, &c);
+    if (opt_sing)
+        tvtts_sing(s, text, on_event, &c);
+    else
+        tvtts_speak_bytes(s, text, textlen, on_event, &c);
 
     fprintf(stderr, "pcm=%u bytes (%.2f s @ %u Hz)%s\n", (unsigned)c.pcm.len,
             c.pcm.len / 2.0 / rate, (unsigned)rate,

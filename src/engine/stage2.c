@@ -299,6 +299,96 @@ void TV_THISCALL Stage2_Close(Engine *self)
     Stage2_Flush(self);
 }
 
+/*
+ * OpenTV: singing.  ESC[<n>d asks for the next phoneme to last exactly n
+ * hundredths of a second, instead of whatever the duration rules and the
+ * speaking rate would have given it.
+ *
+ * It is a file-scope value rather than a field on StageCtx because StageCtx
+ * sits inside Engine, whose layout the hook harness compares against the real
+ * DLL's object after every unit call; a new field there would shift everything
+ * below it.  control.c sets this as the escape node passes stage 2, so it
+ * lands between the phoneme before it and the phoneme after, which is what
+ * makes a score work at all.
+ *
+ * Calibrated against the engine: the phoneme comes out at 10n + 30 ms, the
+ * thirty being a fixed onset.  n above 60 is refused in preformat.c, because
+ * Tracks_Op's capacity test is `... + n < 0x100` -- a note longer than about
+ * 600 ms does not fit the track window and has to be sung as repeats.
+ */
+int tv_ext_sing = 0;
+
+/*
+ * OpenTV: the pitch ceiling is what the storage allows, not a round
+ * number.  Stage 2 stops every node at 500 Hz, but the byte it stores the
+ * pitch in holds *half* of it, so 255 -- 510 Hz -- is what actually fits.
+ * The last ten hertz are the top of the singing scale.
+ */
+int tv_ext_pitch = 0;
+/*
+ * One per stage, and that matters.  The stages run as a pipeline -- a node can
+ * be at stage 3 while a later one is already at stage 2 -- so a single value
+ * would be read by stage 3 after a *later* note had overwritten it.  Setting it
+ * only at stage 2 instead leaves stage 3 unable to see a note at all.  Both
+ * were tried; the first was silently inert and the second sang a semitone flat.
+ */
+int32_t tv_sing_dur[5] = {0, 0, 0, 0, 0};
+
+/*
+ * OpenTV: singing a note in tune, below the pitch escape.
+ *
+ * The engine makes F0 a whole number of sample periods, so only sr/N exists:
+ * near middle C at 11025 that is 262.50 Hz or 256.4 and nothing between, and
+ * every C in the scale lands 5.8 cents sharp because 11025 divides into 42, 84
+ * and 168 exactly.  No table of escapes can fix that -- 262.50 *is* the
+ * nearest.
+ *
+ * `ESC[<lo>;<hi>q` names a wanted F0 in quarter-hertz instead, and it is met
+ * with the two period slots the engine already has.  generate.c swaps
+ * coefficients 30 and 31 at every period boundary, which is where the
+ * original puts its jitter, so the period actually heard is their average and
+ * a *half* sample is reachable.  That halves the error the division leaves:
+ * over the range a song uses, 7.7 cents at 11025 against 14.1.
+ *
+ * Carrying a remainder instead -- counting the leftover 1/256ths of a sample
+ * and spending them as whole samples when they come due -- was tried first,
+ * and it is the wrong trade.  It makes the *average* period exact, but every
+ * individual period is then one of two lengths, and one sample is a big
+ * interval: at G3 the oscillator ran 56 samples three periods in four and 57
+ * in the fourth, which is 196.9 Hz against 193.4, a 31-cent swing from one
+ * period to the next.  Measured on a held note the histogram is flat --
+ * 56 thirty-six times, 57 twelve times -- so a quantum of wobble was being
+ * paid to avoid a *half* quantum of static detune, and the wobble is the more
+ * audible of the two by far.  Spreading it on a fixed schedule only moves the
+ * artefact to F0/k, and randomising when it is spent puts energy at every
+ * modulation rate including the slow ones the ear hears as warble.
+ *
+ * So the remainder is gone.  Two slots, no dither, nothing random: the pitch
+ * a note is given is the pitch it holds for its whole length.
+ */
+int32_t tv_sing_f0q[5] = {0, 0, 0, 0, 0};   /* wanted F0, quarter-hertz */
+int32_t tv_sing_per = 0;                    /* its period, in half samples */
+
+
+/*
+ * OpenTV: a sung note glides into place and wavers, which is how DECtalk sings
+ * and so, on the evidence of the demo, how the product that drove this engine
+ * sang.  Both numbers are DECtalk's: a note is reached over 16 of its frames,
+ * which is 100 ms, and the waver is 25 frames to a cycle at plus and minus
+ * 2.05 Hz -- 6.25 Hz here, where a frame is 10 ms.
+ *
+ * The depth is in *hertz*, not a fraction of the note, so it narrows as the
+ * scale climbs: 2.05 Hz is 35 cents at the bottom of the range and 7 at the
+ * top.  That is DECtalk's choice, kept rather than corrected.
+ */
+int32_t tv_sing_f0_fx = 0;
+int32_t tv_sing_f0_tgt = 0;
+int32_t tv_sing_f0_step = 0;
+int32_t tv_sing_vib_ph = 0;
+int32_t tv_sing_glide_ms = TV_SING_GLIDE_MS_DEFAULT;
+int32_t tv_sing_vib_rate = 625;             /* 6.25 Hz */
+int32_t tv_sing_vib_depth = 205;            /* +- 2.05 Hz */
+
 /* Nominal and minimum duration for each phoneme, two bytes each. */
 /* @0x100ee710 */ extern const uint8_t g_phone_dur[];
 
@@ -328,6 +418,15 @@ void TV_THISCALL Stage2_Flush(Engine *self)
     self->s2_dur[0] = 0x64;
     self->s2_1ddc = (int32_t)g_phone_dur[i + 1] * 10;
 
+    /*
+     * Before the silence branch, not after: a score rests by writing a
+     * duration on a silence, and Stage2_Silence would otherwise hand it the
+     * pause the speaking rate calls for and ignore what was asked.
+     */
+    if (tv_ext_sing && tv_sing_dur[2] != 0) {
+        st->ctl->arg = (uint32_t)tv_sing_dur[2];
+        return;
+    }
     if (self->s2_1da8 == 0) {
         Stage2_Silence(self);
         return;
@@ -2003,17 +2102,33 @@ void TV_THISCALL Stage2_Contour(Engine *self)
     }
 
     pos = self->s2_1d8c;
-    v = Synth_MulQ15(st->pitch / 3, g_voice_pitch_scale[st->voice]);
+    v = Synth_MulQ15(st->pitch / 3, tv_v_pitch_scale(st->voice));
     /* Narrowing the range has to keep the voice where it was.  The contour
      * runs from st->pitch + v down towards st->pitch, so a smaller v on its
      * own drops the whole thing by half the difference; giving that half
      * back as a lift keeps the centre and takes only the excursion. */
     lift = 0;
-    if (rate_pitch_pct(st->rate_index) != 100) {
-        int32_t full = v;
+    {
+        /* Two narrowings, and they compose: the rate one above and the
+         * voice's own IntonLevel.  Half of whatever is taken off comes back
+         * as a lift, so the voice stays where it was. */
+        int32_t pct = rate_pitch_pct(st->rate_index);
+        int32_t vpct = tv_v_inton(st->voice);
 
-        v = v * rate_pitch_pct(st->rate_index) / 100;
-        lift = (full - v) / 2;
+        /* OpenTV: a sung note is a note.  The contour would otherwise ride on
+         * top of the pitch the score asked for -- measured, it put a phrase
+         * written on G3 at 251 Hz against 196 -- so while a score is holding
+         * durations the excursion goes to nothing, and the lift with it, which
+         * leaves F0 exactly where the pitch escape put it. */
+        if (tv_ext_sing && tv_sing_dur[2] != 0) {
+            v = 0;
+        } else if (pct != 100 || vpct != 100) {
+            int32_t full = v;
+
+            v = v * pct / 100;
+            v = v * vpct / 100;
+            lift = (full - v) / 2;
+        }
     }
     contour = self->s2_1d74;
     if (contour == 0x13)
@@ -2093,7 +2208,11 @@ void TV_THISCALL Stage2_Contour(Engine *self)
 
     /* The accent step, a quarter of the voice's range, trimmed by how much
      * of the phrase is left. */
-    span = Synth_MulQ15(pitch, g_voice_pitch_scale[st->voice]) >> 2;
+    span = Synth_MulQ15(pitch, tv_v_pitch_scale(st->voice)) >> 2;
+    /* the accent step is intonation too, so IntonLevel takes it with the rest */
+    span = span * tv_v_inton(st->voice) / 100;
+    if (tv_ext_sing && tv_sing_dur[2] != 0)
+        span = 0;               /* OpenTV: no accent step on a sung note */
     quarter = span >> 2;
     step = span - quarter;
     if (self->s2_1d9b == 0) {
@@ -2217,16 +2336,16 @@ void TV_THISCALL Stage2_Contour(Engine *self)
         default:
             break;
         }
-        if (pitch > 0x1f4)
-            pitch = 0x1f4;
+        if (pitch > TV_PITCH_MAX)
+            pitch = TV_PITCH_MAX;
         else if (pitch < 0x32)
             pitch = 0x32;
         self->s2_1d94 = pitch;
         goto store;
     }
 
-    if (pitch > 0x1f4)
-        pitch = 0x1f4;
+    if (pitch > TV_PITCH_MAX)
+        pitch = TV_PITCH_MAX;
     else if (pitch < 0x32)
         pitch = 0x32;
 

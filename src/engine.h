@@ -625,6 +625,103 @@ uint8_t TV_THISCALL Engine_MidPut(Engine *self, uint8_t c);
  * the index is clamped to TV_RATE_ROW_MAX and the rows past the original's
  * scale the durations down instead, which is what actually makes it
  * faster -- see docs/PROGRESS.md. */
+
+/* ---- voices past the ten in the DLL -------------------------------------- */
+/*
+ * The engine reads every per-voice table as TABLE[voice] and carries the voice
+ * in four bits of track 21, so sixteen are addressable where ten are defined.
+ * src/engine/voices.c fills the rest: the accessors below answer from the DLL's
+ * tables under TV_STOCK_VOICES and from its own definitions above, and for a
+ * stock voice each is exactly the subscript it replaced.
+ *
+ * A definition gives only what it changes; TV_V_INHERIT takes the value from
+ * the stock voice it is based on, so no table from the binary is copied into
+ * source.
+ */
+/* How many filter states src/engine/generate.c can report on under
+ * TV_DIAG; o_20ae holds them. */
+#define TV_DIAG_STATES 22
+
+#define TV_STOCK_VOICES 10
+#define TV_V_INHERIT    ((int32_t)(-2147483647 - 1))
+
+typedef struct {
+    const char *name;
+    int32_t     base;           /* the stock voice it starts from */
+    int32_t     adjust[15];
+    int32_t     pitch, speed, rate_index, breath, nasal_rate;
+    int32_t     f4, f4max, pitch_scale;
+    int32_t     p18, p19, p20, p21;
+    /*
+     * OpenTV's own, with no counterpart in the DLL: the voiced source level,
+     * as a percentage.  100 leaves the engine exactly as it was.
+     *
+     * The filter bank keeps its state in 16 bits, and a voice whose formants
+     * are raised a long way drives it far harder than the ten Centigram
+     * shipped ever do -- their widest state sits around 3000 to 11000, where
+     * a vocal tract two thirds the length rails at 32768 and the resonators
+     * tear.  The bank is linear until it saturates, so bringing the source
+     * down brings every state down with it.  tools/voicediag.c measures it.
+     */
+    int32_t     gain;
+    /*
+     * OpenTV's own: how far this voice's contour moves, as a percentage.  100
+     * leaves the engine exactly as it was.
+     *
+     * TextAssist calls it IntonLevel and gives every voice one -- Frank 0.7,
+     * Rita 0.55, Johnny 0.63, the rest 1.0 -- and it is the parameter that
+     * separates a flat reader from an animated one at the same pitch.  The
+     * engine already narrows its range this way for fast speech
+     * (rate_pitch_pct), lift and all, so this composes with that rather than
+     * fighting it: both factors multiply the excursion and half of what is
+     * taken off comes back as a lift, which keeps the voice where it was
+     * instead of dropping it by half the difference.
+     */
+    int32_t     inton;
+    /*
+     * OpenTV's own: breathiness, as aspiration held at this level for as long
+     * as the voice is sounding.  0 leaves the engine exactly as it was.
+     *
+     * TextAssist calls it Breathiness and gives Frank 10 of 100, Wendy 50.
+     * The engine has adj[12], which is added to the same track, but that is an
+     * offset on a curve that is flat zero below index 14 -- so on a vowel,
+     * whose track 2 is 0, adding ten still asks for silence, and only sounds
+     * that are already aspirated get louder.  A floor is the parameter people
+     * mean: noise under the voice throughout, and nothing added to an /h/ that
+     * is loud already.
+     *
+     * The units are track 2's own, and that track is about a decibel a step
+     * through g_tab_1239bc, so the useful range is narrow and high: nothing is
+     * audible below about 68, and 88 clips on Frank.  Measured, as the share
+     * of energy above 2 kHz: 0.0027 at 0, 0.0036 at 72, 0.0048 at 76, 0.0075
+     * at 80, 0.0129 at 84.  A voice wanting more than about 84 should come
+     * down on `gain` to pay for it.
+     */
+    int32_t     aspir;
+} TvVoiceDef;
+
+extern const int32_t tv_extra_voice_count;
+const char *tv_extra_voice_name(int32_t v);
+const int32_t *tv_v_adjust(int32_t v);
+int32_t tv_v_pitch(int32_t v);
+int32_t tv_v_rate_index(int32_t v);
+int32_t tv_v_speed(int32_t v);
+int32_t tv_v_breath(int32_t v);
+int32_t tv_v_nasal_rate(int32_t v);
+int32_t tv_v_f4(int32_t v);
+int32_t tv_v_f4max(int32_t v);
+int32_t tv_v_pitch_scale(int32_t v);
+int32_t tv_v_p18(int32_t v);
+int32_t tv_v_p19(int32_t v);
+int32_t tv_v_p20(int32_t v);
+int32_t tv_v_p21(int32_t v);
+int32_t tv_v_gain(int32_t voice, int32_t v);
+/* The voice's intonation depth, as a percentage; 100 for a stock one. */
+int32_t tv_v_inton(int32_t voice);
+/* The voice's breathiness as a track-2 floor; 0 for a stock one. */
+int32_t tv_v_aspir(int32_t voice);
+int32_t tv_v_amp(int32_t voice, int32_t v);
+
 #define TV_RATE_ROWS     26          /* rows the original table has */
 #define TV_RATE_ROW_MAX  44          /* (400 - 46) >> 3 */
 
@@ -652,5 +749,44 @@ extern int tv_ext_rate;
 #define TV_BW_MAX_Q8    333          /* 1.3 in Q8 */
 
 extern int tv_ext_clarity;
+/* OpenTV: singing.  tv_sing_dur is the duration ESC[<n>d asked for, in
+ * hundredths of a second, or 0 for "as the rules say".  See stage2.c. */
+extern int tv_ext_sing;
+extern int tv_ext_pitch;
+/* The highest pitch a node may carry.  Stage 2 has always stopped at 500;
+ * the byte it goes into holds half the pitch, so 510 is what fits. */
+#define TV_PITCH_MAX (tv_ext_pitch ? 0x1fe : 0x1f4)
+extern int32_t tv_sing_dur[5];
+/* OpenTV: a sung note's exact pitch, in quarter-hertz, and the period it works
+ * out to -- in *half* samples, since the two period slots alternate.  See
+ * stage2.c. */
+extern int32_t tv_sing_f0q[5];
+extern int32_t tv_sing_per;
+
+/*
+ * OpenTV: how a sung note moves, which is DECtalk's model rather than a
+ * freshly invented one.  See docs/SINGING.md.
+ *
+ * The pitch escape carries quarter-hertz in the low bits; TV_SING_Q_HZ says
+ * the score wrote a frequency rather than a note, which changes both how long
+ * the glide takes and whether it wavers.
+ */
+#define TV_SING_Q_MASK   0x3fff
+#define TV_SING_Q_HZ     0x4000
+/*
+ * How long a note takes to arrive, in milliseconds; a frame is 10 ms at every
+ * sample rate, so this is also the frame count times ten.  DECtalk uses 16 of
+ * its frames, which is 100 ms; 70 is a little quicker than that and still well
+ * clear of the point where an interval stops sounding sung and starts sounding
+ * switched.  tvtts_set_portamento changes it.
+ */
+#define TV_SING_GLIDE_MS_DEFAULT 70
+extern int32_t tv_sing_glide_ms;
+extern int32_t tv_sing_f0_fx;       /* where the pitch is now, quarter-Hz<<8 */
+extern int32_t tv_sing_f0_tgt;      /* where it is going, quarter-Hz */
+extern int32_t tv_sing_f0_step;     /* and how fast, quarter-Hz<<8 a frame */
+extern int32_t tv_sing_vib_ph;      /* the waver's phase, Q16 of a cycle */
+extern int32_t tv_sing_vib_rate;    /* its rate, hundredths of a hertz */
+extern int32_t tv_sing_vib_depth;   /* and its depth, likewise; 0 is off */
 
 #endif

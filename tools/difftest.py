@@ -61,9 +61,26 @@ SUBSETS = {
 }
 
 
-#: Where each language's voices begin in the library, in the order
-#: src/port/api.c lists them.
-VOICE_BASE = {"en": 0, "es": 10}
+#: Where each language's voices begin, if the library cannot be asked.  It is
+#: asked whenever possible: OpenTV adds voices of its own (src/engine/voices.c)
+#: and every language listed after the one they join shifts along, so a table
+#: written here goes stale the moment a voice is added.  Kit did exactly that.
+VOICE_BASE_FALLBACK = {"en": 0, "es": 10}
+
+
+def voice_base(lang):
+    """The first voice of `lang` in the library's numbering."""
+    try:
+        import ctypes
+        lib = ctypes.CDLL(os.path.join(ROOT, "build", "bin", "tvtts64.dll"))
+        lib.tvtts_voice_language.restype = ctypes.c_char_p
+        want = lang.encode()
+        for i in range(lib.tvtts_voice_count()):
+            if lib.tvtts_voice_language(i) == want:
+                return i
+    except Exception:
+        pass
+    return VOICE_BASE_FALLBACK[lang]
 
 
 def set_lang(lang):
@@ -75,7 +92,7 @@ def set_lang(lang):
     """
     global DLL, TVH_HOOK, CORPUS, WORK, EXTRA_GLOB, SUBSET
     global PORT_VOICE_BASE
-    PORT_VOICE_BASE = VOICE_BASE[lang]
+    PORT_VOICE_BASE = voice_base(lang)
     if lang == "en":
         return
     DLL = os.path.join(ROOT, "TruVoice", "CGRM_%s.DLL" % lang.upper())

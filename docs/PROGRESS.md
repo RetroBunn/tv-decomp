@@ -262,7 +262,10 @@ against a binary that has no extensions.
   more table rows because `Stage2_DurRules` ends at
   `(max - min) * acc/100 + min`, so `g_phone_dur`'s minimum column is a
   floor the table cannot get under.  Rows 0..25 are untouched and 46..253
-  wpm stays bit-for-bit identical to `CGRM_EN.DLL`.
+  wpm stays bit-for-bit identical to `CGRM_EN.DLL`.  The Spanish engine has the
+  same fault over three tables of 26, 24 and 16 rows -- at 300 wpm it says a
+  sentence in a tenth of a second -- and is now held inside them the same way,
+  untouched to 237 wpm.  See docs/SPANISH.md.
 
 * **`TVTTS_EXT_CLARITY`** -- formant bandwidths widen as the rate climbs, so
   fast speech does not slur.  It does nothing at or below 253 wpm, which is

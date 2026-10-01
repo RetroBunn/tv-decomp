@@ -19,6 +19,10 @@ EXPORTS
     tvtts_rate_sequence
     tvtts_sample_rate_hz
     tvtts_set_compat
+    tvtts_set_portamento
+    tvtts_get_portamento
+    tvtts_set_vibrato
+    tvtts_get_vibrato
     tvtts_set_extensions
     tvtts_set_language
     tvtts_set_pitch
@@ -29,6 +33,9 @@ EXPORTS
     tvtts_set_volume
     tvtts_speak_bytes
     tvtts_speak_phonemes
+    tvtts_sing
+    tvtts_sing_compile
+    tvtts_note_hz
     tvtts_speak_utf16
     tvtts_speak_utf8
     tvtts_text_to_phonemes
