@@ -74,6 +74,20 @@ static void sink_free(sink *s)
     memset(s, 0, sizeof *s);
 }
 
+/* The loudest sample, for telling sound from silence. */
+static int peak(const sink *s)
+{
+    size_t i;
+    int m = 0;
+
+    for (i = 0; i < s->n; i++) {
+        int v = s->pcm[i] < 0 ? -(int)s->pcm[i] : (int)s->pcm[i];
+        if (v > m)
+            m = v;
+    }
+    return m;
+}
+
 static int same(const sink *a, const sink *b)
 {
     return a->n == b->n &&
@@ -1882,6 +1896,123 @@ static void test_singing(void)
     }
 }
 
+/*
+ * The bare formant-frame synthesiser: set the tracks by hand, then hold them.
+ *
+ * docs/VOICES.md documents this and it is how a parameter frame is driven
+ * without going through a phoneme at all.  TVTTS_EXT_SING changes what `g`
+ * freezes -- the sung note rather than the configured defaults -- and a hold
+ * with nothing sounding in front of it has no note to freeze, so for a while it
+ * rendered **silence**.  The corpus cannot catch that, because difftest runs
+ * with the extensions off and only ever sees the original arm.
+ */
+static void test_bare_hold(void)
+{
+    /* The three lines docs/VOICES.md prints, which it says render three
+     * different waveforms. */
+    static const char *const LINES[3] = {
+        "\x1b[0;60l\x1b[9;100l\x1b[100g",
+        "\x1b[0;60l\x1b[9;200l\x1b[100g",
+        "\x1b[0;60l\x1b[9;100l\x1b[10;200l\x1b[100g"
+    };
+    sink off = {0}, on = {0};
+    sink w[3];
+    int i;
+
+    /* A hold on its own sounds, and sounds the same either way: there is no
+     * note to freeze, so the extension must defer to what the engine does. */
+    say_at("en", 0, 0, 0, "\x1b[120g", &off);
+    say_at("en", 0, 0, TVTTS_EXT_ALL, "\x1b[120g", &on);
+    check(off.n > 4000, "a hold with nothing before it renders frames");
+    check(peak(&off) > 100, "and they are not silence");
+    check(same(&off, &on), "and the extensions leave it alone");
+    sink_free(&off);
+    sink_free(&on);
+
+    /* The same once the tracks have been placed by hand. */
+    say_at("en", 0, 0, 0, "\x1b[9;160l\x1b[120g", &off);
+    say_at("en", 0, 0, TVTTS_EXT_ALL, "\x1b[9;160l\x1b[120g", &on);
+    check(peak(&on) > 100,
+          "a hold after a parameter escape is not silence");
+    check(same(&off, &on), "and that is the same either way too");
+    sink_free(&off);
+    sink_free(&on);
+
+    for (i = 0; i < 3; i++) {
+        memset(&w[i], 0, sizeof w[i]);
+        say_at("en", 0, 0, TVTTS_EXT_ALL, LINES[i], &w[i]);
+    }
+    check(!same(&w[0], &w[1]) && !same(&w[1], &w[2]) && !same(&w[0], &w[2]),
+          "the three lines in VOICES.md render three different waveforms");
+    for (i = 0; i < 3; i++)
+        sink_free(&w[i]);
+}
+
+/*
+ * tvtts_speak_frames: the synthesiser driven a parameter frame at a time.
+ *
+ * The escape path (test_bare_hold) places the resonators by hand too, but only
+ * for a few frames -- past about ten the queue stops delivering what was asked,
+ * and a run of bare holds replays the change sequence instead of holding.  This
+ * entry point writes the frames where stage 3 would have, so a long move
+ * arrives intact and in one continuous signal.
+ */
+static void test_speak_frames(void)
+{
+    enum { N = 60 };
+    static uint8_t fr[N * TVTTS_FRAME_TRACKS];
+    sink out = {0};
+    tvtts_synth *s;
+    int i, k;
+
+    /* F1 and F2 sweeping from one vowel posture to another across all N. */
+    for (i = 0; i < N; i++) {
+        uint8_t *f = fr + (size_t)i * TVTTS_FRAME_TRACKS;
+        int f1 = 737 + (298 - 737) * i / (N - 1);
+        int f2 = 1225 + (2067 - 1225) * i / (N - 1);
+
+        for (k = 0; k < TVTTS_FRAME_TRACKS; k++)
+            f[k] = 0;
+        f[0] = 60; f[16] = 14; f[17] = 50; f[18] = 16; f[19] = 8;
+        f[9]  = (uint8_t)(f1 / 4);
+        f[10] = (uint8_t)((f2 - 500) / 8);
+        f[11] = 142; f[12] = 207; f[13] = 60; f[14] = 50; f[15] = 70;
+    }
+
+    s = tvtts_create(11025);
+    memset(&out, 0, sizeof out);
+    tvtts_speak_frames(s, fr, N, on_event, &out);
+    tvtts_destroy(s);
+
+    check(out.n > (size_t)N * 80, "the frames render about their own length");
+    check(peak(&out) > 100, "and are not silence");
+
+    /* The move has to survive to the end: the second half must differ from the
+     * first.  The old escape path froze or looped well before here. */
+    {
+        size_t half = out.n / 2;
+        long a = 0, b = 0;
+        size_t j;
+
+        for (j = 0; j + 1 < half; j++)
+            a += out.pcm[j] > out.pcm[j + 1] ? 1 : 0;
+        for (j = half; j + 1 < out.n; j++)
+            b += out.pcm[j] > out.pcm[j + 1] ? 1 : 0;
+        check(a > 0 && b > 0, "both halves carry signal");
+        check(b * 100 > a * 115,
+              "the second half is pitched higher in its zero crossings -- "
+              "the sweep reached the end rather than freezing");
+    }
+    sink_free(&out);
+
+    /* A null frame array with a zero count is not a crash, and a foreign
+     * language refuses, as the other English-only entry points do. */
+    s = tvtts_create_lang(11025, "es");
+    check(tvtts_speak_frames(s, fr, N, on_event, NULL) == -1,
+          "speak_frames is English only");
+    tvtts_destroy(s);
+}
+
 int main(void)
 {
     test_reuse();
@@ -1904,6 +2035,8 @@ int main(void)
     test_camel_case();
     test_phone_command();
     test_pitch_after_song();
+    test_bare_hold();
+    test_speak_frames();
     printf("%s\n", failures ? "FAILED" : "all passed");
     return failures != 0;
 }

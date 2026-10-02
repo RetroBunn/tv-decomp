@@ -149,6 +149,30 @@ TVTTS_API int TVTTS_CALL tvtts_speak_bytes(tvtts_synth *s, const void *text,
  * for byte the same as speaking the word, while for some other words the
  * final intonation differs slightly.  See docs/VOICES.md.
  */
+/*
+ * Drive the synthesiser directly, one parameter frame per 10 ms.
+ *
+ * `frames` is `n_frames` groups of TVTTS_FRAME_TRACKS bytes, one group per
+ * frame, in the track order documented in docs/VOICES.md: 0..8 amplitudes and
+ * source controls, 9..12 the formant frequencies F1..F4, 13..17 bandwidths with
+ * 17 the pitch period, 18..21 source parameters.  A value is clamped by the
+ * engine the same way the escape path clamps it.
+ *
+ * This bypasses the text front end and stages 0 to 3 completely: nothing is
+ * read, no phoneme is looked up, and the frames go where stage 3 would have put
+ * them.  It is the way to synthesise something the front end has no notion of
+ * -- a language it was never taught, or a held note -- without splicing
+ * separate utterances together, which restarts the glottal phase at every join.
+ *
+ * English only, as the phoneme entry points are.  Returns 0, or non-zero if the
+ * callback aborted.
+ */
+#define TVTTS_FRAME_TRACKS 22
+TVTTS_API int TVTTS_CALL tvtts_speak_frames(tvtts_synth *s,
+                                            const uint8_t *frames,
+                                            uint32_t n_frames,
+                                            tvtts_callback cb, void *user);
+
 TVTTS_API int TVTTS_CALL tvtts_speak_phonemes(tvtts_synth *s,
                                               const char *phonemes,
                                               tvtts_callback cb, void *user);

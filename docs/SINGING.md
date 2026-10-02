@@ -692,6 +692,34 @@ written.  The limit is inside the stage 3 rule passes and was not found.  So
 "stage 3 asks `Tracks_Op`, which is why it is sixty" is wrong about the mechanism
 even though sixty is the right number.
 
+### Holding a note needs a note
+
+Freezing the sung frame instead of the configured defaults is right whenever
+there is a frame to freeze, and `ESC[<n>g` does not always have one.  Sent with
+nothing sounding in front of it, it is the bare formant-frame synthesiser
+[VOICES.md](VOICES.md#driving-the-parameters-from-the-text-stream) documents --
+place the resonators by hand, then hold them -- and there the track ring is
+still empty, so the frame this extension freezes is empty too and the hold comes
+out **silent**.  Measured, before the fix:
+
+| | extensions off | `TVTTS_EXT_SING` on |
+| --- | --- | --- |
+| `ESC[120g` alone | rms 2032 | **0** |
+| `ESC[9;160l` `ESC[120g` | rms 2677 | **0** |
+| a phoneme, then `ESC[120g` | rms 2084 | rms 2455 |
+| text, then `ESC[120g` | rms 2249 | rms 2339 |
+
+A hold that follows anything at all was never affected, which is why singing
+never showed it: a sung note always has its phoneme in front.  And the corpus
+cannot see it, because `difftest` passes `-C`.
+
+The fix is a fallback rather than a flag.  Track 0 is the amplitude the engine's
+own silence frame zeroes -- `g_hold_silence[0]` is 0 -- so when the frame about
+to be frozen carries none, there is no note and `Stage3_Hold` holds
+`s3_param_raw`, exactly as the original does.  The first two rows above are now
+byte-identical with the extensions on or off, the last two are unchanged, and
+the three example lines in VOICES.md render three different waveforms again.
+
 ### The 390 ms trim belongs to the last rest, not to a pitch change
 
 `SING_REST_PITCH_MS` existed because a pitch change after a rest or a hold was

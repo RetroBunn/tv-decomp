@@ -176,6 +176,12 @@ ESC[<index>l                reset that track to g_default_params[index]
 `Engine_RunControl` (`src/engine/control.c:151`) writes it into
 `Engine.s3_param_raw`.
 
+`TVTTS_EXT_SING` changes what `ESC[<n>g` freezes -- a sung note rather than the
+configured defaults, see [SINGING.md](SINGING.md) -- but only when there is a
+note to freeze.  With nothing sounding in front of it, which is this mode, the
+hold falls back to `s3_param_raw` and the three lines below render the same
+audio with the extensions on or off.
+
 **It does not affect running speech.**  `s3_param_raw` is read only by the
 held-frame path in `Stage3_Hold` (`src/engine/stage3.c:327`), because
 ordinary speech rewrites all 22 targets from the phoneme tables at every
@@ -192,6 +198,61 @@ ESC[0;60l ESC[9;100l ESC[10;200l   ESC[100g
 So the engine will act as a bare formant-frame synthesizer on demand --
 you can place the resonators by hand and hold them -- but there is no way
 to modulate live speech through this interface.
+
+### Driving it from C instead, which is the way to drive a voice
+
+The escapes are fine for a handful of frames and are not a way to synthesise
+anything long.  They travel as control nodes through a pipeline sized for
+speech: past about ten of them the queue stops delivering what was asked, and a
+run of bare `ESC[<n>g` holds after a change sequence **replays that sequence**
+rather than holding its last frame.  Rendering in short pieces and splicing the
+audio works, but every splice restarts the glottal phase -- measured across one
+0.8 s utterance, the joins stepped up to 46% of local peak, which is heard.
+
+`tvtts_speak_frames` writes the frames where `Stage3_Hold` would have written
+them and lets the synthesiser run straight through, so nothing is spliced:
+
+```c
+uint8_t frames[N * TVTTS_FRAME_TRACKS];   /* 22 tracks per 10 ms frame */
+tvtts_speak_frames(s, frames, N, on_event, NULL);
+```
+
+Stages 0 to 3 are bypassed completely -- nothing is read and no phoneme is
+looked up -- so this is how to synthesise something the front end has no notion
+of.  English only, as the phoneme entry points are.
+
+### What a track value means in hertz
+
+The track numbers above say which formant; they do not say what the byte is
+worth.  Each one carries its own scaling, and `g_default_params` decodes to a
+neutral vowel, which is how to read them:
+
+| track | scaling | reach | default | that is |
+| --- | --- | --- | --- | --- |
+| 9 `F1` | value x 4 | 1020 Hz | 100 | 400 Hz |
+| 10 `F2` | value x 8 **+ 500** | 2540 Hz | 113 | 1404 Hz |
+| 11 `F3` | value x 16 | 4080 Hz | 144 | 2304 Hz |
+| 12 `F4` | value x 16 | 4080 Hz | 206 | 3296 Hz |
+| 13..15 `B1..B3` | value x 2 | 408 Hz | 50, 50, 70 | 100, 100, 140 Hz |
+
+400 / 1404 / 2304 / 3296 with bandwidths 100 / 100 / 140 is a neutral vowel,
+which is what the hold command sustains when nothing has told it otherwise.
+
+Measured rather than read: holding each value and recovering the formants by
+LPC from the held frames gives 408 / 1411 / 2293 / 3283 at the defaults, and
+across a sweep the predictions land within a few hertz --
+
+| track | set to | predicted | measured |
+| --- | --- | --- | --- |
+| 10 `F2` | 60, 110, 160, 210 | 980, 1380, 1780, 2180 | 978, 1396, 1780, 2181 |
+| 11 `F3` | 60, 110, 160, 210 | 960, 1760, 2560, 3360 | 938, 1758, 2559, 3362 |
+
+Three limits fall out of the scalings and are worth knowing before placing a
+resonator by hand.  **`F2` cannot go below 500 Hz**, because the offset is added
+before anything else.  **`F1` stops at 1020 Hz**, which is above any vowel this
+engine is asked for, including after a voice with a positive `adj[0]` scales it
+up.  And **`F4` is held off `F3` from below**: with `F3` at its default 2293,
+setting track 12 to 60, 110 or 160 all came back at 2591, and only 210 moved it.
 
 ## Speaking phonemes directly
 

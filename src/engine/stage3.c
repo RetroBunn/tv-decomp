@@ -354,31 +354,49 @@ int32_t TV_THISCALL Stage3_Hold(Engine *self, int32_t ch, int32_t n,
              * is 80 ms, so a phoneme that really is moving that fast keeps
              * nearly all of itself.
              */
-            if (tv_ext_sing) {
+            {
                 int32_t back = 0;
-                int32_t j = (self->trk_wr[0] - 1) & 0xff;
 
-                while (back < 8) {
-                    int32_t prev = (j - 1) & 0xff;
-                    int32_t moved = 0;
+                if (tv_ext_sing) {
+                    int32_t j = (self->trk_wr[0] - 1) & 0xff;
 
-                    for (i = 0; i < 22; i++) {
-                        int32_t d = (int32_t)self->trk_buf[i][j] -
-                                    (int32_t)self->trk_buf[i][prev];
-                        moved += d < 0 ? -d : d;
+                    while (back < 8) {
+                        int32_t prev = (j - 1) & 0xff;
+                        int32_t moved = 0;
+
+                        for (i = 0; i < 22; i++) {
+                            int32_t d = (int32_t)self->trk_buf[i][j] -
+                                        (int32_t)self->trk_buf[i][prev];
+                            moved += d < 0 ? -d : d;
+                        }
+                        if (moved <= 3)
+                            break;
+                        j = prev;
+                        back++;
                     }
-                    if (moved <= 3)
-                        break;
-                    j = prev;
-                    back++;
                 }
-                for (i = 0; i < 22; i++)
-                    self->s3_hold[i] =
-                        self->trk_buf[i][(self->trk_wr[i] - 1 - back) & 0xff];
-
-            } else {
-                for (i = 0; i < 22; i++)
-                    self->s3_hold[i] = self->s3_param_raw[i];
+                /*
+                 * Freezing the note needs there to be a note.  `g` with nothing
+                 * sounding in front of it is the bare formant-frame synthesiser
+                 * docs/VOICES.md documents -- set the tracks by hand, then hold
+                 * them -- and there the ring has nothing in it yet, so the frame
+                 * this would freeze is empty and holding it is silence.  Track 0
+                 * is the amplitude the engine's own silence frame zeroes
+                 * (`g_hold_silence[0]`), so when the frame about to be frozen
+                 * carries none, hold what the original holds instead.  A sung
+                 * note always has its phoneme in front and never takes this
+                 * branch, which is why the fault survived: the corpus runs with
+                 * the extensions off and sees only the second arm.
+                 */
+                if (tv_ext_sing &&
+                    self->trk_buf[0][(self->trk_wr[0] - 1 - back) & 0xff] != 0) {
+                    for (i = 0; i < 22; i++)
+                        self->s3_hold[i] =
+                            self->trk_buf[i][(self->trk_wr[i] - 1 - back) & 0xff];
+                } else {
+                    for (i = 0; i < 22; i++)
+                        self->s3_hold[i] = self->s3_param_raw[i];
+                }
             }
         } else if ((uint8_t)ch == 's') {
             for (i = 0; i < 22; i++)

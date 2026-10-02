@@ -33,6 +33,7 @@ EXPORTS
     tvtts_set_volume
     tvtts_speak_bytes
     tvtts_speak_phonemes
+    tvtts_speak_frames
     tvtts_sing
     tvtts_sing_compile
     tvtts_note_hz

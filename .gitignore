@@ -70,6 +70,12 @@ dkms.conf
 # and never redistributed from here.  What was read is described in NOTICE and
 # in docs/SINGING.md.
 /dectalk/
+# Open JTalk, kept locally to read its Japanese front end out of.  Three-clause
+# BSD (Nagoya Institute of Technology; MeCab by Kudo and NTT; the NAIST
+# dictionary by Nara Institute of Science and Technology), so unlike the two
+# above it could be redistributed -- it is kept out because it is a reference
+# we read, not a part of OpenTV.  See NOTICE for what was read.
+/libopenjtalk/
 /work/
 /build/
 /ref/

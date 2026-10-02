@@ -475,6 +475,18 @@ int TVTTS_CALL tvtts_speak_phonemes(tvtts_synth *s, const char *phonemes,
     return en_speak_phonemes(s->impl, phonemes, cb, user);
 }
 
+int en_speak_frames(void *vs, const uint8_t *frames, uint32_t n_frames,
+                    tvtts_callback cb, void *user);
+
+int TVTTS_CALL tvtts_speak_frames(tvtts_synth *s, const uint8_t *frames,
+                                  uint32_t n_frames,
+                                  tvtts_callback cb, void *user)
+{
+    if (s == NULL || s->lang != &g_langs[0])
+        return -1;
+    return en_speak_frames(s->impl, frames, n_frames, cb, user);
+}
+
 /*
  * Sing a score.  English only, for the same reason the phoneme entry points
  * are: the alphabet is this engine's and the 1995 engines do not share it.

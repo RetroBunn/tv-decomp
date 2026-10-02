@@ -1,0 +1,51 @@
+
+Documentation on the structure of the ETL Formant data file:
+		"MokhtariTanaka2000_ETLformantdata.txt"
+
+The formant data file contains 8 columns and 2750 rows of 
+formant frequency and bandwidth values represented in floating-
+point format in units of Hz, to the nearest 0.1 Hz (i.e., to
+1 decimal place).
+
+
+The 8 columns are structured as follows:
+
+F1	F2	F3	F4	B1	B2	B3	B4
+
+where {F1,...,F4} and {B1,...,B4} are the first four formant
+frequencies and bandwidths, respectively.
+
+
+The structure of the 2750 rows is represented by the following,
+nested-loops:
+
+Speakers 1,2,...,5
+  Vowels 1,2,...,5
+    Words 1,2,...,22
+      Frames 1,2,...5
+
+where the Speaker-codes in the original "ETL-WD-I and II"
+dataset are:
+	Speaker 1 --> S0001
+	Speaker 2 --> S0003
+	Speaker 3 --> S0010
+	Speaker 4 --> S0015
+	Speaker 5 --> S0041
+
+and the vowels are:
+	Vowel 1 --> i
+	Vowel 2 --> e
+	Vowel 3 --> a
+	Vowel 4 --> o
+	Vowel 5 --> u
+
+Note: The phonetic symbol of Japanese "u" looks like a
+joined double-u "/uu/" (please see the full paper).
+
+The list of 22 words for each of the 5 vowel-nuclei can be
+found in the full paper.
+
+The 5 frames are consecutive frames at the steady-state of
+each vowel nucleus (see full paper for details).
+
+---

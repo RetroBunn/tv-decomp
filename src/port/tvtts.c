@@ -864,6 +864,111 @@ int en_speak_bytes(void *vs, const void *text, uint32_t len,
     return r;
 }
 
+/* ---- parameter frames ---------------------------------------------------- */
+
+/*
+ * Drive the synthesiser directly: 22 parameter tracks per 10 ms frame, with
+ * stages 0 to 3 bypassed entirely.
+ *
+ * docs/VOICES.md documents the escape pair `ESC[<track>;<value>l` and
+ * `ESC[<n>g` as a way to place the resonators by hand, and it is fine for a
+ * handful of frames.  It is not a way to drive a voice: the escapes travel as
+ * control nodes through a pipeline sized for speech, and past about ten of them
+ * the queue stops delivering what was asked -- a run of bare holds after a
+ * change sequence *replays* that sequence rather than holding its last frame.
+ * Rendering a word as one utterance per segment and splicing the audio works,
+ * but every splice is an utterance boundary: the glottal phase restarts, and
+ * measured across one 0.8 s word the joins stepped up to 46% of local peak.
+ *
+ * So this writes the frames where stage 3 would have written them and lets the
+ * synthesiser run straight through, which is what makes a continuous signal
+ * possible at all.  The track layout is the one in docs/VOICES.md; the ring is
+ * 256 frames and the filling here is `Stage3_Hold`'s loop with the caller's
+ * frames in place of a held one.
+ *
+ * English only, as the phoneme entry points are: the Spanish engine is a
+ * separate object with its own tracks.
+ */
+int en_speak_frames(void *vs, const uint8_t *frames, uint32_t n_frames,
+                    tvtts_callback cb, void *user)
+{
+    struct en_synth *s = (struct en_synth *)vs;
+    Engine *E;
+    uint32_t f = 0;
+    long steps = 0;
+    int i;
+
+    if (s == NULL || (frames == NULL && n_frames != 0))
+        return -1;
+    E = s->eng;
+
+    if (s->started)
+        Engine_Reset(E);
+    s->started = 1;
+    E->out_count = 0;
+    s->cb = cb;
+    s->user = user;
+    s->pos = 0;
+    s->aborted = 0;
+
+    /*
+     * No stop marker while frames are still arriving: `Synth_Step` sets
+     * `synth_busy` the moment the reader reaches `trk_08`, and -1 is the value
+     * the engine itself uses for "not set" (see `Tracks_Op`'s rebase, which
+     * skips it).  `s3_1fe0` is the lookahead `Synth_Frame` insists on having
+     * ahead of the reader; 2 is what stage 3 uses for a short transition.
+     */
+    E->trk_08 = -1;
+    E->s3_1fe0 = 2;
+    E->synth_busy = 0;
+    E->synth_hold = 0;
+
+    while (!s->aborted) {
+        /* Fill while the 256-frame ring has room. */
+        while (f < n_frames && Tracks_Op(E, 1, 1)) {
+            int32_t pos = E->trk_0c;
+
+            for (i = 0; i < 22; i++)
+                E->trk_buf[i][pos & 0xff] = frames[f * 22 + (uint32_t)i];
+            pos++;
+            for (i = 0; i < 22; i++) {
+                E->trk_rd[i] = pos - E->s3_1fe0;
+                E->trk_wr[i] = pos;
+            }
+            E->trk_0c = pos;
+            E->trk_10 = pos;
+            f++;
+        }
+        if (f >= n_frames) {
+            /* Everything is in; let the reader run out and stop cleanly. */
+            if (E->trk_08 == -1)
+                E->trk_08 = E->trk_0c - 2;
+            if (E->trk_04 >= E->trk_08)
+                break;
+        }
+        Synth_Step(E);
+        if (E->out_count != 0) {
+            uint32_t n = E->out_count / 2;
+            E->out_count = 0;
+            if (n != 0)
+                emit_audio(s, (const int16_t *)s->outbuf, n);
+        }
+        if (++steps > 10000000L)         /* no progress; do not spin forever */
+            break;
+    }
+    if (E->out_count != 0) {
+        uint32_t n = E->out_count / 2;
+        E->out_count = 0;
+        if (n != 0)
+            emit_audio(s, (const int16_t *)s->outbuf, n);
+    }
+    if (!s->aborted)
+        emit(s, TVTTS_END, NULL, 0, 0, s->pos);
+    s->cb = NULL;
+    s->user = NULL;
+    return s->aborted;
+}
+
 /* ---- phonemes ------------------------------------------------------------ */
 
 /* The audio a phoneme conversion produces is not wanted, only the trace. */
