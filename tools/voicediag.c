@@ -18,6 +18,7 @@
 
 #include "tvtts.h"
 #include "engine.h"
+#include "syn_hifi.h"
 
 extern long tv_diag_max[TV_DIAG_STATES];
 extern long tv_diag_over[TV_DIAG_STATES];
@@ -89,11 +90,14 @@ static void run(const char *name, int voice, int rate_index)
     if (!any)
         printf("   every state stayed inside 16 bits\n");
 
-    for (i = 6; i <= 8; i++)
+    for (i = 6; i <= 8; i++) {
+        long bytes = i == 8 && tvtts_sample_rate_hz(rate_index) == TV_SYNHIFI_RATE
+                   ? (long)sizeof g_synhifi_8 : TABLE_BYTES[i];
         if (tv_diag_syn[i] > 0)
             printf("   table %d read to byte %5ld of %ld%s\n", i,
-                   tv_diag_syn[i], TABLE_BYTES[i],
-                   tv_diag_syn[i] >= TABLE_BYTES[i] ? "   <-- PAST THE END" : "");
+                   tv_diag_syn[i], bytes,
+                   tv_diag_syn[i] >= bytes ? "   <-- PAST THE END" : "");
+    }
 
     for (i = 0; i < 5; i++)
         if (tv_diag_q15_over[i] > 0)

@@ -16,6 +16,13 @@
  *
  * Adding a language is a row in the table below, a file like
  * es_port/tvtts_es.c, and nothing else.
+ *
+ * Japanese is the third, and the first that is not a decompilation.  No
+ * Japanese TruVoice exists, so there was nothing to be byte-exact against and
+ * nothing to decompile; its front end is built from the phonetics literature
+ * and it drives the 1997 synthesiser through en_speak_frames, which is the
+ * layer below stage 3 and knows nothing about any language.  From here it is a
+ * row like the other two, which is the point of this file.
  */
 #include <stdlib.h>
 #include <string.h>
@@ -36,7 +43,7 @@
       en_get_voice, en_get_rate, en_get_pitch,                                \
       en_get_rate_hz, en_set_rate_hz, en_set_compat, en_set_textin_mode,      \
       en_voice_count, en_voice_name, en_voice_rate, en_voice_pitch,           \
-      en_speak_bytes, en_set_extensions }
+      en_speak_bytes, en_set_extensions, 0 }
 
 #define ES_LANG                                                               \
     { "es", "Castilian Spanish", es_create, es_destroy,                   \
@@ -44,11 +51,25 @@
       es_get_voice, es_get_rate, es_get_pitch,                                \
       es_get_rate_hz, es_set_rate_hz, es_set_compat, es_set_textin_mode,      \
       es_voice_count, es_voice_name, es_voice_rate, es_voice_pitch,           \
-      es_speak_bytes, es_set_extensions }
+      es_speak_bytes, es_set_extensions, 0 }
+
+/*
+ * Japanese reads its own script, so it takes UTF-8 where the two cp1252
+ * engines take bytes -- the 1 in the last column.  Everything else about the
+ * row is the same shape.
+ */
+#define JA_LANG                                                               \
+    { "ja", "Japanese", ja_create, ja_destroy,                                \
+      ja_set_voice, ja_set_rate, ja_set_pitch, ja_set_volume,                 \
+      ja_get_voice, ja_get_rate, ja_get_pitch,                                \
+      ja_get_rate_hz, ja_set_rate_hz, ja_set_compat, ja_set_textin_mode,      \
+      ja_voice_count, ja_voice_name, ja_voice_rate, ja_voice_pitch,           \
+      ja_speak_bytes, ja_set_extensions, 1 }
 
 /* In voice order: English first, because it was first and because renumbering
- * anybody's saved voice would be unkind. */
-static const tvtts_lang g_langs[] = { EN_LANG, ES_LANG };
+ * anybody's saved voice would be unkind.  A new language goes on the END for
+ * the same reason -- Japanese is voices 20..29. */
+static const tvtts_lang g_langs[] = { EN_LANG, ES_LANG, JA_LANG };
 
 #define NLANGS ((int)(sizeof g_langs / sizeof g_langs[0]))
 
@@ -65,6 +86,14 @@ struct tvtts_synth {
     int               preformat, textin, nuls, compat_set;
 };
 
+/* Which encoding a synth reads its text as.  tvtts_speak_utf8 and _utf16 live
+ * in the English file, which cannot see inside a synth, and the answer belongs
+ * to the language rather than to either of them. */
+int tv_lang_utf8(const tvtts_synth *s)
+{
+    return (s != NULL && s->lang != NULL) ? s->lang->utf8_text : 0;
+}
+
 /* ---- extensions ---------------------------------------------------------- */
 
 /*
@@ -77,7 +106,7 @@ struct tvtts_synth {
  * English, which already clamps where it moves Spanish to -- and which is which
  * is the language's business rather than this file's.
  */
-static uint32_t g_ext = TVTTS_EXT_ALL;
+static uint32_t g_ext = TVTTS_EXT_DEFAULT;
 
 void TVTTS_CALL tvtts_set_extensions(uint32_t mask)
 {

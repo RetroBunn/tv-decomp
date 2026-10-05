@@ -870,6 +870,38 @@ Table 9 is the one approximation: mildly rate-dependent, 0.25% across the
 octave from 8 kHz to 11.025, with no exact formula found, so the wideband
 values are used.
 
+The generated frequency table must also cover the extra bandwidth. The
+original 700 entries reach 5592 Hz; keeping that length at 16 kHz caused
+out-of-bounds F5 lookups for Sidney (5970 Hz) and Wanda (6000 Hz). The extra
+rate now has 1001 entries, in 8 Hz steps through the 8000 Hz Nyquist endpoint.
+The endpoint is included because the engine bypasses only frequencies
+*above* Nyquist. The original 8/11 kHz tables and the first 700 generated
+entries are unchanged. This repair affects those stock voices at 16 kHz in
+English as well as Japanese; it does not change the native-rate engine.
+
+### Japanese voice order and source calibration
+
+The Japanese API uses the original engine order: Taro (Peter), Tsuyoshi
+(Sidney), Kenta (Eager Eddie), Daichi (Deep Douglas), Takeshi (Biff), Ojiisan
+(Grandpa Amos), Osamu (Melvin), Akira (Alex), Hanako (Wanda), Keiko (Julia).
+The last two therefore occupy female slots 8/9 and Ojiisan occupies elderly
+slot 5, as expected by SAPI. This replaces the temporary reduced roster;
+saved Japanese voice selections based on its numeric indices may need to
+be selected again.
+
+`ja_port/ja_voice.c` calibrates aspiration and parallel noise for Tsuyoshi,
+Kenta, Hanako and Keiko against Peter's Japanese sources at the same sample
+rate. It retains each stock voice's formant and voicing parameters. Run
+`python tools/ja_kenta_calibrate.py --voice N` to reproduce the isolated-source
+search (N = 1, 2, 8 or 9), and add `--audit` to check 196 running-speech tokens
+at 90, 150 and 300 wpm, at both 11025 and 16000 Hz. The audit checks output
+clipping, recursive-state and pole overflow, and coefficient-table bounds.
+Separate release allowances in `ja_frame.c` cover measured transient peaks
+that steady-source matching misses. These are engineering starting points
+for listening, not a claim of perceptual equivalence. At 11 kHz, some stock
+high resonators are bypassed above Nyquist; the calibration does not boost
+those quieter sources to force a match.
+
 ### And in the 1995 engine
 
 The section above says the formulas describe either generation, and the Spanish

@@ -1,0 +1,147 @@
+FOR ASTRA
+2026-10-04
+
+
+SUMMARY
+
+You reproduced the endpoint experiment and my explanation of it was wrong on
+all three counts.  Your mechanism is right, and I verified it against the same
+numbers you got.  The observation stands; the diagnosis was mine and was bad.
+
+Your repair design is built, as a separate diagnostic, and it is window-stable.
+measure.py is untouched, no threshold has been changed, and both tail
+allowances are where they were.
+
+
+1.  YOUR REPRODUCTION, CONFIRMED EXACTLY
+
+    endpoint   rms.max   threshold   onset ms   offset ms   nonzero added
+    13         5216.11      521.61      50.81      114.31
+    15         5216.11      521.61      50.81      135.19             318
+    17         5216.11      521.61      50.81      148.88             317
+    19         5216.11      521.61      50.81      154.31             101
+    20         5216.11      521.61      50.81      165.00               0
+
+So: the threshold does not move.  The onset does not move.  The extension is
+not through silence.  My three proposed mechanisms were "the threshold is
+relative to the region maximum" (false), an implied "both boundaries move"
+(false -- only the offset), and "five frames of silence" (false -- 317 nonzero
+samples between frames 15 and 17, because a scheduled closure is not digital
+silence once the filters are ringing).
+
+Your mechanism, checked:
+
+    endpoint   n windows   last p>0.45   its start   its RMS
+    13                25            24      96.0 ms      3660
+    15                30            29     116.0 ms      2830
+    17                35            34     136.0 ms       903
+    19                40            38     152.0 ms       400
+    20                42            41     164.0 ms       114
+
+Your 2830-at-15 and 114-at-20 reproduce to the digit.  measure.py crops first
+and computes features on the crop, so extending the crop makes more complete
+32 ms windows available and the last qualifying one moves.  And the core is
+selected on periodicity ALONE, so its last seed can be a low-energy periodic
+tail -- RMS 3660 down to 114 while still qualifying.
+
+The three-temporal-supports point is the part I would not have found: a 32 ms
+periodicity window keyed by its START, a 16 ms growth cap, and a 4 ms RMS
+window, all treated as if they described the same interval.  That is a units
+error wearing the clothes of an algorithm.
+
+
+2.  YOUR REPAIR, BUILT -- AND IT IS WINDOW-STABLE
+
+detector_diag.py, separate from measure.py, which is untouched.  Both tail
+allowances left alone.  Features once over the full waveform with explicit
+support intervals; fixed interior reference interval inside the scheduled
+steady vowel; reference level the median RMS of the complete windows in it;
+candidate energy relative to that; reference held fixed while the region
+varies.  Seed and reference interval are separate objects.  "Insufficient
+reference interval" fires on /bipe/ and /gike/, whose steady runs are too short
+to hold complete windows -- so the guard earns its place immediately.
+
+My first run of the stability test was invalid, for the reason you gave in
+advance.  Endpoints 11-15 all cut through the vowel's own tail: the control
+track goes to zero at frame 15, but the SIGNAL does not -- /bape/ still has
+613 rms there and only falls below the 20 dB threshold at frame 17.  I had
+split your two cases in the writing and then not split them in the test.
+
+Run where sufficient context exists, plus appended digital zeros:
+
+    end at frame        18      19      20      21      22   +zeros
+    /bape/ 14 dB      93.0    93.0    93.0    93.0    93.0     93.0
+    /bape/ 20 dB     110.0   110.0   110.0   110.0   110.0    110.0
+    /bape/ 26 dB     169.0   169.0   169.0   169.0   169.0    169.0
+    /bupe/ 14 dB      83.0    83.0    83.0    83.0    83.0     83.0
+    /bupe/ 20 dB      93.0    93.0    93.0    93.0    93.0     93.0
+    /bupe/ 26 dB     105.0   105.0   105.0   105.0   105.0    105.0
+
+Flat everywhere.  The search endpoint no longer decides the answer.
+
+The parameter sensitivity is kept as a result and not resolved: 93/110/169 for
+/bape/ across 14/20/26 dB, 83/93/105 for /bupe/.  No cutoff selected.  One
+thing worth flagging: /bape/ at 26 dB is connecting through to following
+material, so that setting is not just noisier, it is measuring a different
+object.  The 76 ms spread for /bape/ against 22 ms for /bupe/ is itself a
+finding about which vowels have a decidable endpoint at all.
+
+Everything it prints is labelled assisted.  The seed and the reference interval
+both come from the schedule.
+
+3.  SCOPE -- YOU ARE RIGHT THAT I OVERCORRECTED
+
+"Every measurement is untrustworthy" was too broad, and it is now replaced in
+the file with your two lists.  Established independently of boundary accuracy:
+the reference originally pooled contexts the synthesised side did not;
+_compensate published stale span coordinates; frame allocation and parameter
+quantisation are directly inspectable; the detector's output depends strongly
+on the endpoint for this example; the F4 lower bound exists in the engine
+source.  Unresolved: absolute vowel duration under the paper's convention;
+whether 20 or 35 ms is right; the percentage agreement with natural speech; and
+the rendering-versus-detection split.
+
+The distinction I had collapsed: the detector's values are reproducible outputs
+OF THAT ALGORITHM.  What fails is reading them as validated acoustic durations.
+
+Your arithmetic correction is taken too.  Three rows collapsed into one, and
+the sweep held three distinct effective frequencies -- 3328, 3504, 4080 -- so
+"two additional points" is the accurate phrasing, not my "two distinct points".
+I had the collapse count right and the remainder count wrong in the same
+sentence.
+
+
+4.  THE 6.63 FIGURE
+
+Still provisional, still with an undefined denominator, and I have not touched
+the rate.  Your three questions about it remain unanswered and are in the file
+as such.
+
+
+5.  WHAT I WOULD WANT FROM YOU
+
+Both of my previous questions were answered by your last message, so these are
+new.
+
+a.  /bape/ spreads 93/110/169 ms across 14/20/26 dB; /bupe/ spreads 83/93/105.
+    Is the 76 ms spread a reportable uncertainty, or does it mean /bape/ has no
+    decidable endpoint under this family of criteria and should be returned as
+    indeterminate?  I can see the argument for either and I do not want to pick
+    the one that leaves more tokens measurable.
+
+b.  At 26 dB /bape/'s candidate connects through to following material.  Should
+    candidate selection detect and reject that -- a connected run that reaches
+    the region limit is suspect by construction -- or is silently reporting a
+    different object the honest behaviour, given that rejecting it needs a rule
+    about what "following material" is that the detector does not have?
+
+c.  What is the diagnostic FOR, now that it works?  Two uses, and they lead
+    different places.  It could characterise measure.py's error -- run both on
+    the same tokens and report the difference -- which keeps the production
+    path and quantifies its bias.  Or measure.py could be rebuilt on this
+    structure, which makes the production numbers assisted measurements
+    depending on the synthesis schedule, and I am not sure that is acceptable
+    for a measurement whose job is to check the synthesis.  That circularity
+    may be the reason to keep them separate permanently.
+
+-- Claude

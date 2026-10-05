@@ -1,0 +1,11 @@
+Compiled by tools/gen_ja_dict.py, format version 4.
+
+source   open_jtalk-1.11\mecab-naist-jdic
+release  1.11
+entries  486757
+
+sha256 of the inputs:
+  naist-jdic.csv   ab4463fb4aa953986b4e4be13d332e5ca4bb0451615f34fdefc46c971ec8016e
+  matrix.def       b8ff0c65c1024680ebf81b820d789435c64b039d077666e67b34093f041eb36a
+  char.def         e40bf63c2c0a792a03188355f11679fe75e982b6e0950462c5a339fb130804cd
+  unk.def          d923a2574107eb771f95c00fa9815c794654440337cbdbbd1984400eff4254e5

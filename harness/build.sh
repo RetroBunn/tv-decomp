@@ -149,6 +149,47 @@ python tools/gen_data.py "$DATA" src "$GEN/tvdata.s" $PORT_OBJS
 gcc $CFLAGS -c "$GEN/tvdata.s" -o "$PORT/obj/tvdata.o"
 PORT_OBJS="$PORT_OBJS $PORT/obj/tvdata.o"
 
+# --- Japanese, in the same library -------------------------------------------
+# Not an engine and not a decompilation: ja_port builds the 22-track parameter
+# frames the 1997 synthesiser already reads and hands them to en_speak_frames,
+# so it carries no data of its own, needs no gen_rename.py prefixing, and
+# nothing under src/ changes for it.  It is compiled after gen_data.py has run
+# because it asks the engine for functions only -- tv_v_pitch, tv_v_speed,
+# Volume_ToAtten -- and every data symbol behind those is already pulled in by
+# src/engine/voices.c.
+#
+# -msse2 -mfpmath=sse, which nothing else here needs.  The engine is integer
+# arithmetic throughout; the Japanese front end is not -- its durations,
+# formant interpolations and F0 contour are doubles, and they have to agree
+# with the Python prototype the oracle was written from.  The 387 keeps 80-bit
+# intermediates, so the same expression can land on a different side of a
+# rounding boundary there than it does in binary64, and the 32-bit library
+# would then say something subtly different from the 64-bit one with nothing to
+# show which was right.  SSE2 doubles ARE binary64.  build/check/ja_check32.exe
+# below is what checks that this worked rather than assuming it.
+#
+JA_CF32="$CFLAGS -msse2 -mfpmath=sse"
+JA_OBJS=""
+for src in $(find ja_port -name '*.c' | sort); do
+  obj="$PORT/obj/$(echo "$src" | sed 's|/|_|g; s|\.c$|.o|')"
+  gcc $JA_CF32 -Isrc -Iinclude -Ija_port -I"$GEN" -c "$src" -o "$obj"
+  JA_OBJS="$JA_OBJS $obj"
+done
+PORT_OBJS="$PORT_OBJS $JA_OBJS"
+
+# The oracle test at 32 bits as well as at 64, because the question it answers
+# here is whether the two word widths agree.  Freestanding against msvcrt, like
+# everything else in the -m32 build.
+gcc $JA_CF32 -Ija_port -c tests/ja_check.c -o "$PORT/obj/ja_check.o"
+# Everything under ja_port EXCEPT tvtts_ja.c, which is the vtable and wants
+# the library.  So the test binary is the front end alone -- no engine, no
+# data -- and it builds and runs with nothing installed.
+JA_CHECK_OBJS=$(echo "$JA_OBJS" | tr ' ' '\n' | grep -v 'tvtts_ja\.o$' | tr '\n' ' ')
+RTLIBS="$RT_MIN"
+link "$CHECK/ja_check32.exe" "$PORT/obj/ja_check.o" $JA_CHECK_OBJS
+RTLIBS="$RT_TOOL"
+echo "built $CHECK/ja_check32.exe"
+
 # --- the Spanish engine, in the same library ----------------------------------
 # One library carries every language, and the two decompilations give the same
 # names to the same jobs -- both engines have an Engine_Feed, and they are
@@ -238,6 +279,15 @@ python tools/gen_data.py "$DATA" src "$GEN/tvdata64.s" $OBJ64
 gcc -m64 -c "$GEN/tvdata64.s" -o "$P64/obj/tvdata.o"
 OBJ64="$OBJ64 $P64/obj/tvdata.o"
 
+# Japanese at 64 bits, on the same terms as above.
+JA64=""
+for src in $(find ja_port -name '*.c' | sort); do
+  obj="$P64/obj/$(echo "$src" | sed 's|/|_|g; s|\.c$|.o|')"
+  gcc $CF64 -Ija_port -c "$src" -o "$obj"
+  JA64="$JA64 $obj"
+done
+OBJ64="$OBJ64 $JA64"
+
 # Spanish, the same way as at 32 bits: every name of its own prefixed, and its
 # data laid out under the prefix.  A stored address is four bytes at either word
 # width -- that is what tv_ref is for -- so nothing about the data changes here.
@@ -262,6 +312,20 @@ gcc $CF64 -c tests/api_test.c -o "$P64/obj/api_test.o"
 gcc -m64 -o "$CHECK/api_test64.exe" "$P64/obj/api_test.o" $LIB64
 echo "built $CHECK/api_test64.exe"
 
+# --- the Japanese front end, against its oracle ------------------------------
+# Japanese has no DLL to be byte-exact against, so what stands in for the
+# corpus is build/Japanese_test/oracle_frames.tsv: 533 words as parameter
+# frames, written by the Python prototype whose output has been listened to.
+# This binary rebuilds them in C and requires every byte to match, and names
+# the word, the frame and the track when one does not.  It links the front end
+# alone -- no engine, no data -- so it builds and runs with nothing installed.
+gcc $CF64 -Ija_port -c tests/ja_check.c -o "$P64/obj/ja_check.o"
+JA64_CHECK_OBJS=$(echo "$JA64" | tr ' ' '\n' | grep -v 'tvtts_ja\.o$' \
+  | tr '\n' ' ')
+gcc -m64 -o "$CHECK/ja_check.exe" "$P64/obj/ja_check.o" \
+  $JA64_CHECK_OBJS -lm
+echo "built $CHECK/ja_check.exe"
+
 # --- the filter-state diagnostic ---------------------------------------------
 # Built with TV_DIAG, which is the only thing that compiles the counters in, so
 # nothing above is affected.  It says how hard a voice drives the filter bank
@@ -280,6 +344,13 @@ VD_REST=$(echo "$LIB64" | tr ' ' '
 ' ' ')
 gcc -m64 -o "$CHECK/voicediag.exe" $VD_OBJS $VD_REST
 echo "built $CHECK/voicediag.exe"
+
+# Source-level comparison for the Japanese voice calibrations. Wrapping logs
+# frame input only in this diagnostic executable, never in a shipped library.
+gcc $CF64 -c tools/ja_source_diag.c -o "$VD/ja_source_diag.o"
+gcc -m64 -o "$CHECK/ja_source_diag.exe" "$VD/ja_source_diag.o" \
+  "$VD/frame.o" "$VD/generate.o" $VD_REST -Wl,--wrap=Synth_Frame
+echo "built $CHECK/ja_source_diag.exe"
 
 gcc -m64 -shared -o "$OUT/tvtts64.dll" $LIB64 \
   -Wl,--out-implib,"$OUT/libtvtts64.a" harness/rt/tvtts.def

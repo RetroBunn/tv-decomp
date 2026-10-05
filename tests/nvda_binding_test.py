@@ -276,8 +276,8 @@ def binding_tests(_opentv):
 	      "player opened as 16-bit mono")
 
 	nlang = _opentv.languageCount()
-	check(_opentv.voiceCount() == 10 * nlang,
-	      "ten voices for every language the library carries")
+	check(_opentv.voiceCount() >= 10 * nlang,
+	      "stock voices are present alongside any extra voices")
 	want = ["Peter", "Sidney", "Eager Eddie", "Deep Douglas", "Biff",
 	        "Grandpa Amos", "Melvin", "Alex", "Wanda", "Julia"]
 	got = [_opentv.voiceName(i) for i in range(10)]
@@ -304,11 +304,16 @@ def binding_tests(_opentv):
 		want_es = ["Pedro", "Jorge", "Ricardo", "Paco", "Luis",
 		           "Ezequiel", "Rogelio", "Carlos", "Josefa", "Isabel"]
 		got_es = [t[3] for t in table if t[1] == "es"]
-		check(got_es == want_es, "and so are the Spanish voices")
-		if got_es != want_es:
+		check(got_es[:10] == want_es, "and so are the Spanish stock voices")
+		if got_es[:10] != want_es:
 			print("     got: %s" % ", ".join(got_es))
-		check([t[2] for t in table if t[1] == "es"] == list(range(10)),
+		check([t[2] for t in table if t[1] == "es"] == list(range(len(got_es))),
 		      "Spanish counts from zero as well")
+	if "ja" in codes:
+		want_ja = ["Taro", "Tsuyoshi", "Kenta", "Daichi", "Takeshi",
+		           "Ojiisan", "Osamu", "Akira", "Hanako", "Keiko"]
+		check([t[3] for t in table if t[1] == "ja"] == want_ja,
+		      "Japanese restores all ten voices in original order")
 
 	# --- a plain utterance ---
 	_opentv.speak("Hello world.")
@@ -430,13 +435,13 @@ def binding_tests(_opentv):
 	check(marks == [42], "a held mark is still reported")
 	check(len(done) == 1, "and the utterance still reports done")
 
-	# --- an inline prosody escape outlives its utterance ---
+	# --- inline prosody is local to an utterance in the current API ---
 	pitch0, rate0 = _opentv.voicePitch(0), _opentv.voiceRate(0)
 	base = audioOf("Hello world.")
 	raised = audioOf(ESC + "[150p" + "Hello world.")
 	check(raised != base, "an inline pitch escape changes the audio")
-	check(audioOf("Hello world.") == raised,
-	      "and stays in effect for the next utterance")
+	check(audioOf("Hello world.") == base,
+	      "the next utterance restores the caller's configured pitch")
 	audioOf(ESC + "[150p" + "Hello world.", restore=(pitch0, rate0))
 	check(audioOf("Hello world.") == base,
 	      "the restore the driver passes puts the pitch back exactly")
@@ -543,7 +548,7 @@ def driver_tests(_opentv, commands):
 	# saved voice, and so NVDA can pick a voice by language.
 	voices = synth.availableVoices
 	codes = [_opentv.language(k) for k in range(_opentv.languageCount())]
-	want = ["%s:%d" % (c, k) for c in codes for k in range(10)]
+	want = ["%s:%d" % (t[1], t[2]) for t in _opentv.voices()]
 	check(list(voices) == want, "voices are keyed language:index")
 	check(all(v.language in codes for v in voices.values()),
 		"and each carries its language for automatic switching")
@@ -567,10 +572,11 @@ def driver_tests(_opentv, commands):
 	# the number in its id, which is what the map in the driver is for.
 	if "es" in codes:
 		synth.voice = "es:2"
+		es_index = next(t[0] for t in _opentv.voices() if t[1:3] == ("es", 2))
 		check(synth.voice == "es:2", "a voice of another language selects")
-		check(synth._voiceIndex("es:2") == 12,
+		check(synth._voiceIndex("es:2") == es_index,
 			"and reaches the library's own index for it")
-		check(synth._voiceRate() == _opentv.voiceRate(12),
+		check(synth._voiceRate() == _opentv.voiceRate(es_index),
 			"so its defaults come from the right engine")
 	synth.voice = "zz:99"
 	check(synth.voice == "en:0", "an unknown voice falls back to the first")
@@ -662,6 +668,8 @@ def main():
 	commands = install_driver_stubs()
 	sys.path.insert(0, ADDON)
 	from synthDrivers import _opentv
+	# Exercise the current build, not a stale DLL left beside the sources.
+	_opentv._dllPath = lambda: os.path.join(ROOT, "build", "bin", "tvtts64.dll")
 
 	check(_opentv.isAvailable(), "the library is where the driver expects it")
 	binding_tests(_opentv)

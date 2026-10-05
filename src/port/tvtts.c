@@ -1042,6 +1042,54 @@ int en_text_to_phonemes(void *vs, const char *text,
     return (int)need;
 }
 
+/*
+ * UTF-16 to UTF-8, for a language that reads its own script.
+ *
+ * Narrowing to cp1252 is right for the two engines whose phoneme tables are
+ * built on it, and it is destruction for any other alphabet -- every kana
+ * becomes a question mark, so a Japanese synth handed text through the UTF-16
+ * entry point would have spoken a row of question marks.  Which conversion to
+ * do is the language's business, and the table in api.c says.
+ */
+static char *to_utf8_utf16(const uint16_t *w, uint32_t *out_len)
+{
+    uint32_t len = 0, n = 0, i;
+    char *b;
+
+    while (w[len] != 0)
+        len++;
+    b = (char *)malloc((size_t)len * 4 + 1);  /* 4 bytes is the most one takes */
+    if (b == NULL)
+        return NULL;
+    for (i = 0; i < len; i++) {
+        uint32_t u = w[i];
+
+        if (u >= 0xd800 && u <= 0xdbff && i + 1 < len &&
+            w[i + 1] >= 0xdc00 && w[i + 1] <= 0xdfff) {
+            u = 0x10000u + ((u - 0xd800u) << 10) + (w[i + 1] - 0xdc00u);
+            i++;
+        }
+        if (u < 0x80) {
+            b[n++] = (char)u;
+        } else if (u < 0x800) {
+            b[n++] = (char)(0xc0 | (u >> 6));
+            b[n++] = (char)(0x80 | (u & 0x3f));
+        } else if (u < 0x10000) {
+            b[n++] = (char)(0xe0 | (u >> 12));
+            b[n++] = (char)(0x80 | ((u >> 6) & 0x3f));
+            b[n++] = (char)(0x80 | (u & 0x3f));
+        } else {
+            b[n++] = (char)(0xf0 | (u >> 18));
+            b[n++] = (char)(0x80 | ((u >> 12) & 0x3f));
+            b[n++] = (char)(0x80 | ((u >> 6) & 0x3f));
+            b[n++] = (char)(0x80 | (u & 0x3f));
+        }
+    }
+    b[n] = 0;
+    *out_len = n;
+    return b;
+}
+
 int TVTTS_CALL tvtts_speak_utf8(tvtts_synth *s, const char *text,
                                 tvtts_callback cb, void *user)
 {
@@ -1051,6 +1099,9 @@ int TVTTS_CALL tvtts_speak_utf8(tvtts_synth *s, const char *text,
 
     if (s == NULL || text == NULL)
         return -1;
+    /* Already UTF-8, and this language wants it that way: nothing to do. */
+    if (tv_lang_utf8(s))
+        return tvtts_speak_bytes(s, text, (uint32_t)strlen(text), cb, user);
     b = to_cp1252_utf8(text, &len);
     if (b == NULL)
         return -1;
@@ -1068,7 +1119,8 @@ int TVTTS_CALL tvtts_speak_utf16(tvtts_synth *s, const uint16_t *text,
 
     if (s == NULL || text == NULL)
         return -1;
-    b = to_cp1252_utf16(text, &len);
+    b = tv_lang_utf8(s) ? to_utf8_utf16(text, &len)
+                        : to_cp1252_utf16(text, &len);
     if (b == NULL)
         return -1;
     r = tvtts_speak_bytes(s, b, len, cb, user);

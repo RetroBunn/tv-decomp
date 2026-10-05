@@ -1218,14 +1218,24 @@ static void test_voices(void)
     sink a, b;
     tvtts_synth *s;
 
-    /*
-     * Ten per language out of the DLLs, and then however many
-     * src/engine/voices.c adds on top -- Kit, so far.  Counted rather than
-     * assumed, because the whole point of that file is that the number moves,
-     * and a language listed after the one a voice joins shifts along with it.
-     */
-    check(n >= 10 * tvtts_language_count(),
-          "at least ten voices for every language the library carries");
+    /* The decompiled languages retain their ten stock voices. Japanese has
+     * its own, smaller roster; test each language instead of a pooled count
+     * that could hide an empty roster behind another language's extras. */
+    {
+        int lang, ok = 1;
+        for (lang = 0; lang < tvtts_language_count(); lang++) {
+            const char *code = tvtts_language(lang);
+            int count = 0;
+            for (i = 0; i < n; i++) {
+                const char *vl = tvtts_voice_language(i);
+                if (vl != NULL && strcmp(vl, code) == 0)
+                    count++;
+            }
+            if (count < ((!strcmp(code, "en") || !strcmp(code, "es")) ? 10 : 1))
+                ok = 0;
+        }
+        check(ok, "each language has voices; decompiled stock rosters retained");
+    }
     for (i = 0; i < n; i++) {
         const char *nm = tvtts_voice_name(i);
         int j;
@@ -1396,8 +1406,14 @@ static void test_rate_extension(void)
     sink slow, fast, classic, a, b;
     int r;
 
-    check(tvtts_get_extensions() == TVTTS_EXT_ALL,
-          "extensions are on by default");
+    /*
+     * TVTTS_EXT_DEFAULT and not TVTTS_EXT_ALL: the Japanese romaji reading is
+     * a CHOICE rather than a fix, and its other side is the one three
+     * shipping Japanese systems make, so it is the one extension that is off
+     * until a caller asks.  See TVTTS_EXT_JA_ROMAJI.
+     */
+    check(tvtts_get_extensions() == TVTTS_EXT_DEFAULT,
+          "extensions are on by default, except the one that is a choice");
 
     /* Below the original's ceiling nothing may change. */
     for (r = 46; r <= 253; r += 23) {
@@ -1492,7 +1508,7 @@ static void test_sample_rate(void)
     check(tvtts_set_sample_rate(NULL, TVTTS_SR_8K) < 0, "so is a null synth");
 
     /*
-     * Every language has all three rates.  The original offered two and 16 kHz
+     * The decompiled languages have all three rates. The original offered two and 16 kHz
      * is OpenTV's, computed from the formulas that reproduce both of the
      * original's sets exactly -- which they do for the 1995 engines as well as
      * the 1997 one, all 2,120 values, the two being byte-identical here -- so
@@ -1510,6 +1526,24 @@ static void test_sample_rate(void)
                 tvtts_synth *t = tvtts_create_lang(11025, code);
                 sink c = {0}, d = {0};
                 int ok;
+
+                /* Japanese's current frontend explicitly refuses 8 kHz.
+                 * Refusal must leave a working 11 kHz synth unchanged. */
+                if (!strcmp(code, "ja") && which == TVTTS_SR_8K) {
+                    tvtts_synth *unsupported = tvtts_create_lang(8000, code);
+                    check(unsupported == NULL, "Japanese refuses creation at 8000 Hz");
+                    tvtts_destroy(unsupported);
+                    say(t, "kakikukeko", &c);
+                    check(tvtts_set_sample_rate(t, which) < 0,
+                          "Japanese refuses switching to 8000 Hz");
+                    say(t, "kakikukeko", &d);
+                    check(tvtts_get_sample_rate(t) == TVTTS_SR_11K && same(&c, &d),
+                          "refused Japanese rate change preserves settings and audio");
+                    sink_free(&c);
+                    sink_free(&d);
+                    tvtts_destroy(t);
+                    continue;
+                }
 
                 _snprintf(what, sizeof what, "%s speaks at %u Hz",
                           tvtts_language_name(code),

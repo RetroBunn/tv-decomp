@@ -1,0 +1,1903 @@
+# reference output from the Python analyser.  The C port
+# must reproduce every field of every line.
+# <text>\t<morae>\t<accents>\t<devoiced>\t<question>
+複数	fu ku su :	3	*...	0
+複製	fu ku se :	0	*...	0
+複写	fu ku sha	0	*..	0
+美しさ	u tsu ku shi sa	4	.*...	0
+ありがとうございます	a ri ga to :   go za i ma su	2,4	..........*	0
+せっぱ詰まる	se Q pa   tsu ma ru	1,2	.......	0
+1250円	se N   ni hya ku   go ju : e N	1,3,3	............	0
+ＡＢＣ	e i bi : shi :	5	......	0
+ガッツポーズ	ga Q tsu po : zu	4	..*...	0
+ｶﾞｯﾂﾎﾟｰｽﾞ	ga Q tsu po : zu	4	..*...	0
+三四	sa N ju :   yo N	1,1	.......	0
+散歩	sa N po	0	...	0
+恋愛	re N a i	0	....	0
+電話	de N wa	0	...	0
+日本語	ni ho N go	0	....	0
+新聞	shi N bu N	0	....	0
+銀行	gi N ko :	0	....	0
+ヴァイオリン	ba i o ri N	0	.....	0
+れんあい	re N a i	0	....	0
+三百円	sa N bya ku e N	4	......	0
+一本	i Q po N	2	....	0
+三本	sa N bo N	2	....	0
+六本	ro Q po N	2	....	0
+千本	se N bo N	0	....	0
+二十五	ni ju :   go	1,1	.....	0
+百二十三	hya ku   ni ju :   sa N	2,1,0	.........	0
+一万二千三百四十五円	i chi ma N   ni se N   sa N bya ku   yo N ju :   go e N	3,2,1,1,1	......................	0
+1.5	i Q te N   go	1,1	......	0
+03-1234-5678	ze ro sa N | i chi ni :   sa N yo N | go : ro ku   na na ha chi	3,3,3,3,3	........................	0
+10000	i chi ma N	3	....	0
+会議は三時半からです。	ka i gi wa   sa N ji ha N ka ra de su	1,4	.............*	0
+値段は1250円です。	ne da N wa   se N   ni hya ku   go ju : e N de su	0,1,3,3	..................*	0
+箸	ha shi	1	..	0
+橋	ha shi	2	..	0
+端	ha shi	0	..	0
+箸が	ha shi ga	1	...	0
+橋が	ha shi ga	2	...	0
+端が	ha shi ga	0	...	0
+雨	a me	1	..	0
+飴	a me	0	..	0
+牡蠣が	ka ki ga	1	...	0
+柿が	ka ki ga	0	...	0
+垣が	ka ki ga	2	...	0
+私は日本語を話します。	wa ta shi wa   ni ho N go o   ha na shi ma su	0,0,4	...............*	0
+今日はいい天気ですね。	kyo : wa   i i   te N ki de su ne	1,1,1	...........*.	0
+電車が駅に到着しました。	de N sha ga   e ki ni   to : cha ku   shi ma shi ta	0,1,0,2	............*...*.	0
+その本を読んでください。	so no   ho N o   yo N de   ku da sa i	0,1,1,3	...............	0
+明日の会議は何時からですか？	a shi ta no   ka i gi wa   na N ji ka ra de su ka	3,1,2	.*..............*.	1
+東京都の人口は増えています。	to : kyo : to no   ji N ko : wa   fu e te   i ma su	4,0,2,2	...................*	0
+友達と一緒に図書館で勉強しました。	to mo da chi to   i Q sho ni   to sho ka N de   be N kyo :   shi ma shi ta	0,0,2,0,2	...*....................*.	0
+日本語学校の先生はとても親切です。	ni ho N go ga Q ko : no   se N se : wa   to te mo   shi N se tsu de su	5,3,0,1	.........................*	0
+私は毎日学校へ行きます。友達と勉強します。	wa ta shi wa   ma i ni chi   ga Q ko : e   i ki ma su || to mo da chi to   be N kyo :   shi ma su	0,1,0,3,0,0,2	...................*....*.........*	0
+そうですか？	so : de su ka	4	...*.	1
+これは何ですか	ko re wa   na ni de su ka	0,1	.......*.	0
+お元気ですか？	o ge N ki de su ka	2	.....*.	1
+こんにちは	ko N ni chi wa	0	.....	0
+おばさん	o ba sa N	0	....	0
+おばあさん	o ba : sa N	2	.....	0
+おじさん	o ji sa N	0	....	0
+おじいさん	o ji : sa N	2	.....	0
+くつ	ku tsu	2	*.	0
+です	de su	1	.*	0
+すこし	su ko shi	2	*..	0
+した	shi ta	2	*.	0
+ふね	fu ne	1	..	0
+ふく	fu ku	2	*.	0
+ふとん	fu to N	0	*..	0
+ふあん	fu a N	0	...	0
+ふうふ	fu : fu	1	...	0
+さくら	sa ku ra	0	...	0
+ともだち	to mo da chi	0	....	0
+だいどころ	da i do ko ro	0	.....	0
+かあど	ka   a do	0,1	....	0
+とおる	to : ru	0	...	0
+びいる	bi i ru	1	...	0
+くうき	ku : ki	1	...	0
+がっこう	ga Q ko :	0	....	0
+きって	ki Q te	1	...	0
+ざっし	za Q shi	0	...	0
+しゃしん	sha shi N	0	...	0
+つつじ	tsu tsu ji	2	*..	0
+ちゃちゃちゃ	cha cha cha	1	...	0
+ありがとう	a ri ga to :	2	.....	0
+さようなら	sa yo : na ra	5	.....	0
+おはよう	o ha yo :	0	....	0
+				0
+ 				0
+。				0
+、				0
+？				1
+。。。				0
+龘				0
+あ龘い	a | i	1,1	...	0
+龘あ	a	1	.	0
+aiueo	a i u e o	0	.....	0
+ABC	e i bi : shi :	5	......	0
+あabcい	a e : bi : shi : i	1	........	0
+クヮルテット	ku wa ru te Q to	3	......	0
+ゴォォール	go o o : ru	0	.....	0
+ちっちゃゅぅ	chi Q cha yu u	3	.....	0
+乾殺しゃ	ho shi ko ro sha	4	.*...	0
+典清	no ri ki yo	2	....	0
+新居	shi N kyo	1	...	0
+藤四郎森	to : shi ro : mo ri	0	.......	0
+拝趨	ha i su :	0	....	0
+弁城	be N jo :	1	....	0
+遣遂れ	ya ri to ge re	4	.....	0
+アジん	a ji N	2	...	0
+下木島	shi mo ki ji ma	0	.....	0
+軽がろし	ka ro ga ro shi	4	.....	0
+武広	ta ke hi ro	2	....	0
+箱柳	ha ko ya na gi	3	.....	0
+渡合りゃ	wa ta ri a e rya	5	......	0
+ぶあつきゃ	bu a tsu kya	0	..*.	0
+福和田	fu ku wa da	0	*...	0
+入れ替えりゃ	i re ka e rya	4	.....	0
+面食らわ	me N ku ra wa	0	.....	0
+ねぎん	ne gi N	2	...	0
+たげっ	ta ge Q	2	...	0
+はきかえっ	ha ki ka e Q	3	.*...	0
+健次	ke N ji	0	...	0
+取合い	to ri a i	0	....	0
+さんぷく	sa N pu ku	0	..*.	0
+耳ざわり	mi mi za wa ri	3	.....	0
+鳴り渡ら	na ri wa ta ra	4	.....	0
+畏く	ka shi ko ku	3	.*..	0
+踏越よ	fu mi ko e yo	4	.....	0
+装鞍所	so : a N jo	0	.....	0
+住処	su mi ka	1	...	0
+繰出し	ku ri da shi	0	....	0
+住わせよ	su ma wa se yo	3	.....	0
+噛み合し	ka mi a wa shi	4	.....	0
+剛毅	go : ki	1	...	0
+新進	shi N shi N	0	....	0
+縫い込め	nu i ko me	4	....	0
+急がそ	i so ga so	3	....	0
+ヴォーカロイド	bo : ka ro i do	4	......	0
+摘み	tsu ma mi	0	...	0
+もうしでろ	mo : shi de ro	4	.....	0
+ろうもう	ro : mo :	0	....	0
+思想家	shi so : ka	0	*...	0
+漏れ	mo re	2	..	0
+芳しけりゃ	ka gu wa shi ke rya	4	......	0
+ひきずり	hi ki zu ri	0	*...	0
+外川	so to ka wa	2	....	0
+時代がかれ	ji da i ga ka re	5	......	0
+東鷹栖東一線	hi ga shi ta ka su hi ga shi i Q se N	4	..*..*.......	0
+三升五合山	sa N jo : go N go : ya ma	0	..........	0
+ちいさかっ	chi : sa ka Q	3	.....	0
+由利香	yu ri ka	1	...	0
+西湖	sa i ko	2	...	0
+栗林	ku ri ba ya shi	0	.....	0
+片城山	ka ta gi ya ma	0	.....	0
+紗己子	sa ki ko	1	.*.	0
+示野中	shi me no na ka	4	.....	0
+泉	i zu mi	0	...	0
+ちっちゃけれ	chi Q cha ke re	3	.....	0
+八平	ha chi he :	2	....	0
+駄馬	da ba	1	..	0
+組立てよ	ku mi ta te yo	0	.....	0
+花木	ha na ki	1	...	0
+ヶ月	ka ge tsu	1	...	0
+下小中	shi mo ko na ka	3	.....	0
+立石	ta te i shi	2	....	0
+上白原	ka mi shi ra ha ra	4	......	0
+かつべん	ka tsu be N	0	....	0
+引き取れよ	hi ki to re yo	3	*....	0
+匏瓜	ho : ka	1	...	0
+態とらしゅぅ	wa za to ra shu u	5	......	0
+嘆ず	ta N zu	0	...	0
+深けれ	fu ka ke re	2	*...	0
+でんでん太鼓	de N de N da i ko	5	.......	0
+寄せ付けりゃ	yo se tsu ke rya	4	..*..	0
+通泰	mi chi ya su	2	....	0
+端然たる	ta N ze N ta ru	5	......	0
+張詰めれ	ha ri tsu me re	4	.....	0
+欧紹燕	o : sho : e N	3	......	0
+賑わせ	ni gi wa wa se	3	.....	0
+貴賤	ki se N	1	...	0
+ムックハウス	mu Q ku ha u su	4	..*...	0
+古御旅	fu ru o ta bi	3	.....	0
+揃りゃ	so ro e rya	3	....	0
+捩じら	ne ji ra	2	...	0
+駆回れ	ka ke ma wa re	5	.....	0
+選び出れ	e ra bi da se re	5	......	0
+幽遠	yu : e N	0	....	0
+ほうちゅう	ho : chu :	0	....	0
+切切	se tsu se tsu	0	.*..	0
+小さくっ	chi : sa ku Q	3	.....	0
+鶉野	u zu ra no	0	....	0
+ぬいこめよ	nu i ko me yo	3	.....	0
+襲いかかりゃ	o so i ka ka rya	5	......	0
+打倒せる	u chi ta o se ru	5	.*....	0
+なぐりつけりゃ	na gu ri tsu ke rya	5	...*..	0
+抉じ開け	ko ji a ke	0	....	0
+引きずり込めん	hi ki zu ri ko me N	6	*......	0
+似寄り	ni yo ri	0	...	0
+はらだて	ha ra ta te	4	....	0
+辿着ける	ta do ri tsu ke ru	5	...*..	0
+こときれれ	ko to ki re re	4	.....	0
+順お	shi ta ga o	0	*...	0
+上山口	ka mi ya ma gu chi	4	......	0
+津門川	tsu to ga wa	0	*...	0
+ふとん	fu to N	0	*..	0
+受継ぐ	u ke tsu gu	0	....	0
+引っ	hi Q	0	..	0
+真因	shi N i N	0	....	0
+突当れ	tsu ki a ta re	4	*....	0
+見取	mi to ri	0	...	0
+簸	hi	1	.	0
+統一	to : i tsu	0	....	0
+誤魔化さ	go ma ka sa	3	....	0
+いとおしめ	i to : shi me	4	.....	0
+播磨科学公園都市	ha ri ma ka ga ku ko : e N to shi	1	.....*......	0
+丹精	ta N se :	1	....	0
+データリンクレイヤ	de : ta ri N ku re i ya	7	.........	0
+札幌大	sa Q po ro da i	0	......	0
+もろ	mo ro	1	..	0
+ガイダル	ga i da ru	1	....	0
+あづか	a zu ka	3	...	0
+しんばし	shi N ba shi	0	....	0
+堂谷	do : ta ni	1	....	0
+甲走れ	ka N ba shi re	4	.....	0
+うかれ	u ka re	1	...	0
+印	shi ru shi	0	...	0
+お目にかか	o me ni ka ka	5	.....	0
+新妻	ni : zu ma	0	....	0
+かくじつ	ka ku ji tsu	0	....	0
+引き降ろせよ	hi ki o ro se yo	4	*.....	0
+かまえよ	ka ma e yo	2	....	0
+甘かれ	a ma ka re	0	....	0
+茶色けりゃ	cha i ro ke rya	0	.....	0
+酸模	su i ba	1	...	0
+交際	ko : sa i	0	....	0
+聞き出せっ	ki ki da se Q	4	*....	0
+受入れる	u ke i re ru	0	.....	0
+塗潰せる	nu ri tsu bu se ru	5	......	0
+申渡しゃ	mo : shi wa ta sha	5	......	0
+皿まわし	sa ra ma wa shi	3	.....	0
+読ふけっ	yo mi fu ke Q	0	..*..	0
+踏え	fu ma e	3	...	0
+見つけ出さ	mi tsu ke da sa	4	.*...	0
+擬い	mo do i	2	...	0
+西澤	ni shi za wa	0	....	0
+菰屋	ko mo ya	1	...	0
+新繭	shi N ma yu	0	....	0
+秋桜	a ki za ku ra	3	.....	0
+ぬきつらね	nu ki tsu ra ne	5	.*...	0
+取り巻ん	to ri ma ke N	4	.....	0
+こめ	ko me	2	..	0
+南半球	mi na mi ha N kyu :	4	.......	0
+味取	mi to ri	2	...	0
+こきん	ko ki N	0	...	0
+森孵卵場	mo ri fu ra N jo :	0	.......	0
+福岡三越	fu ku o ka mi tsu ko shi	6	*.......	0
+嗅当て	ka gi a te	4	....	0
+いいこめよ	i : ko me yo	4	.....	0
+叩き込めろ	ta ta ki ko me ro	5	..*...	0
+もみけせれ	mo mi ke se re	0	.....	0
+富沢	to mi za wa	0	....	0
+鉤素	ha ri su	1	...	0
+帰謬法	ki byu : ho :	0	.....	0
+御陵前	go ryo : ma e	4	.....	0
+飛あがり	to bi a ga ri	4	.....	0
+シラカシ	shi ra ka shi	0	....	0
+マキ	ma ki	1	..	0
+あいかぎ	a i ka gi	0	....	0
+東ヌプカウシヌプリ	hi ga shi nu pu ka u shi nu pu ri	9	....*......	0
+引戻し	hi ki mo do shi	0	*....	0
+喋ん	sha be N	2	...	0
+きどう	ki do :	0	...	0
+一つ覚え	hi to tsu o bo e	4	*.....	0
+中規模	chu : ki bo	3	....	0
+照し合せ	te ra shi a wa se	6	......	0
+定職	te : sho ku	0	....	0
+たえはて	ta e ha te	4	....	0
+思いたちゃ	o mo i ta cha	4	.....	0
+きょう正	kyo : se :	0	....	0
+清閑寺山ノ内	se : ka N ji ya ma no u chi	8	..........	0
+しんぶんし	shi N bu N shi	0	.....	0
+よみかえせよ	yo mi ka e se yo	0	......	0
+盛付け	mo ri tsu ke	4	..*.	0
+興しゃ	o ko sha	2	...	0
+隣り合し	to na ri a wa shi	5	......	0
+とどまれ	to do ma re	3	....	0
+女神	me ga mi	1	...	0
+落し穴	o to shi a na	3	.....	0
+潜り込めよ	mo gu ri ko me yo	4	......	0
+落ち込む	o chi ko mu	3	.*..	0
+おい打と	o i u to	3	....	0
+飛びのけ	to bi no ke	3	....	0
+容態ぶる	yo : da i bu ru	5	......	0
+脱げっ	nu ge Q	0	...	0
+詰め込めっ	tsu me ko me me Q	5	......	0
+食っ	ku Q	1	..	0
+ボーロ	bo : ro	1	...	0
+シンボルマーク	shi N bo ru ma : ku	5	.......	0
+取合わせ	to ri a wa se	3	.....	0
+稲鯨	i na gu ji ra	3	.....	0
+思いまどえっ	o mo i ma do e Q	6	.......	0
+おはよ	o ha yo	0	...	0
+Ｍｉｎｅｃｒａｆｔ	ma i N ku ra fu to	5	.....*.	0
+絛虫	sa na da mu shi	3	.....	0
+くえんさん	ku e N sa N	0	.....	0
+蔵すりゃ	zo : su rya	1	....	0
+安安	ya su ya su	3	....	0
+来し方	ki shi ka ta	0	*...	0
+ぶどう峠	bu do : to : ge	4	......	0
+みひらい	mi hi ra i	0	....	0
+かぶら	ka bu ra	0	...	0
+けい部	ke i bu	1	...	0
+生生しく	na ma na ma shi ku	5	......	0
+浮かび上がれっ	u ka bi a ga re Q	6	.......	0
+あぶらぎれ	a bu ra gi re	4	.....	0
+ページェント	pe : ji N to	1	.....	0
+寄かかりゃ	yo ri ka ka rya	4	.....	0
+経済	ke : za i	1	....	0
+ゆびさしゃ	yu bi sa sha	3	....	0
+壷川	ko se N	1	...	0
+ａ	e i	1	..	0
+野々塚	no no zu ka	2	....	0
+幹竹割	ka ra ta ke wa ri	0	......	0
+松尾	ma tsu o	0	...	0
+さしちがえよ	sa shi chi ga e yo	0	.*....	0
+かればみゃ	ka re ba mya	3	....	0
+積み重なりゃ	tsu mi ka sa na rya	5	......	0
+差しあたっ	sa shi a ta Q	4	.....	0
+北十二条東	ki ta ju : ni jo : hi ga shi	5	*.........	0
+思い起こせれ	o mo i o ko se re	6	.......	0
+座標	za hyo :	0	...	0
+同旨	do : shi	1	...	0
+拘われろ	ka ka wa re ro	4	.....	0
+行先	yu ku sa ki	0	.*..	0
+勇知川	yu : chi ga wa	3	.....	0
+三原川	mi ha ra ga wa	3	.....	0
+術無かろ	ji tsu na ka ro	3	.....	0
+観音開き	ka N no N bi ra ki	5	.......	0
+安藤	a N do :	1	....	0
+ええと	e e to	1	...	0
+出立っ	i de ta Q	3	....	0
+通関	tsu : ka N	0	....	0
+ガス糸	ga su i to	0	....	0
+日ノ岡石塚	hi no o ka i shi zu ka	2	........	0
+帝釈	ta i sha ku	0	....	0
+いとおしけりゃ	i to : shi ke rya	4	......	0
+うち続きゃ	u chi tsu zu kya	4	.*...	0
+ちゃくち	cha ku chi	0	.*.	0
+酒癖	sa ke gu se	0	....	0
+景福寺	ke : fu ku ji	1	..*..	0
+はこぼ	ha ko bo	0	...	0
+みぎまえ	mi gi ma e	0	....	0
+もせ	mo se	0	..	0
+信貴畑	shi gi ha ta	2	....	0
+小石丸	ko i shi ma ru	3	.....	0
+平岡西	hi ra o ka ni shi	0	......	0
+いとけなし	i to ke na shi	4	.....	0
+秀麗	shu : re :	0	....	0
+はせむかえ	ha se mu ka e	0	.....	0
+土臭かっ	tsu chi ku sa ka Q	4	*.*...	0
+庄市	sho : i chi	0	....	0
+南蛇井	na N ja i	3	....	0
+うるうる	u ru u ru	1	....	0
+踏みこみ	fu mi ko mi	0	....	0
+鶴望	tsu ru   no zo mu	1,1	......	0
+大原井出	o : ha ra   i de	1,0	.......	0
+下糸田	shi mo i to da	3	.....	0
+うちよせ	u chi yo se	4	....	0
+岡豊町八幡	o ko : cho : ya ha ta	2	........	0
+焼け木杭	ya ke bo Q ku i	3	......	0
+さぼん	sa bo N	2	...	0
+ちょうかんず	cho : ka N zu	0	.....	0
+不定	fu te :	0	*..	0
+もたれ掛かろ	mo ta re ka ka ro	5	......	0
+小国川	o gu ni ga wa	3	.....	0
+夕	yu :	0	..	0
+ドロノキ	do ro no ki	3	....	0
+我孫子前	a bi ko ma e	4	.....	0
+咲太郎	sa ki ta ro :	2	.....	0
+是井	ko re i	0	...	0
+山崎前	ya ma za ki ma e	5	......	0
+梅南	ba i na N	1	....	0
+おしひろめっ	o shi hi ro me Q	5	.*....	0
+取り抑えりゃ	to ri o sa e rya	5	......	0
+征すれ	se : su re	3	....	0
+トーヨーアサノ	to : yo : a sa no	5	.......	0
+大山川	o : ya ma ga wa	4	......	0
+古座	ko za	0	..	0
+つき合え	tsu ki a e	3	*...	0
+菊水八条	ki ku su i ha chi jo :	6	*.......	0
+二里町八谷搦	ni ri cho : ha chi ya ga ra mi	8	..........	0
+割り切れる	wa ri ki re ru	4	.....	0
+方解石	ho : ka i se ki	3	......	0
+アイリス企画	a i ri su ki ka ku	5	...*...	0
+方正	ho : se :	0	....	0
+込む	ko mu	1	..	0
+探し当てよ	sa ga shi a te yo	5	......	0
+皮算用	ka wa za N yo :	3	......	0
+稲増	i ne zo :	2	....	0
+幕ノ内	ma ku no u chi	3	.....	0
+練り歩こ	ne ri a ru ko	4	.....	0
+黒縁	ku ro bu chi	0	....	0
+ひょうほん	hyo : ho N	0	....	0
+脅しつけりゃ	o do shi tsu ke rya	5	..*...	0
+しょざいなし	sho za i na shi	3	.....	0
+押込め	o shi ko me	4	.*..	0
+突き刺され	tsu ki sa sa re	3	*....	0
+γ線	ga N ma se N	0	.....	0
+苛っ	i ra Q	2	...	0
+取り毀せ	to ri ko wa se	4	.....	0
+尻高森	shi ri ta ka mo ri	0	......	0
+受取る	u ke to ru	3	....	0
+引こめっ	hi ko me Q	3	*...	0
+おとし入れよ	o to shi i re yo	5	......	0
+実家	ji Q ka	0	...	0
+取り扱い	to ri a tsu ka i	0	...*..	0
+ステーション	su te : sho N	2	*....	0
+茵	shi to ne	0	*..	0
+あぐねりゃ	a gu ne rya	3	....	0
+甲斐甲斐かれ	ka i ga i shi ka re	4	....*..	0
+トクヤマ	to ku ya ma	2	....	0
+立代われ	ta chi ka wa re	5	.*...	0
+備わっ	so na wa Q	3	....	0
+厳談	ge N da N	0	....	0
+知恵付こ	chi e zu ko	3	....	0
+神出町紫合	ka N de cho : yu : da	0	........	0
+際立た	ki wa da ta	3	....	0
+通いつめれ	ka yo i tsu me re	5	......	0
+ほぐれ	ho gu re	3	...	0
+きざみつけよ	ki za mi tsu ke yo	5	...*..	0
+鯛房岩	ta i bu sa i wa	4	......	0
+やすらぎ	ya su ra gi	0	....	0
+カンバ	ka N ba	1	...	0
+かち得っ	ka chi e Q	3	....	0
+おもいやり	o mo i ya ri	0	.....	0
+書出そ	ka ki da so	3	....	0
+摩り切っ	su ri ki Q	3	....	0
+佳品	ka hi N	0	...	0
+大宮北椿原	o : mi ya ki ta tsu ba ki ha ra	9	....*......	0
+小堤	ko zu tsu mi	2	....	0
+死に別ろ	shi ni wa ka re ro	5	......	0
+スラバヤ	su ra ba ya	0	....	0
+得りゃ	e rya	1	..	0
+奥方	o ku ga ta	0	....	0
+和食川	wa ji ki ga wa	3	.....	0
+研げ	to ge	2	..	0
+土井首	do i no ku bi	3	.....	0
+罰せ	ba Q se	0	...	0
+飛びまわん	to bi ma wa N	4	.....	0
+奸物	ka N bu tsu	0	....	0
+見破ん	mi ya bu N	0	....	0
+せしめりゃ	se shi me rya	3	....	0
+くしけず	ku shi ke zu	4	*...	0
+ｅメイル	i : me : ru	3	.....	0
+船橋本	fu na ha shi ho N	4	......	0
+さんいん	sa N i N	0	....	0
+秋作	a ki sa ku	0	.*..	0
+凍り付け	ko : ri tsu ke	4	.....	0
+思いこむ	o mo i ko mu	4	.....	0
+きりぬい	ki ri nu i	0	....	0
+換えっ	ka e Q	0	...	0
+イオンエンジン	i o N e N ji N	4	.......	0
+いすか	i su ka	0	.*.	0
+咲き揃お	sa ki so ro o	4	.*...	0
+アデック	a de Q ku	1	....	0
+井之口石塚	i no ku chi i shi zu ka	2	..*.....	0
+平重衡	ta i ra no shi ge hi ra	1	........	0
+傅け	ka shi zu ke	3	....	0
+しぬ	shi nu	2	..	0
+手懸けよ	te ga ke yo	3	....	0
+てんにん	te N ni N	0	....	0
+かんじよ	ka N ji yo	1	....	0
+ウオーターフロント	u o : ta : fu ro N to	7	.........	0
+東滝	hi ga shi ta ki	3	.....	0
+ペンシルベニア	pe N shi ru be ni a	5	.......	0
+よこたわら	yo ko ta wa ra	4	.....	0
+山伏小路	ya ma bu shi ko : ji	5	...*...	0
+馬鹿らしから	ba ka ra shi ka ra	4	......	0
+脅し取	o do shi to	4	..*.	0
+そうほう	so :   ho :	0,1	.....	0
+気持ち良かれ	ki mo chi yo ka re	4	......	0
+し事	shi ji	1	..	0
+平野上川原	hi ra no ka mi ga wa ra	6	........	0
+二化螟蛾	ni ka me : ga	3	.....	0
+聞き入れりゃ	ki ki i re rya	4	*....	0
+入りかわれ	i ri ka wa re	4	.....	0
+めけ	me ke	1	..	0
+結えろ	yu wa e ro	3	....	0
+東土古	hi ga shi do N ko	4	......	0
+各回	ka ku ka i	0	.*..	0
+繰り越そ	ku ri ko so	3	....	0
+持ちきる	mo chi ki ru	3	.*..	0
+すみ江	su mi e	0	...	0
+掻鳴らせ	ka ki na ra se	4	.....	0
+白河製造所	shi ra ka wa se : zo : sho	2	.........	0
+聞け	ki ke	0	*.	0
+入れ替り	i re ka wa ri	0	.....	0
+榛名	ha ru na	0	...	0
+とりつけよ	to ri tsu ke yo	1	..*..	0
+髪形	ka mi ga ta	0	....	0
+春日町	ka su ga cho :	0	.....	0
+巻揚げ	ma ki a ge	4	....	0
+擦れ擦れ	su re su re	0	....	0
+釣り橋	tsu ri ba shi	0	....	0
+悔しまぎれ	ku ya shi ma gi re	4	......	0
+気安きゃ	ki ya su kya	0	..*.	0
+兜山	ka bu to ya ma	0	.....	0
+舘南	ta te mi na mi	3	.....	0
+替よ	ga e yo	0	...	0
+城屋敷	shi ro ya shi ki	3	...*.	0
+そよがす	so yo ga su	3	....	0
+呉羽苑	ku re ha e N	3	.....	0
+捩じ込る	ne ji ko me ru	4	.....	0
+おとこらしく	o to ko ra shi ku	5	......	0
+疲らせろ	tsu ka ra se ro	4	*....	0
+筬島	o sa shi ma	0	....	0
+なげつけ	na ge tsu ke	0	..*.	0
+鳴見	na ru mi	0	...	0
+助出せっ	ta su ke da se Q	5	.*....	0
+山口盆地	ya ma gu chi bo N chi	5	.......	0
+みあたっ	mi a ta Q	0	....	0
+ないらん	na i ra N	0	....	0
+ゆうめいじん	yu : me i ji N	0	......	0
+ふなむし	fu na mu shi	2	....	0
+痛み入ろ	i ta mi i ro	4	.....	0
+罰当り	ba chi a ta ri	3	.....	0
+すぼまりゃ	su bo ma rya	0	....	0
+北小路室	ki ta ko : ji mu ro	5	*......	0
+縫込ま	nu i ko ma	3	....	0
+しゃぶっ	sha bu Q	2	...	0
+ミヨ	mi yo	1	..	0
+松岩寺	sho : ga N ji	3	.....	0
+ひきのけん	hi ki no ke N	4	*....	0
+張詰ろ	ha ri tsu me ro	4	.....	0
+北布礼別	ki ta fu re be tsu	4	*.....	0
+畝島	u ne ji ma	0	....	0
+根石川	ne i shi ka wa	3	.....	0
+拉げ	hi shi ge	3	*..	0
+江上上	e ga mi ka mi	1	.....	0
+西萱場	ni shi ka ya ba	3	.*...	0
+割戻せよ	wa ri mo do se yo	4	......	0
+家主	ya nu shi	3	...	0
+支よ	sa sa e yo	0	....	0
+にがみ	ni ga mi	3	...	0
+はり合う	ha ri a u	3	....	0
+わめく	wa me ku	2	...	0
+持ち直し	mo chi na o shi	4	.....	0
+有明大橋	a ri a ke o : ha shi	5	........	0
+いつくしめ	i tsu ku shi me	4	.*...	0
+いかつぅ	i ka tsu u	3	....	0
+崎田鼻	sa ki da ba na	3	.....	0
+神住新田	ka su mi shi N de N	4	.......	0
+頼れりゃ	ta yo re rya	3	....	0
+わたりあわ	wa ta ri a wa	4	.....	0
+かきとめん	ka ki to me N	4	.*...	0
+高根木戸	ta ka ne ki do	4	.....	0
+局	kyo ku	1	..	0
+打ち解けっ	u chi to ke Q	4	.*...	0
+たがえれ	ta ga e re	3	....	0
+取もて	to ri mo te	4	....	0
+伸上がれよ	no shi a ga re yo	4	......	0
+とりあわしゃ	to ri a wa sha	4	.....	0
+小場島	o ba shi ma	0	....	0
+万感	ba N ka N	0	....	0
+かけ	ka ke	2	..	0
+下崎	shi mo sa ki	2	....	0
+宣す	se N su	0	...	0
+くみつけん	ku mi tsu ke N	4	..*..	0
+謝しろ	sha shi ro	1	...	0
+註す	chu : su	0	...	0
+問返せ	to i ka e se	3	.....	0
+おえかき	o e ka ki	0	....	0
+トリガー	to ri ga :	1	....	0
+何気無い	na ni ge na i	4	.....	0
+向直れ	mu ki na o re	4	.....	0
+大森川	o : mo ri ka wa	4	......	0
+涸沼	hi nu ma	1	...	0
+尖端	se N ta N	0	....	0
+申し合せよ	mo : shi a wa se yo	5	.......	0
+はわたり	ha wa ta ri	2	....	0
+室鳩巣	mu ro kyu : so :	3	......	0
+平べったけれ	hi ra be Q ta ke re	0	.......	0
+はいかぐら	ha i ka gu ra	0	.....	0
+揺るぎなき	yu ru gi na ki	4	.....	0
+愛宕下タ	a ta go shi ta	0	...*.	0
+せきひ	se ki hi	0	.*.	0
+追貝	o Q ka i	1	....	0
+おもいだせっ	o mo i da se Q	5	......	0
+察そ	sa Q so	0	...	0
+でまわら	de ma wa ra	0	....	0
+込ろ	ko me ro	2	...	0
+笑わし	wa ra wa shi	0	....	0
+登リ	no bo ri	1	...	0
+滑べ	su be ri be	3	....	0
+川津	ka wa zu	1	...	0
+由無し言	yo shi na shi go to	4	......	0
+前村	ma e mu ra	0	....	0
+応ず	o : zu	0	...	0
+三石台	mi tsu i shi da i	4	......	0
+造作な	zo : sa ku na	1	.....	0
+調の緒	shi ra be no o	0	.....	0
+犀利	sa i ri	1	...	0
+まちあわす	ma chi a wa su	4	.....	0
+作かえよ	tsu ku ri ka e yo	5	*.....	0
+ファ	fa	1	.	0
+メトロポリタンプラザ	me to ro po ri ta N pu ra za	8	..........	0
+脆弱	ze : ja ku	3	....	0
+掻か	ka ka	1	..	0
+やくだて	ya ku da te	4	....	0
+安積美	a sa ka   yo shi	1,1	......	0
+懸隔てりゃ	ka ke he da te rya	5	......	0
+ＧＮＰ	ji : e nu pi :	5	......	0
+土肥	do i	0	..	0
+抜かし	nu ka shi	0	...	0
+遣れ	ya re	0	..	0
+のぞきこむ	no zo ki ko mu	4	..*..	0
+多可	ta ka	0	..	0
+池田川	i ke da ga wa	3	.....	0
+まん延すろ	ma N e N su ro	5	......	0
+うずまれ	u zu ma re	0	....	0
+刻みたばこ	ki za mi ta ba ko	4	......	0
+辛う	ka ra u	2	...	0
+すんなり	su N na ri	3	....	0
+おうとう	o : to :	0	....	0
+船	fu ne	1	..	0
+センデロ・ルミノソ	se N de ro ru mi no so	5	........	0
+家ノ前川目	i e no ma e ka wa me	6	........	0
+すいしろ	su i shi ro	3	....	0
+弘運	ko : u N	1	....	0
+うずたかし	u zu ta ka shi	4	.....	0
+打上げ	u chi a ge	4	....	0
+鈍かれ	ni bu ka re	2	....	0
+噎せろ	mu se ro	2	...	0
+ゆきくれ	yu ki ku re	4	.*..	0
+寄れろ	yo re ro	2	...	0
+副腎	fu ku ji N	0	*...	0
+乗り越えん	no ri ko e N	4	.....	0
+つれさ	tsu re sa	2	...	0
+千頭星山	se N to : bo shi ya ma	0	........	0
+つかえろ	tsu ka e ro	3	*...	0
+たちいれろ	ta chi i re ro	4	.....	0
+込めれ	ko me re	2	...	0
+わりあい	wa ri a i	0	....	0
+とりそろえる	to ri so ro e ru	5	......	0
+今年中	ko to shi ju :	0	.....	0
+耳許	mi mi mo to	4	....	0
+探し回れ	sa ga shi ma wa re	5	......	0
+つん	tsu N	0	..	0
+視よ	mi yo	1	..	0
+こやかましゅぅ	ko ya ka ma shu u	5	......	0
+貢ぜ	ko : ze	0	...	0
+困き	ko ma ri ki	3	....	0
+こなれん	ko na re N	0	....	0
+よびよせ	yo bi yo se	4	....	0
+築地北浜	tsu ki ji ki ta ha ma	5	*..*...	0
+外地島	fu ka ji ji ma	0	*....	0
+しゅっ水	shu Q su i	0	....	0
+又ッ瀬崎	ma ta tsu se za ki	4	..*...	0
+さくらもち	sa ku ra mo chi	3	.....	0
+くちあたり	ku chi a ta ri	0	*....	0
+圧し折っ	he shi o Q	3	....	0
+火蓋	hi bu ta	1	...	0
+たどり着け	ta do ri tsu ke	5	...*.	0
+ようやっと	yo : ya Q to	0	.....	0
+宣え	no ta ma e	3	....	0
+なんか	na N ka	1	...	0
+流落ちっ	na ga re o chi Q	5	......	0
+茜屋	a ka ne ya	0	....	0
+ぶんすい	bu N su i	0	....	0
+畳み込	ta ta mi ko me	5	.....	0
+つっかえ	tsu Q ka e	4	....	0
+よろめく	yo ro me ku	3	....	0
+平氏	he : shi	1	...	0
+広田崎	hi ro ta sa ki	3	.....	0
+傳吉	de N ki chi	0	..*.	0
+メガホン	me ga ho N	1	....	0
+威張れる	i ba re ru	3	....	0
+書下す	ka ki ku da su	4	.*...	0
+みおろそ	mi o ro so	0	....	0
+澄み渡れ	su mi wa ta re	4	.....	0
+きがるぅ	ki ga ru u	0	....	0
+ごたつく	go ta tsu ku	0	..*.	0
+露子	tsu yu ko	0	...	0
+ボトム	bo to mu	1	...	0
+叩頭い	nu ka zu i	3	....	0
+気賀	ki ga	0	..	0
+満ちる	mi chi ru	2	...	0
+篭れ	ko mo re	0	...	0
+箱原	ha ko ba ra	2	....	0
+高利回り	ko : ri ma wa ri	4	......	0
+まかなえん	ma ka na e N	4	.....	0
+南板橋	mi na mi i ta ba shi	5	.......	0
+引摺出せれ	hi ki zu ri da se re	6	*......	0
+大塚戸	o : tsu ka do	3	.....	0
+仰よ	o : se yo	3	....	0
+焦げくさくっ	ko ge ku sa ku Q	4	..*...	0
+さび付き	sa bi tsu ki	0	..*.	0
+みむこ	mi mu ko	2	...	0
+いきり立っ	i ki ri ta Q	4	.....	0
+悔ま	ku ya ma	2	...	0
+きびし	ki bi shi	3	...	0
+解け	to ke	2	..	0
+鐘ケ龍森	ka ne ga ryu : ga mo ri	0	........	0
+丹波高地	ta N ba ko : chi	4	......	0
+滑らす	su be ra su	3	....	0
+福音	fu ku i N	0	*...	0
+天産物	te N sa N bu tsu	3	......	0
+角質	ka ku shi tsu	0	.*..	0
+抜け駆け	nu ke ga ke	0	....	0
+散から	chi ra ka ra	0	....	0
+ジンダイ	ji N da i	0	....	0
+働れ	ha ta ra ke re	0	.....	0
+入間川	i ri ma ga wa	3	.....	0
+上北手	ka mi ki ta te	3	.....	0
+二枚橋町北	ni ma i ba shi ma chi ki ta	7	.......*.	0
+踏ん反返っ	fu N zo ri ka e Q	5	.......	0
+ナイ	na i	1	..	0
+大ビン	o : bi N	0	....	0
+連れ帰れ	tsu re ka e re	3	.....	0
+定例	te : re :	0	....	0
+いんしつ	i N shi tsu	0	..*.	0
+うけとれん	u ke to re N	0	.....	0
+所せん	sho se N	0	...	0
+面食お	me N ku ra o	0	.....	0
+富士が丘	fu ji ga o ka	3	.....	0
+くすぐったき	ku su gu Q ta ki	5	*.....	0
+元寺町小路	mo to te ra ma chi ko : ji	4	.....*...	0
+蚊沼	ka nu ma	1	...	0
+アクモラ	a ku mo ra	2	....	0
+いっさいきょう	i Q sa i kyo :	0	......	0
+ふりみださ	fu ri mi da sa	4	.....	0
+めんどうう	me N do : u	3	.....	0
+散急ぐ	chi ri i so gu	4	.....	0
+し切	shi ki ri	0	*..	0
+上北手百崎	ka mi ki ta te mo mo za ki	7	..*......	0
+剥げ落っ	ha ge o chi Q	4	.....	0
+ひっ込ん	hi Q ko N	3	....	0
+しずまりかえりゃ	shi zu ma ri ka e rya	5	.......	0
+引込りゃ	hi ki ko me rya	4	*....	0
+嘱	sho ku	0	..	0
+漏っ	mo Q	1	..	0
+白う	shi ro u	2	...	0
+滲み入ん	shi mi i N	3	....	0
+詰めかけっ	tsu me ka ke Q	0	.....	0
+少なくっ	su ku na ku Q	3	*....	0
+西川甲	ni shi ka wa ko :	5	.*....	0
+晴しゃ	ha ra sha	0	...	0
+狙い打て	ne ra i u te te	5	......	0
+チェーンストア	chi : N su to a	5	...*..	0
+松ケ崎海尻	ma tsu ga sa ki ka i ji ri	6	....*....	0
+ひそめ	hi so me	3	*..	0
+文面	bu N me N	0	....	0
+きむずかしゅう	ki mu zu ka shu u	5	......	0
+ほころばせる	ho ko ro ba se ru	5	......	0
+中本	na ka mo to	2	....	0
+濫がわしけりゃ	mi da ri ga wa shi ke rya	6	........	0
+剣し	ke N shi	1	...	0
+免ん	ma nu ka re N	4	.....	0
+北ノ窪	ki ta no ku bo	0	*....	0
+旧教	kyu : kyo :	1	....	0
+応えよ	ko ta e yo	2	....	0
+くぐり抜けりゃ	ku gu ri nu ke rya	5	......	0
+撫っ	na ze Q	0	...	0
+よこぎれりゃ	yo ko gi re rya	4	.....	0
+そうかん	so : ka N	0	....	0
+バンバン	ba N ba N	1	....	0
+一皮剥け	hi to ka wa mu ke	6	*.....	0
+大栄	o : e	0	...	0
+占い	u ra na i	0	....	0
+長たらしから	na ga ta ra shi ka ra	5	.......	0
+善導寺町与田	ze N do : ji ma chi yo da	5	.........	0
+永尾	na ga o	0	...	0
+追出せ	o i da se	4	....	0
+熟せ	ko na se	3	...	0
+チイ	chi i	1	..	0
+Ｐａｎａｓｏｎｉｃ	pa na so ni Q ku	3	......	0
+あおげれ	a o ge re	3	....	0
+逃うせる	ni ge u se ru	4	.....	0
+まつち	ma tsu chi	1	.*.	0
+垣ね	ka ki ne	2	...	0
+北２線東	ki ta ni se N hi ga shi	3	*.......	0
+アレルギー	a re ru gi :	2	.....	0
+ひんまげん	hi N ma ge N	4	.....	0
+冨田	to mi ta	1	...	0
+○	ma ru	0	..	0
+亡し	ho ro bo shi	3	....	0
+加われる	ku wa wa re ru	4	.....	0
+藩侯	ha N ko :	1	....	0
+見落し	mi o to shi	0	....	0
+甚しき	ha na ha da shi ki	5	......	0
+嵯峨樒原清水	sa ga shi ki mi ga ha ra shi mi zu	1	..*........	0
+寄り付け	yo ri tsu ke	3	....	0
+選ん	e ra N	2	...	0
+かけ隔てん	ka ke he da te N	5	......	0
+掛け離れよ	ka ke ha na re yo	5	......	0
+赤童子	a ka do : ji	3	.....	0
+無理矢理	mu ri ya ri	0	....	0
+譲り受け	yu zu ri u ke	5	.....	0
+御厨	mi ku ri ya	0	....	0
+安家	a tsu ka	1	.*.	0
+なおらい	na o ra i	0	....	0
+ふん縛ら	fu N ji ba ra	4	.....	0
+呆け	bo ke	2	..	0
+うかがえりゃ	u ka ga e rya	0	.....	0
+諳誦	a N sho :	0	....	0
+高儀	ta ka gi	0	...	0
+勇	i sa mu	1	...	0
+目ばやぅ	me ba ya u	3	....	0
+うすら寒かれ	u su ra sa mu ka re	5	.......	0
+鹿下	ka no shi ta	2	..*.	0
+槻木西	tsu ki no ki ni shi	2	*.....	0
+比丘	bi ku	1	..	0
+電響社	de N kyo : sha	3	.....	0
+南二十八条西	mi na mi ni ju : ha chi jo : ni shi	8	............	0
+下一丁田	shi mo i Q cho : da	0	.......	0
+打勝てよ	u chi ka te yo	3	.*...	0
+玉置山	ta ma ki sa N	3	.....	0
+川口別所	ka wa gu chi   be Q sho	2,0	........	0
+曲学阿世	kyo ku ga ku a se :	5	.......	0
+ばいしん	ba i shi N	0	....	0
+茂岩本	mo i wa ho N	3	.....	0
+討入	u chi i ri	0	....	0
+醂しゃ	a wa sha	2	...	0
+船床	fu na to ko	0	....	0
+君津	ki mi tsu	0	...	0
+導ん	mi chi bi ke N	4	.....	0
+富士宮	fu ji no mi ya	0	.....	0
+もれきき	mo re ki ki	0	..*.	0
+宗像水光会総合病院	mu na ka ta su i ko : ka i so : go : byo : i N	7	..................	0
+抱き竦	da ki su ku me	5	.*...	0
+とつぜんへんい	to tsu ze N he N i	0	.......	0
+私しろ	wa ta ku shi shi ro	0	..*...	0
+ふみゑ	fu mi e	0	...	0
+慮外	ryo ga i	0	...	0
+じゃくてん	ja ku te N	0	.*..	0
+女子大	jo shi da i	0	....	0
+つうかい	tsu : ka i	0	....	0
+リュック	ryu Q ku	1	...	0
+ケータイ	ke : ta i	0	....	0
+うーん	u : N	2	...	0
+質札	shi chi fu da	2	*...	0
+元浜組	mo to ha ma gu mi	0	......	0
+渡瀬	wa ta se	1	...	0
+撃ち止めっ	u chi to me Q	0	.*...	0
+共西	kyo : se :	0	....	0
+どんとう	do N to :	0	....	0
+根尾	ne o	0	..	0
+白崎	shi ra sa ki	2	....	0
+ポーラ	po : ra	1	...	0
+わび入ん	wa bi i N	3	....	0
+非特異	hi to ku i	2	*...	0
+ぬいあげる	nu i a ge ru	0	.....	0
+開き	hi ra ki	3	...	0
+私家版	shi ka ba N	0	*...	0
+剥こ	mu ko	0	..	0
+なぐれ	na gu re	3	...	0
+みず色	mi zu i ro	0	....	0
+徳明川	to ku me : ga wa	3	......	0
+かり出せ	ka ri da se	3	....	0
+悪たれよ	a ku ta re yo	0	.*...	0
+このましく	ko no ma shi ku	4	.....	0
+さんそう	sa N so :	0	....	0
+さきはじめろ	sa ki ha ji me ro	5	.*....	0
+群	gu N	1	..	0
+どぎつし	do gi tsu shi	3	....	0
+宣ろ	no ro	0	..	0
+靠掛ろ	mo ta re ka ka ro	5	......	0
+しのび	shi no bi	2	...	0
+響動け	do yo me ke	3	....	0
+かんじいれ	ka N ji i re	4	.....	0
+連添えりゃ	tsu re so e rya	4	.....	0
+保	ho	0	.	0
+下岳	shi mo da ke	2	....	0
+遣り熟し	ya ri ko na shi	4	.....	0
+散り急い	chi ri i so i	4	.....	0
+窄めよ	su bo me yo	0	....	0
+元気付け	ge N ki zu ke	5	.....	0
+偶語	gu : go	1	...	0
+キユーピー醸造	kyu : pi : jo : zo :	5	........	0
+かわりょう	ka wa ryo :	0	....	0
+捻くりゃ	hi ne ku rya	3	....	0
+健一郎	ke N i chi ro :	4	......	0
+てん	te N	1	..	0
+本妙寺	ho N myo : ji	1	.....	0
+高根台	ta ka ne da i	3	.....	0
+こおっ	ko : Q	0	...	0
+本荘西	ho N jo : ni shi	1	......	0
+外敵	ga i te ki	0	....	0
+あつまれ	a tsu ma re	4	....	0
+下若	shi mo wa ka	2	....	0
+深草キトロ	fu ka ku sa ki to ro	5	*.*....	0
+差しかかれ	sa shi ka ka re	4	.*...	0
+専用	se N yo :	0	....	0
+しゅっちょう	shu Q cho :	0	....	0
+病症	byo : sho :	0	....	0
+表門	o mo te mo N	0	.....	0
+持し	mo ta shi	2	...	0
+厚かましく	a tsu ka ma shi ku	5	.*....	0
+兼ね備えりゃ	ka ne so na e rya	5	......	0
+むかえよ	mu ka e yo	0	....	0
+ことごとしい	ko to go to shi i	5	......	0
+逆浪	gya ku ro :	0	....	0
+休まれろ	ya su ma re ro	4	.....	0
+くんき	ku N ki	1	...	0
+カキイレ	ka ki i re	0	....	0
+徳江	to ku e	0	...	0
+流れ落ん	na ga re o chi N	5	......	0
+二季	ni ki	1	..	0
+小将	ko sho :	0	...	0
+金大賢	ki N ta i ke N	3	......	0
+かくだい	ka ku da i	0	....	0
+栗合	ku ri a i	2	....	0
+時数	ji su :	2	...	0
+米野	ko me no	1	...	0
+通じろ	tsu : ji ro	0	....	0
+揺せ	yu ra se	0	...	0
+噛みしめろ	ka mi shi me ro	4	.....	0
+ハヤミ	ha ya mi	0	...	0
+誓立寺	se : ri tsu ji	1	.....	0
+尻こそばく	shi ri ko so ba ku	5	......	0
+浚い	za ra i	0	...	0
+橋上町坂本	ha shi ka mi cho : sa ka mo to	4	.*........	0
+手詰ま	te zu ma	0	...	0
+あてこめ	a te ko me	4	....	0
+辷らさ	su be ra sa	3	....	0
+走り回れっ	ha shi ri ma wa re Q	6	.......	0
+日本総合システム	ni ho N so : go : shi su te mu	2	.......*...	0
+つたや	tsu ta ya	1	...	0
+ファイター	fa i ta :	1	....	0
+働き掛けりゃ	ha ta ra ki ka ke rya	6	...*...	0
+治験	chi ke N	0	*..	0
+駆り出せ	ka ri da se	3	....	0
+野深	no bu ka	1	...	0
+見上ぐれ	mi a gu re	2	....	0
+中谷	na ka ta ni	2	....	0
+おのれ	o no re	0	...	0
+改憲	ka i ke N	0	....	0
+怒れ	o ko re	2	...	0
+とんでもなゅう	to N de mo na yu u	5	.......	0
+聞き込ろ	ki ki ko me ro	4	*....	0
+物珍しい	mo no me zu ra shi i	6	.......	0
+おもほさ	o mo ho sa	3	....	0
+荷造り	ni zu ku ri	2	....	0
+押し分け	o shi wa ke	4	....	0
+取こぼさ	to ri ko bo sa	4	.....	0
+拭ん	fu ke N	2	*..	0
+もったいぶん	mo Q ta i bu N	5	......	0
+物種	mo no da ne	0	....	0
+つかせ	tsu ka se	1	...	0
+織雄商事	o ri o sho : ji	4	......	0
+折り紙つき	o ri ga mi tsu ki	0	....*.	0
+押寄せっ	o shi yo se Q	4	.....	0
+揺い	yu ru i	2	...	0
+ま近	ma chi ka	1	.*.	0
+できあがら	de ki a ga ra	4	.....	0
+塗付	nu ri tsu ke	4	..*.	0
+ウーマン	u : ma N	1	....	0
+元重	mo to shi ge	2	....	0
+しゃちほこばれ	sha chi ho ko ba re	5	.*....	0
+完璧	ka N pe ki	0	....	0
+使い分ろ	tsu ka i wa ke ro	5	*.....	0
+ばくち	ba ku chi	0	.*.	0
+わすれがた	wa su re ga ta	4	.....	0
+思い知らす	o mo i shi ra su	5	......	0
+竈	ka ma do	0	...	0
+じゅうい	ju : i	1	...	0
+県立美術館前	ke N ri tsu bi ju tsu ka N   ma e	6,1	......*.....	0
+詰め込み	tsu me ko mi	0	....	0
+応じっ	o : ji Q	0	....	0
+選挙戦	se N kyo se N	0	.....	0
+屯せ	ta mu ro se	0	....	0
+下三宅	shi mo mi ya ke	3	.....	0
+転べ	ko ro be	0	...	0
+論功行賞	ro N ko : ko : sho :	5	........	0
+校正	ko : se :	0	....	0
+いっぱく	i Q pa ku	0	....	0
+下ノ岬	shi mo no mi sa ki	4	......	0
+かさねあわし	ka sa ne a wa shi	5	......	0
+加納南広江	ka no : mi na mi hi ro e	7	.........	0
+あんねい	a N ne i	0	....	0
+清田八条	ki yo ta ha chi jo :	5	.......	0
+もの恐ろしきゃ	mo no o so ro shi kya	6	.......	0
+茂ん	shi ge N	2	...	0
+琴似	ko to ni	1	...	0
+結べれ	mu su be re	0	....	0
+はっぴょう	ha Q pyo :	0	....	0
+後せろ	o ku ra se ro	0	.....	0
+敬	ke :	1	..	0
+熱し	a tsu shi	2	...	0
+赤肌	a ka ha da	0	....	0
+掻っ切る	ka Q ki ru	0	....	0
+機工	ki ko :	0	*..	0
+サスペンション	sa su pe N sho N	3	.*....	0
+遅羽町比島	o so wa cho : hi shi ma	6	........	0
+そのように	so no   yo : ni	0,1	......	0
+府領	fu ryo :	1	...	0
+黒ヶ岳	ku ro ga da ke	3	.....	0
+ふみならせっ	fu mi na ra se Q	5	......	0
+命っ	me i ji Q	0	....	0
+騰波ノ江	to ba no e	3	....	0
+湯所	yu to ko ro	2	....	0
+生じよ	sho : ji yo	0	....	0
+乗場	no ri ba	0	...	0
+投身	to : shi N	0	....	0
+結城	yu : ki	0	...	0
+駈ろ	ka ro	0	..	0
+東九条柳ノ下	hi ga shi ku jo : ya na gi no shi ta	4	..*.......*.	0
+牛田本	u shi ta ho N	3	.*...	0
+三股	mi tsu ma ta	0	....	0
+弥三郎	ya sa bu ro :	2	.....	0
+忍込めれ	shi no bi ko me re	5	......	0
+たらし込ん	ta ra shi ko N	4	..*..	0
+浅まから	a sa ma ka ra	3	.....	0
+有竜島	u ryu : to :	0	.....	0
+下ろせろ	o ro se ro	3	....	0
+賦役	fu e ki	1	...	0
+逃す	no ga su	2	...	0
+競い肌	ki o i ha da	3	.....	0
+市庭	i chi ni wa	2	....	0
+かた	ka ta	2	..	0
+折りこみ	o ri ko mi	0	....	0
+善通寺駐屯地	ze N tsu : ji chu : to N chi	8	..........	0
+すき通	su ki do : ri	2	*....	0
+てがみ	te ga mi	0	...	0
+付いて行けよ	tsu i te i ke yo	1	......	0
+たんこう	ta N ko :	0	....	0
+佐糠	sa nu ka	1	...	0
+むずかしけれ	mu zu ka shi ke re	4	......	0
+向いあう	mu ka i a u	4	.....	0
+苦にがしかっ	ni ga ni ga shi ka Q	5	.......	0
+義幸	yo shi yu ki	2	....	0
+にらみあわしゃ	ni ra mi a wa sha	5	......	0
+うちのめせ	u chi no me se	4	.....	0
+宇津尾	u tsu o	0	...	0
+豊受山	to yo u ke ya ma	0	......	0
+けん伝	ke N de N	0	....	0
+あそぶ	a so bu	0	...	0
+コーディネーション	ko : di ne : sho N	4	.......	0
+ごがく	go ga ku	0	...	0
+しげりあえ	shi ge ri a e	4	.....	0
+綴合せ	tsu zu ri a wa se	6	......	0
+乗り掛けれ	no ri ka ke re	4	.....	0
+栗谷町広原	ku ri ta ni cho : hi ro ha ra	4	..........	0
+原島	ha ra shi ma	0	....	0
+本裁ち	ho N da chi	0	....	0
+ありがたさ	a ri ga ta sa	4	.....	0
+打ち抜けん	u chi nu ke N	4	.....	0
+聖隷福祉事業団	se : re : fu ku shi ji gyo : da N	9	....*.......	0
+緑化	ryo ku ka	0	.*.	0
+縫い合せろ	nu i a wa se ro	5	......	0
+罷め	ya me	0	..	0
+玉川屋	ta ma ga wa ya	0	.....	0
+から売り	ka ra u ri	0	....	0
+危機一髪	ki ki i Q pa tsu	1	......	0
+蝿取り	ha i to ri	0	....	0
+福居	fu ku i	1	...	0
+とりむすび	to ri mu su bi	0	.....	0
+濁らせ	ni go ra se	2	....	0
+瞑ら	tsu mu ra	0	...	0
+壱番屋	i chi ba N ya	0	.....	0
+目覚っ	me za me Q	0	....	0
+赤みがかん	a ka mi ga ka N	5	......	0
+いらだたしくっ	i ra da ta shi ku Q	5	.......	0
+騙とっ	da ma shi to Q	4	..*..	0
+好成	yo shi na ri	2	....	0
+楽めりゃ	ta no shi me rya	4	.....	0
+軍か	gu N ka	1	...	0
+穢っ	ke ga re Q	0	....	0
+大鉄橋	o : te Q kyo :	3	......	0
+面白かれ	o mo shi ro ka re	4	......	0
+きょうと	kyo : to	1	...	0
+神鏡	shi N kyo :	0	....	0
+御手玉	o te da ma	2	....	0
+締まろ	shi ma ro	2	...	0
+こそばゆく	ko so ba yu ku	4	.....	0
+滝元	ta ki mo to	2	....	0
+十王峠	ji o : to : ge	4	......	0
+熟め	u me	1	..	0
+抜けでっ	nu ke de Q	3	....	0
+うめこむ	u me ko mu	3	....	0
+蘇原昭栄	so ha ra sho : e :	4	.......	0
+結綿	yu i wa ta	0	....	0
+上名栗	ka mi na gu ri	3	.....	0
+桶	o ke	1	..	0
+西平内	ni shi hi ra na i	4	.*....	0
+おきっ	o ki Q	2	...	0
+見比りゃ	mi ku ra be rya	0	.....	0
+建言	ke N ge N	0	....	0
+川越し	ka wa go shi	0	....	0
+かんけいづけよ	ka N ke i zu ke yo	6	.......	0
+蓮根	ha su ne	1	...	0
+澤木	sa wa ki	1	...	0
+鶴屋百貨店	tsu ru ya hya Q ka te N	6	........	0
+おもいきり	o mo i   ki ri	0,2	......	0
+妙法ケ岳	myo : ho : ga ta ke	5	.......	0
+内田吐夢	u chi da to mu	4	.....	0
+ポテチン	po te chi N	0	....	0
+貧しきゃ	ma zu shi kya	3	....	0
+ユカ	yu ka	1	..	0
+質せ	ta da se	3	...	0
+晴れ	ha re	2	..	0
+本関	ho N se ki	1	....	0
+障	sa wa	0	..	0
+肥えっ	ko e Q	2	...	0
+手桶	te o ke	0	...	0
+三川旭	mi ka wa   a sa hi	0,1	.......	0
+本梅町西加舎	ho N me cho : ni shi ka ya	0	......*..	0
+なすり付	na su ri tsu ke	5	...*.	0
+のふ子	no fu ko	1	.*.	0
+キレギレ	ki re gi re	0	....	0
+もどっ	mo do Q	2	...	0
+ふくちょう	fu ku cho :	0	*...	0
+大亀山	o : ka me ya ma	0	......	0
+耳慣れん	mi mi na re N	4	.....	0
+櫛風沐雨	shi Q pu : mo ku u	5	.......	0
+いいなおしゃ	i : na o sha	4	.....	0
+もえつけ	mo e tsu ke	3	....	0
+約めよ	tsu zu me yo	3	....	0
+押しかぶされ	o shi ka bu sa re	5	.*....	0
+下弓削	shi mo yu ge	0	....	0
+釈迦ケ岳	sha ka ga ta ke	4	.....	0
+ひと皮	hi to ka wa	2	*...	0
+上々吉	jo : jo : ki chi	3	....*.	0
+引き戻せろ	hi ki mo do se ro	5	*.....	0
+垣内南	ka i chi mi na mi	1	......	0
+持て囃し	mo te ha ya shi	4	.....	0
+山之坊	ya ma no bo :	3	.....	0
+ぬぐいさっ	nu gu i sa Q	4	.....	0
+曽根原	so ne ha ra	2	....	0
+のほほん	no ho ho N	3	....	0
+Ｇａｌａｘｙ	gya ra ku shi :	2	..*..	0
+解きほぐせ	to ki ho gu se	4	.*...	0
+だんし	da N shi	1	...	0
+山陰	sa N i N	0	....	0
+迷わ	ma yo wa	2	...	0
+うるち	u ru chi	0	...	0
+心す	ko ko ro su	2	....	0
+色っぽき	i ro Q po ki	4	.....	0
+両君	ryo : ku N	1	....	0
+大分みらい信用金庫	o : i ta mi ra i shi N yo : ki N ko	1	..............	0
+久慈病院	ku ji   byo : i N	1,0	.......	0
+麻巳子	ma mi ko	1	...	0
+感じ取り	ka N ji to ri	4	.....	0
+そう入	so : nyu :	0	....	0
+飯盛	me shi mo ri	0	....	0
+うさんかっ	u sa N ka Q	4	.....	0
+外らせりゃ	so ra se rya	3	....	0
+こきまぜ	ko ki ma ze	4	....	0
+いだけよ	i da ke yo	2	....	0
+磯次郎沢	i so ji ro : no sa wa	6	........	0
+立て篭	ta te go mo	2	....	0
+すがっ	su ga Q	0	...	0
+組替えりゃ	ku mi ka e rya	4	.....	0
+南朝鮮	mi na mi cho : se N	6	.......	0
+石原伸晃	i shi ha ra   no bu te ru	0,2	.*.......	0
+嗄れ	sha ga re	0	...	0
+怯懦	kyo : da	1	...	0
+悲しきゃ	ka na shi kya	3	....	0
+ぺん	pe N	1	..	0
+差し出そ	sa shi da so	3	....	0
+かりあつめよ	ka ri a tsu me yo	5	......	0
+はてしなう	ha te shi na u	4	.....	0
+吹きでん	fu ki de N	3	*...	0
+チークダンス	chi : ku da N su	4	......	0
+へいしん	he i shi N	0	....	0
+放物線	ho : bu tsu se N	0	...*..	0
+たちよれる	ta chi yo re ru	4	.....	0
+すすみでる	su su mi de ru	4	.....	0
+三竹	mi ta ke	0	...	0
+えいしょう	e i sho :	0	....	0
+グランド	gu ra N do	0	....	0
+物物しゅぅ	mo no mo no shu u	5	......	0
+西船場	ni shi se N ba	3	.*...	0
+でっ歯	de Q pa	1	...	0
+古奈	ko na	0	..	0
+なまこ	na ma ko	0	...	0
+あさみ	a sa mi	0	...	0
+快よかれ	ko ko ro yo ka re	4	......	0
+買い求める	ka i mo to me ru	5	......	0
+ぎんぜよ	gi N ze yo	4	....	0
+こうごうしき	ko : go : shi ki	5	......	0
+見比べよ	mi ku ra be yo	4	.....	0
+買いつけろ	ka i tsu ke ro	4	..*..	0
+立ち合っ	ta chi a Q	3	....	0
+いさぎよし	i sa gi yo shi	4	.....	0
+星園	ho shi zo no	0	....	0
+奇形	ki ke :	0	*..	0
+みそれろ	mi so re ro	0	....	0
+困じりゃ	ko : ji rya	3	....	0
+ちゃばん	cha ba N	1	...	0
+さん積	sa N se ki	0	....	0
+天川	a ma ka wa	2	....	0
+年夫	to shi o	0	...	0
+進め	su su me	0	...	0
+切かかる	ki ri ka ka ru	4	.....	0
+攻めん	se me N	2	...	0
+聞及べ	ki ki o yo be	4	*....	0
+報う	mu ku u	2	...	0
+水垣	mi zu ga ki	2	....	0
+遠見ケ城	to o mi ga jo :	4	......	0
+にくたらしかろ	ni ku ta ra shi ka ro	6	.*..*..	0
+隣人	ri N ji N	0	....	0
+木原	ki ha ra	0	*..	0
+神田川原	ka N da   ka wa ra	0,0	.......	0
+とびこめろ	to bi ko me ro	4	.....	0
+被わ	o o wa	0	...	0
+畜生腹	chi ku sho : ba ra	0	*.....	0
+溜込	ta me ko me	4	....	0
+天田橋	a ma da ba shi	3	.....	0
+黒平	ku ro be ra	2	....	0
+さかり	sa ka ri	0	...	0
+下北半島	shi mo ki ta ha N to :	5	..*.....	0
+菌	ki N	1	..	0
+折れ込みゃ	o re ko mya	0	....	0
+和歌浦西	wa ka u ra ni shi	2	......	0
+だっしょ	da Q sho	3	...	0
+陣どろ	ji N do ro	3	....	0
+小もの	ko mo no	0	...	0
+モリタ	mo ri ta	1	...	0
+嫁菜	yo me na	0	...	0
+根川	ne ga wa	1	...	0
+レンラク	re N ra ku	0	....	0
+泊め	to me	0	..	0
+持ち掛けれ	mo chi ka ke re	4	.*...	0
+冴えわたん	sa e wa ta N	4	.....	0
+段翔	da N sho :	1	....	0
+尋ね者	ta zu ne mo no	0	.....	0
+徳川家	to ku ga wa ke	4	.....	0
+仰つけよ	o : se tsu ke yo	5	...*..	0
+褒めそやせ	ho me so ya se	4	.....	0
+蒸せよ	fu ka se yo	2	*...	0
+ござん	go za N	2	...	0
+田子	ta tsu ko	0	.*.	0
+利雄	to shi o	0	...	0
+惹れりゃ	hi ka re rya	3	*...	0
+タツミ商事	ta tsu mi sho : ji	4	......	0
+仲良き	na ka yo ki	3	....	0
+インタプリティブ	i N ta pu ri ti bu	4	.......	0
+うそさむ	u so sa mu	2	....	0
+運瀬岩	u N se i wa	3	.....	0
+色っぽ	i ro Q po	4	....	0
+苦衷	ku chu :	0	*..	0
+東堀	hi ga shi ho ri	3	.....	0
+でかぅ	de ka u	2	...	0
+南市	mi na mi i chi	3	.....	0
+小樽内川	o ta ru na i ka wa	4	.......	0
+油山	a bu ra ya ma	0	.....	0
+市条	i chi jo :	2	....	0
+毅	a tsu shi	1	.*.	0
+酔えっ	yo e Q	2	...	0
+漕着け	ko gi tsu ke	4	..*.	0
+奥ゆかしくっ	o ku yu ka shi ku Q	5	.......	0
+とし老いん	to shi o i N	4	.....	0
+よあけ	yo a ke	0	...	0
+はらだたしけれ	ha ra da ta shi ke re	5	.......	0
+奥池南	o ku i ke mi na mi	5	.......	0
+剃落せん	so ri o to se N	5	......	0
+蛭川	hi ru ka wa	0	....	0
+釜ヶ谷山	ka ma ga ta ni ya ma	0	.......	0
+さ法	sa ho :	1	...	0
+モノポリ	mo no po ri	2	....	0
+極め尽し	ki wa me tsu ku shi	5	...*..	0
+叩きあげろ	ta ta ki a ge ro	5	......	0
+未練がまし	mi re N ga   ma shi	1,0	.......	0
+間狂言	a i kyo : ge N	3	......	0
+あらたむれ	a ra ta mu re	3	.....	0
+堪かねよ	ta ma ri ka ne yo	5	......	0
+谷垣内	ta ni ga i do	3	.....	0
+ざんせ	za N se	3	...	0
+大和東	da i wa hi ga shi	4	......	0
+羨きゃ	to mo kya	2	...	0
+くま井	ku ma i	0	...	0
+暁光	gyo : ko :	0	....	0
+グレよ	gu re yo	2	...	0
+からちゃ	ka ra cha	0	...	0
+なげこめっ	na ge ko me Q	4	.....	0
+砕い	ku da i	2	...	0
+道明寺	do : myo : ji	0	.....	0
+懐しけりゃ	na tsu ka shi ke rya	4	.*....	0
+くたばら	ku ta ba ra	3	*...	0
+ぶんけ	bu N ke	0	...	0
+見蕩れよ	mi to re yo	0	....	0
+唱歌	sho : ka	1	...	0
+取離せ	to ri ha na se	5	.....	0
+捗々しから	ha ka ba ka shi ka ra	5	.......	0
+かいがいしく	ka i ga i shi ku	5	......	0
+筆つき	fu de tsu ki	0	..*.	0
+改版	ka i ha N	0	....	0
+晴山	ha ri ya ma	0	....	0
+宗呂乙	so : ro o tsu	4	.....	0
+織あげれ	o ri a ge re	4	.....	0
+神ノ島	ka mi no shi ma	3	.....	0
+起直れよ	o ki na o re yo	4	......	0
+吹上げよ	fu ki a ge yo	0	*....	0
+敵すれ	te ki su re	0	.*..	0
+ないぶん	na i bu N	0	....	0
+タジン鍋	ta ji N na be	2	.....	0
+点そ	to mo so	2	...	0
+かいこ	ka i ko	1	...	0
+関西国際空港	ka N sa i ko ku sa i ku : ko :	9	.....*......	0
+令輝	re : ki	1	...	0
+悩しゃ打返す	na ya ma sha u chi ka e su	3	.....*...	0
+市邨学園中学校しょうのう	i chi mu ra ga ku e N chu : ga Q ko :   sho : no :	11,3	...................	0
+東羽合誤植	hi ga shi ha go : go sho ku	7	..*......	0
+芳ばしから聞き澄し	ko : ba shi ka ra ki ki su ma shi	4	......*....	0
+つるべ打ち初心	tsu ru be u chi sho shi N	6	....*...	0
+こわせりゃ新可児	ko wa se rya   shi N ka ni	3,1	.........	0
+テウこごえ	te u ko go e	3	.....	0
+あし原荒土町北宮地	a shi ha ra a ra do cho : ki ta mi ya ji	4	.*.......*....	0
+仏具屋岩見沢	bu tsu gu ya i wa mi za wa	7	.........	0
+目ざましくっ廃頽	me za ma shi ku Q   ha i ta i	4,0	...........	0
+番匠免フヂ子	ba N sho : me N   fu ji ko	3,1	..........	0
+潰せくもん出版	tsu bu se   ku mo N shu Q pa N	0,4	...........	0
+はれがましけれ差し控え	ha re ga ma shi ke re sa shi hi ka e	5	........*...	0
+高嶺颪用箪笥	ta ka ne o ro shi yo : da N su	9	...........	0
+自由戦線見詰め	ji yu : se N se N   mi tsu me	4,0	...........	0
+江丹別町拓北押し広めん	e ta N be tsu cho : ta ku ho ku   o shi hi ro me N	5,5	........*....*....	0
+外報まごお	ga i ho :   ma go o	0,0	........	0
+サントリーシリーズ息抜き	sa N to ri : shi ri : zu i ki nu ki	12	.............	0
+桧倉ナンバー２	hi ku ra na N ba : tsu :	4	*........	0
+みやけ軸	mi ya ke ji ku	3	.....	0
+与清買進も	to mo ki yo   ka i su su mo	2,4	..........	0
+吹払う吹っとば	fu ki ha ra u fu Q to ba	4	*........	0
+糀台在り合せ	ko : ji da i   a ri a wa se	3,5	...........	0
+鳥海飄々	to ri u mi   hyo : hyo :	2,0	.........	0
+゛枉枉しかろ	ma ga ma ga shi ka ro	6	....*..	0
+恋え宿主	ko i e shu ku shu	5	...*..	0
+のけぞろ買占よ	no ke zo ro ka i shi me yo	3	.........	0
+城主とうかん	jo : shu to : ka N	4	..*....	0
+すりあが宮崎医科大	su ri a ga   mi ya za ki i ka da i	4,2	.............	0
+くんずる鳥飼本	ku N zu ru   to ri ka i ho N	0,4	...........	0
+願力コマツナ	ga N ri ki ko ma tsu na	5	...*....	0
+送電青崎	so : de N a o sa ki	5	........	0
+こめ伊敷	ko me i shi ki	3	...*.	0
+由隆ケンウッド	yu ta ka ke N u Q do	4	........	0
+ピンカートン問ただしゃ	pi N ka : to N   to i ta da sha	3,4	............	0
+保田よんどころ無から	ya su da   yo N do ko ro na ka ra	0,7	............	0
+テレビ山口引き摺り込も	te re bi ya ma gu chi   hi ki zu ri ko mo	5,5	......*.......	0
+差しかえ背筋	sa shi ka e se su ji	5	.*.....	0
+十和利山取除こ	to wa ri ya ma   to ri no zo ko	0,4	...........	0
+ちかづけれ掘りおこせ	chi ka zu ke re ho ri o ko se	4	*.........	0
+村島利国	mu ra shi ma   to shi ku ni	0,2	.........	0
+輸出入宏士	yu shu tsu nyu :   hi ro shi	3,1	.*.......	0
+田頭豆口台	ta ga shi ra   ma me gu chi da i	2,4	...........	0
+談ずるフェリス女学院短大	da N zu ru   fe ri su jo ga ku i N ta N da i	0,1	.................	0
+這わ取もてん	ha wa to ri mo te N	6	.......	0
+行当っ西宮妙龍寺	yu ki a ta Q   ni shi no mi ya myo : ryu : ji	4,6	................	0
+叱る若栗	shi ka ru   wa ka gu ri	0,2	*.......	0
+仁義呆けろ	ji N gi   ho ke ro	1,2	.......	0
+道也打違い	mi chi ya u chi chi ga i	4	....*...	0
+煙管血粉	ki se ru ke Q pu N	4	*......	0
+しば突き当たろ	shi ba   tsu ki a ta ro	1,4	...*....	0
+癪にさわら牛沼	sha ku ni sa wa ra   u shi nu ma	5,0	...........	0
+がさついかえせよ	ga sa tsu i ka e se yo	0	........	0
+石見松原たんまつ	i wa mi ma tsu ba ra ta N ma tsu	8	...........	0
+払除ける伐株	ha ra i no ke ru   ki ri ku i	5,2	...........	0
+写ろオキーフ	u tsu ro   o ki : fu	2,2	........	0
+とっきんたしなま	to Q ki N   ta shi na ma	0,3	.........	0
+まぶしから龍三	ma bu shi ka ra   ryu : zo :	1,0	..*.......	0
+てづまら表せよ	te zu ma ra a ra wa se yo	3	.........	0
+焼出さ目ぼしけりゃ	ya ke da sa   me bo shi ke rya	3,3	..........	0
+ひきおろせ東生見	hi ki o ro se   hi ga shi ha e mi	5,4	*.......*...	0
+文沢高鳴れ	bu N sa wa da ka   na re	4,0	.........	0
+麻睡あわれがっ	ma su i   a wa re ga Q	0,4	.........	0
+帝京技術科学大学サッ峠	te : kyo : gi ju tsu ka ga ku da i ga ku sa Q to : ge	17	......*......*.....	0
+市桂川精螺製作所	shi ka tsu ra ga wa se : ra se : sa ku sho	4	*...........*.	0
+長更微睡ま	na ga fu ke   ma do ro ma	2,3	..*......	0
+利枝子実則	ri e ko   sa ne tsu ne	1,2	........	0
+泣き伏せりゃむごぅ	na ki fu se rya   mu go u	4,2	.*.......	0
+立ちどまろ駆	ta chi do ma ro ka	4	......	0
+お引立て覆せろ	o hi ki ta te   ku tsu ga e se ro	0,5	.*....*.....	0
+突つけれまくしあげん	tsu ki tsu ke re ma ku shi a ge N	4	*.*...*....	0
+持てっ改憲	mo te Q   ka i ke N	2,0	........	0
+いちがい花よめ	i chi ga i ha na yo me	6	........	0
+かつぎあげっ芦窪	ka tsu gi a ge Q   a shi ku bo	5,0	........*..	0
+コンポンソム消え入ん	ko N po N so mu   ki e i N	3,3	...........	0
+通掛んしなす	to : ri ka ka N shi na su	5	.........	0
+小松田，	ko ma tsu da	0	....	0
+白熊新作	shi ro ku ma shi N sa ku	5	........	0
+もたれ掛かろちやほや	mo ta re ka ka ro   chi ya ho ya	5,1	...........	0
+捕っ長崎県酒販	to Q   na ga sa ki ke N shu ha N	1,7	......*.....	0
+臭くひん曲がん	ku sa ku hi N ma ga N	2	*.*.....	0
+呼わ権柄ずく	yo ba wa   ke N pe : zu ku	3,0	..........	0
+厭世書込めろ	e N se :   ka ki ko me ro	0,4	......*...	0
+むかついよみわけ	mu ka tsu i yo mi wa ke	0	........	0
+宇津井三原川	u tsu i   mi ha ra ga wa	1,3	.........	0
+出窓明り	de ma do a ka ri	4	......	0
+書き送りゃ古物	ka ki o ku rya   ko bu tsu	0,1	.........	0
+中根台引繰り返せ	na ka ne da i   hi Q ku ri ka e se	3,7	.............	0
+書添えっおもいとどまりゃ	ka ki so e Q o mo i to do ma rya	0	.*..........	0
+門ちがえっ	mo N   chi ga e Q	1,0	.......	0
+納所中河原溜り	no : so na ka ga wa ra da ma ri	9	...........	0
+もちまわん請け負え	mo chi ma wa N u ke o e	0	.........	0
+片肌風間	ka ta ha da ka za ma	4	.......	0
+分れ目ダイコー沖縄	wa ka re me da i ko : o ki na wa	5	............	0
+メタフィジカル仏性	me ta fi ji ka ru bu Q sho :	7	..........	0
+しまり屋射場	shi ma ri ya sha jo :	5	.......	0
+捷子拒める	sho : ko   ko ba me ru	1,3	........	0
+おくぶかくっ引提げりゃ	o ku bu ka ku Q hi Q sa ge rya	4	...........	0
+かん高きゃ呉信用金庫	ka N da ka kya   ku re shi N yo : ki N ko	4,1	...............	0
+常磐商行戯れよ	to ki wa sho : ko :   o do ke re yo	4,0	.............	0
+真名鶴橋呉川	ma na zu ru ha shi ku re ga wa	8	.....*....	0
+エラきゃ付て行る	e ra kya tsu i te i ke ru	2	.........	0
+臂額い	hi ji   nu ka zu i	2,3	.......	0
+ダンチョウ散急ぐ	da N cho :   chi ri i so gu	0,4	..........	0
+宮河内ハイランド競争	mi ya ka wa chi ha i ra N do kyo : so :	11	....*.........	0
+ふるまえれ亮平	fu ru ma e re   ryo : he :	4,0	..........	0
+金敷平よみあやまり	ka na shi ki da i ra   yo mi a ya ma ri	5,5	..*...........	0
+藤沢川観峰	fu ji sa wa ga wa ka N po :	7	..........	0
+そむい枯れ	so mu i ga re	2	.....	0
+貫き通せせせらわらえる	tsu ra nu ki to : se se se ra wa ra e ru	7	...*..........	0
+読合せよいざとくっ	yo mi a wa se yo   i za to ku Q	5,3	............	0
+酢貝ひそめる	su ga i   hi so me ru	1,3	....*...	0
+セイレン擦剥きゃ	se i re N   su ri mu kya	0,3	.........	0
+大鳴海山潰えん	o : na ru mi sa N   tsu i e N	5,0	............	0
+かた付け付き随う	ka ta zu ke   tsu ki shi ta ga u	4,5	.....*.*...	0
+久高島ぬくけれ	ku da ka to :   nu ku ke re	0,2	..........	0
+口吉川町蓮花寺駆込め	ku chi yo ka wa cho : re N ge ji   ka ke ko me	5,4	*...............	0
+カラ馬俗僧	ka ra u ma zo ku so :	5	.....*..	0
+洵にすべっこくっ	ma ko to ni   su be Q ko ku Q	2,4	...........	0
+咳きこま尾立岳	se ki ko ma   o ta te da ke	3,3	.*........	0
+ふみこさべっけ	fu mi ko sa be Q ke	3	.......	0
+垂らそ口うるさかろ	ta ra so   ku chi u ru sa ka ro	2,5	....*......	0
+竹田醍醐田仰げ	ta ke da da i go de N   a o ge	6,3	............	0
+率よしらかべ	hi ki i yo   shi ra ka be	3,3	*........	0
+ふっ帰京都経済短期大学	fu Q ki kyo : to ke : za i ta N ki da i ga ku	4	..*..............	0
+地団駄付け合わせよ	ji da N da tsu ke a wa se yo	5	..........	0
+痛ば主宰	tsu : ba shu sa i	4	......	0
+御影町郡家シンジュガイ	mi ka ge cho : gu N ge shi N ju ga i	11	.............	0
+峠向追掛けりゃ	to : ge mu ka i   o i ka ke rya	4,4	............	0
+御池台初石ＴＣ	mi i ke da i ha tsu i shi ti : shi :	12	........*....	0
+跡づけれ眠らせろ	a to zu ke re ne mu ra se ro	4	..........	0
+でんぐり返りゃ笑いころげよ	de N gu ri ga e rya wa ra i ko ro ge yo	5	..............	0
+突ぱしんし協	tsu Q pa shi N   shi kyo :	4,0	......*..	0
+細密頼入ん	sa i mi tsu   ta no mi i N	0,4	...*......	0
+待せん栗駒	ma ta se N   ku ri go ma	0,2	.........	0
+住み替える丹塗	su mi ka e ru   ni nu ri	4,0	.........	0
+月しろ抛り出し	tsu ki shi ro   ho : ri da shi	0,4	*.........	0
+牡丹花肖柏蒲郡線	bo ta N ka sho : ha ku ga ma go : ri se N	8	...............	0
+田村薬品工業佐井	ta mu ra ya ku hi N ko : gyo : sa i	11	....*........	0
+ぽちゃぽちゃ取りこぼせ	po cha po cha   to ri ko bo se	1,4	..........	0
+瓦谷精美	ka wa ra da ni se : bi	6	........	0
+いい加減気づかわしゅぅ	i : ka ge N   ki zu ka wa shu u	0,5	............	0
+宣光あきれ返ら	no bu mi tsu   a ki re ka e ra	2,4	...........	0
+奪え兄貴	u ba e   a ni ki	3,1	.......	0
+チュンファンこたつ	chu N fa N   ko ta tsu	1,0	........	0
+暗たん汐見台南	a N ta N shi o mi da i mi na mi	7	............	0
+しぶきゃ生起	shi bu kya   se : ki	2,1	.......	0
+剛渇せ	tsu yo shi   ka Q se	1,0	..*....	0
+鷹峯北鷹峯ぎじん	ta ka ga mi ne ki ta ta ka ga mi ne gi ji N	13	.....*.........	0
+引ずり込めんきく	hi ki zu ri ko me N ki ku	6	*......*.	0
+鍋釣山独活	na be tsu ri ya ma u do	6	........	0
+北天満抱き起せん	ki ta te N ma N   da ki o ko se N	3,5	*............	0
+おもわしくなぅとびちん	o mo wa shi ku na u to bi chi N	5	...*.......	0
+のぞき込めろ呼び戻せろ	no zo ki ko me ro yo bi mo do se ro	5	..*.........	0
+容体振ん伏沈め	yo : da i bu N fu shi shi zu me	4	......*....	0
+きんし平方村新田	ki N shi hi ra ka ta mu ra shi N de N	10	..*..........	0
+夏紀夢生	na tsu   ki no   mu :	2,0,1	........	0
+大島富塚	o : shi ma   to mi tsu ka	1,2	.......*.	0
+取返せよ沁透ん	to ri ka e se yo shi mi to : N	5	...........	0
+田方思い上がら	ta ka ta   o mo i a ga ra	1,5	..........	0
+虚弱フデ	kyo ja ku   fu de	0,1	..*...	0
+ようじんぶかけれゾウカ	yo : ji N bu ka ke re   zo : ka	6,0	............	0
+めぐらせりゃ小坂線	me gu ra se rya   ko sa ka se N	0,0	...........	0
+ホガラカ西吉野	ho ga ra ka   ni shi yo shi no	2,0	..........	0
+理化学研究所ひるがえせっ	ri ka ga ku ke N kyu : sho   hi ru ga e se Q	0,5	...*............	0
+信じあえりゃ親譲り	shi N ji a e rya   o ya yu zu ri	5,3	............	0
+怒っ聞き糺しゃ	o ko Q ki ki ta da sha	2	...*....	0
+かんぱつあかぬけれ	ka N pa tsu   a ka nu ke re	0,4	..........	0
+訐きゃつがわ	a ba kya tsu ga wa	2	......	0
+物珍きかめろ	mo no me zu ra shi ki ka me ro	6	......*...	0
+冷めんちょーだい	sa me N   cho : da i	2,0	........	0
+なさけなから公儀	na sa ke na ka ra   ko : gi	4,1	..........	0
+焚き付カラ回り	ta ki tsu ke   ka ra ma wa ri	4,0	.*........	0
+八瓶山久川	ya tsu ga me sa N hi sa ka wa	7	..........	0
+きりあお神子原	ki ri a o   mi ko ha ra	3,2	.........	0
+押上綴り合わせっ	o shi a ge   tsu zu ri a wa se Q	0,6	............	0
+いち早い大事無う	i chi ha ya i   da i ji   na u	4,0,1	.*..........	0
+忙しかれ取り切れれ	i so ga shi ka re to ri ki re re	4	...........	0
+江上上切り込めよ	ko : jo : jo :   ki ri ko me yo	0,3	............	0
+土山もぐり	tsu chi ya ma   mo gu ri	0,1	*.......	0
+潮垂る夏狩	shi o ta re ru   na tsu ga ri	0,2	..........	0
+深江特殊製鋼ＳＨ	fu ka e to ku shu se : ko :   e su   e i chi	7,1,1	*...*............	0
+冨田睨よ	to mi ta   ne me yo	1,2	.......	0
+みのがせ眠り込め	mi no ga se ne mu ri ko me	0	.........	0
+笑飛ばせれぞうはい	wa ra i to ba se re   zo : ha i	6,0	............	0
+つまんなくっ吊るしあげ	tsu ma N na ku Q tsu ru shi a ge	4	...........	0
+兎にも角にも浮かべっ	to ni mo   ka ku ni mo   u ka be Q	1,1,0	.............	0
+塗れよ若松原	nu re yo   wa ka ma tsu ha ra	0,4	..........	0
+権堂舞阪	go N do : ma i sa ka	4	........	0
+いいよどめ害する	i : yo do me ga i su ru	4	.........	0
+そよふけ大穂	so yo fu ke   o : ho	3,1	........	0
+協和建興拘束	kyo : wa ke N ko : ko : so ku	8	...........	0
+小本おぼせ	ko mo to   o bo se	1,2	.......	0
+井口本江支え	i gu chi ho N go : sa sa e	8	..*.......	0
+ティボリ荒野	ti bo ri a ra no	4	......	0
+追い付る昭人	o i tsu ke ru   a ki to	4,1	..*....*.	0
+うつしとっ逆立ち	u tsu shi to Q   gya ku ta chi	4,0	.*.....*..	0
+大島分川プーリー	o : ji ma wa ke ga wa pu : ri :	9	............	0
+ぼっ収甘煮	bo Q shu : u ma ni	5	.......	0
+ミッションこぜわしけれ	mi Q sho N   ko ze wa shi ke re	1,4	...........	0
+乞田向台	ko Q ta   mu ka e da i	0,3	.........	0
+ぜんちん気むずかしゅう	ze N chi N   ki mu zu ka shu u	0,0	...........	0
+毒水まだれ	do ku su i ma da re	5	.*.....	0
+震んさくとう	fu ru e N   sa ku to :	0,0	......*..	0
+済井出東崎湾	su mu i de hi ga shi za ki wa N	9	...........	0
+臭き遣り遂げれ	ku sa ki ya ri to ge re	2	*.......	0
+ぼんくら礼賛	bo N ku ra   ra i sa N	0,0	.........	0
+だいざ橋屋	da i za ha shi ya	4	......	0
+こまつな付添りゃ	ko ma tsu na   tsu ki so e rya	0,4	.....*....	0
+けんこんいってき溶明	ke N ko N i Q te ki yo : me :	9	............	0
+赤茶けよかげよ	a ka cha ke yo   ka ge yo	4,1	.........	0
+上野盆地なかよかろ	u e no bo N chi   na ka yo ka ro	4,3	............	0
+行え語路	o ko na e   go ro	0,0	.......	0
+いっとく手っ取り早き	i Q to ku   te Q to ri ba ya ki	0,6	...*........	0
+薩摩揚早	sa tsu ma a ge   ha ya	3,1	........	0
+魔境蔵原	ma kyo : ku ra ha ra	3	.......	0
+頑是無ぅふみ切り	ga N ze na u   fu mi ki ri	4,0	..........	0
+イロハ峠とおざか	i ro ha to : ge   to : za ka	4,4	...........	0
+追い掛ろがくもん	o i ka ke ro   ga ku mo N	4,0	..........	0
+思立てモールス	o mo i ta te   mo : ru su	4,1	..........	0
+瓶詰めトーゴ	bi N zu me to : go	5	.......	0
+載っける急き立てっ	no Q ke ru se ki ta te Q	0	.....*...	0
+もえさかるぶんこう	mo e sa ka ru   bu N ko :	4,0	..........	0
+迷い込み東明野	ma yo i ko mi   hi ga shi a ke no	4,4	............	0
+赤っ洟文事	a ka Q pa na bu N ji	6	........	0
+あゆみよら駒越北	a yu mi yo ra   ko ma go e ki ta	0,0	..........*.	0
+しめん踏越さ	shi me N   fu mi ko e sa	1,4	.........	0
+顰めっ北船岡	hi so mi me Q ki ta fu na o ka	9	*....*.....	0
+ワッセルマン反応カタルーニャ	wa Q se ru ma N ha N no : ka ta ru : nya	13	...............	0
+けがせ名塩	ke ga se   na ji o	2,1	.......	0
+市田大洋図書	i chi da   ta i yo : to sho	1,5	..........	0
+シュープシェーカ	shu : pu shi : ka	4	..*...	0
+式年瀬山	shi ki ne N se ya ma	4	*......	0
+野溝盤の沢町桜が丘	no mi zo ba N no sa wa cho : sa ku ra ga o ka	8	................	0
+到れろ裏づけれ	i ta re ro u ra zu ke re	3	.........	0
+ぬけおち五條谷	nu ke o chi   go jo : ya	4,2	.........	0
+さみし崩れさる	sa mi shi ku zu re sa ru	3	........	0
+腫ぼったくかつぎこめっ	ha re bo Q ta ku ka tsu gi ko me Q	5	.....*......	0
+すう勢忍ばし	su : ze :   shi no ba shi	0,3	.........	0
+外らすタクタクベオベツ川	so ra su   ta ku ta ku be o be tsu ga wa	2,8	..*..*........	0
+苅ん平島	ka N   hi ra shi ma	0,2	.......	0
+声声こわれろ	ko e go e   ko wa re ro	2,2	.........	0
+小善しりぞけ	sho : ze N   shi ri zo ke	0,4	.........	0
+岩上千代女	i wa ka mi   chi yo me	0,1	........	0
+内田吐夢知来別	u chi da to mu chi ra i be tsu	7	..........	0
+単冠山ほかなりゃ	hi to ka Q pu ya ma   ho ka na rya	0,3	*...........	0
+陰り脹らせろ	ka ge ri fu ku ra se ro	3	...*....	0
+新門鈴鹿工業高等専門学校	shi N mo N   su zu ka ko : gyo : ko : to : se N mo N ga Q ko :	1,16	........................	0
+果てしなかっ紛らせる	ha te shi na ka Q ma gi ra se ru	4	...........	0
+トヨタ米ケ脇	to yo ta ko me ga wa ki	6	........	0
+つくりだそにらみ合せ	tsu ku ri da so ni ra mi a wa se	3	*..........	0
+縁続き行ずる	e N tsu zu ki   gyo : zu ru	3,4	..........	0
+たおせりゃ脱がしゃ	ta o se rya nu ga sha	3	.......	0
+涙しろ寝かせ	na mi da shi ro ne ka se	4	........	0
+幸夜行掛け	yu ki yo i ki ga ke	4	.......	0
+牛鍋費やせりゃ	gyu : na be   tsu i ya se rya	0,4	..........	0
+似つかわしきひびきわた	ni tsu ka wa shi ki hi bi ki wa ta	5	.*...*.....	0
+永かっベトランシメックス	na ga ka Q   be to ra N shi me Q ku su	2,6	............*.	0
+楽しゅぅ仇名	ta no shu u   a da na	3,0	........	0
+おおせつけよひとや	o : se tsu ke yo   hi to ya	5,0	...*...*..	0
+向渕残月	mu ko : ji za N ge tsu	5	........	0
+御手杵代れ	o te gi ne   ka wa re	0,0	........	0
+得三ワライ	to ku sa N wa ra i	5	.*.....	0
+勝栄めいぜよ	ka tsu e :   me i ze yo	1,3	.........	0
+格好よかろ存ずれ	ka Q ko : yo ka ro zo N zu re	6	...........	0
+飯倉台ハズ	i : gu ra da i ha zu	6	........	0
+露見説付りゃ	ro ke N   to ki tsu ke rya	0,0	.....*...	0
+せまくるしき隈根尻山	se ma ku ru shi ki   ku ma ne shi ri ya ma	5,0	.....*........	0
+打ち込も苦切り	u chi ko mo ni ga ri ki ri	3	.*.......	0
+船頭峯越日本中央競馬会	se N do : mi ne go e ni Q po N chu : o : ke i ba ka i	18	.....................	0
+起き掛けたえがたけりゃ	o ki ga ke   ta e ga ta ke rya	0,4	...........	0
+突き詰めろ握りしめよ	tsu ki tsu me ro ni gi ri shi me yo	4	*..........	0
+太秦安井辰巳乗り出せ	u zu ma sa ya su i ta tsu mi no ri   shu Q se	10,0	................	0
+あかちゃけよおそいかかれ	a ka cha ke yo o so i ka ka re	4	...........	0
+唐子当り前	ka ra ko   a ta ri ma e	0,0	.........	0
+才木山なじめ	sa i ki ya ma   na ji me	0,3	.........	0
+名畑長楽	na ba ta   na ga ra	1,1	.......	0
+さん霊触れりゃ	sa N re :   fu re rya	0,0	........	0
+拍子抱き上げっ	hyo : shi   da ki a ge Q	0,4	.........	0
+眼ざめよ楽ん	me za me yo ta no shi N	3	........	0
+こみあえ金信洛	ko mi a e   ki N shi N ra ku	3,3	...........	0
+テーブルスピーチ駒込川	te : bu ru su pi : chi ko ma go me ga wa	12	....*..*......	0
+鉱山浜野辺	ko : za N ha ma no be	5	........	0
+土佐節乗後れりゃ	to sa bu shi   no ri o ku re rya	0,5	...........	0
+桜井団地ふじガ丘	sa ku ra i da N chi fu ji ga o ka	10	......*.....	0
+高山病入山津	ko : za N byo : i ri ya ma zu	9	...........	0
+墓碑つけこむ	bo hi   tsu ke ko mu	0,0	.*.....	0
+久野瀬ダイキン工業	ku no se da i ki N ko : gyo :	8	...........	0
+したえいじめ	shi ta e i ji me	3	*.....	0
+雅乏かれ	mi ya bi   to mo ka re	1,1	........	0
+止むなう奉公田	ya mu na u   ho : ko : da	3,3	..........	0
+哭せよずめん	ko ku se yo   zu me N	0,0	.*......	0
+座りだこつみだせりゃ	su wa ri da ko   tsu mi da se rya	4,4	...........	0
+うけもと獅子浜	u ke mo to   shi shi   ha ma	0,1,2	......*...	0
+かんがえぬか区区	ka N ga e nu ka   ma chi ma chi	5,1	...........	0
+睨み付れ玉堂	ni ra mi tsu ke re   kyo ku do :	5,0	...*.......	0
+苦切り詫び入る	ni ga ri ki ri wa bi i ru	4	.........	0
+岩岡底堅けりゃ	i wa o ka   so ko ga ta ke rya	0,4	...........	0
+土家献じろ	tsu chi ya   ke N ji ro	0,0	*.......	0
+笑いとばそ開き	wa ra i to ba so   hi ra ki	5,3	..........	0
+あい方貞松病院	a i ka ta sa da ma tsu byo : i N	9	............	0
+季暉臨済録	su e te ru ri N za i ro ku	2	..........	0
+十二神大沢	ju : ni shi N o : sa wa	6	.........	0
+直せよ答辞	na o se yo   to : ji	3,0	........	0
+弥生桜木ひし餅	ya yo i sa ku ra gi hi shi mo chi	9	.......*...	0
+舟崎よなげ	fu ne sa ki   yo na ge	2,3	........	0
+平ヶ岳磨れ	hi ra ga da ke   su re	3,2	........	0
+行違えソシアルダンス	yu ki chi ga e   so shi a ru da N su	4,5	.*...........	0
+意地張り湯ノ峰山	i ji Q pa ri yu no mi ne ya ma	5	...........	0
+尾幡山追いつめよ	o ba ta ya ma   o i tsu me yo	0,4	...........	0
+峰山線ふみつけれ	mi ne ya ma se N   fu mi tsu ke re	0,4	.........*..	0
+やもめこと足り	ya mo me   ko to ta ri	0,0	........	0
+カラカマノ鼻うかん	ka ra ka ma no ha na   u ka N	5,2	...........	0
+着ぶくれれ罪ぶかう	ki bu ku re re   tsu mi bu ka u	4,4	...........	0
+古和田制球	fu ru wa da se : kyu :	5	........	0
+もとちょうかんしゃくだま	mo to cho : ka N sha ku da ma	4	..........	0
+ウイークデーとびかけっ	u i : ku de :   to bi ka ke Q	4,4	............	0
+和見殺ぎ	ka zu mi   so gi	1,1	......	0
+芋島ソロモン	i mo ji ma so ro mo N	5	........	0
+はしりだせ嚇しゃ	ha shi ri da se o do ka sha	5	.........	0
+降り注ぎとけだしゃ	fu ri so so gi to ke da sha	4	.........	0
+内心尋見	na i shi N   ta zu mi	0,0	........	0
+神向寺直四郎	ji N ko : ji   na o shi ro :	1,2	...........	0
+大倉新田共立湊病院	o : ku ra shi N de N kyo : ri tsu mi na to byo : i N	16	...................	0
+駒形キ者	ko ma ga ta   ki sha	0,1	.......	0
+四倉町名木込め	yo tsu ku ra ma chi na gi   ko me	4,2	.*.........	0
+形づく寄付	ka ta chi zu ku   ki fu	5,1	........	0
+英一郎いもづる	e : i chi ro : i mo zu ru	7	..........	0
+秀盛ぼこぼこ	hi de mo ri   bo ko bo ko	2,1	.........	0
+けなせ業曝し	ke na se   go : sa ra shi	0,3	.........	0
+雪あかり賑わしくっ	yu ki a ka ri   ni gi wa shi ku Q	3,4	............	0
+すわりこみうかっ	su wa ri ko mi   u ka Q	0,2	.........	0
+ａ吐き出せ	e i   ha ki da se	1,3	.......	0
+ビヤ樽みぐるしけりゃ	bi ya da ru   mi gu ru shi ke rya	0,4	...........	0
+ば越の潟	ba   ko shi no ka ta	0,3	.......	0
+物ぐるおしかっ見付	mo no gu ru o shi ka Q   mi tsu ke	6,0	..........*.	0
+切細裂きゃしたばたらき	ki ri ko ma za kya   shi ta ba ta ra ki	5,4	.......*.....	0
+飛び退けきりとり	to bi no ke   ki ri to ri	3,0	.........	0
+霊妙繊切	re : myo : se N gi ri	5	........	0
+神木佐治郎	shi bo ku   sa ji ro :	0,0	..*.....	0
+下御輿少なし	shi mo mi ko shi   su ku na shi	3,3	....*.....	0
+わらわれよいぶこ	wa ra wa re yo i bu ko	0	........	0
+御母衣消え果てよ	go ho ro   ki e ha te te yo	1,0	..........	0
+安芸幸崎沸起こせれ	a ki sa i za ki   wa ki o ko se re	3,5	.*...........	0
+挟みいけ図図しく	ha sa mi   i ke zu : zu : shi ku	2,7	............	0
+長丘根坂間	na ga o ka   ne za ka ma	2,2	.........	0
+見えべた付け	mi e   be ta tsu ke	2,0	.....*.	0
+眼中待ち侘	ga N chu :   ma chi wa bi	1,0	.........	0
+かえりざけよ暁生	ka e ri za ke yo   a ki o	5,0	..........	0
+人間並み大井町並河	ni N ge N na mi   o : i cho : na mi ka wa	0,0	................	0
+繰り延べ波多津町煤屋	ku ri no be ha ta tsu cho : su su ya	10	......*.....	0
+ひたろ遣直せ	hi ta ro   ya ri na o se	2,5	*........	0
+屈み郷部	ko go mi go : bu	4	......	0
+周匝無こ	su sa i mu ko	3	.....	0
+殯しゃ笠木山	hi N sha   ka sa gi ya ma	1,0	.........	0
+東渋田小山北玄以	hi ga shi shi bu ta ko ya ma ki ta ge N i	12	..*......*....	0
+両月プロデューサ	wa chi pu ro yu : sa	5	.*.....	0
+思いあまれ延べ払い	o mo i a ma re   no be ba ra i	5,3	............	0
+竦ま甚だ	su ku ma   ha na ha da	0,0	*.......	0
+絞出せ下笹目	shi bo ri da se   shi mo sa sa me	5,3	...........	0
+大著リョウリ	ta i cho ryo : ri	4	......	0
+撫付山スポーティー	na de tsu ki ya ma   su po : ti :	0,2	..*....*....	0
+睨合わせ御座ろ	ni ra mi a wa se go za ro	8	.........	0
+寝違ろ偽っ	ne chi ga e ro i tsu wa Q	4	.........	0
+田長谷扶助	ta na go da ni fu jo	5	.......	0
+ダイレクト憤り	da i re ku to   i ki do : ri	1,0	...*.......	0
+降ん上露	ku da N   ko : zu yu	0,0	........	0
+はいしよ狐塚	ha i shi yo   ki tsu ne zu ka	1,3	.....*....	0
+乗り切る重う	no ri ki ru   o mo u	3,0	........	0
+ホガラカ狡けりゃ	ho ga ra ka   ko su ke rya	2,2	.........	0
+舌たるう菱和産業	shi ta ta ru u   ryo : wa sa N gyo :	4,4	*............	0
+持て成し叫べよ	mo te na shi   sa ke be yo	0,2	...*.....	0
+片浜こづらにくぅ	ka ta ha ma   ko zu ra ni ku u	2,4	...........	0
+碇島度量衡	i ka ri shi ma do ryo : ko :	7	..........	0
+上位葉牡丹	jo : i ha bo ta N	5	.......	0
+しょうもない井瀬木	sho : mo na i   i se gi	4,0	.........	0
+清冷山証取審	se : re : sa N sho : to ri shi N	10	............	0
+げんしょう大浦沼	ge N sho : o : u ra nu ma	4	..........	0
+中本ローマ字	na ka mo to   ro : ma ji	2,3	.........	0
+もちあげる立葵	mo chi a ge ru   ta chi a o i	4,3	...........	0
+喨喨たいきばんせい	ryo : ryo : ta i ki ba N se i	9	...........	0
+怒らす東中尾	i ka ra su   hi ga shi na ka o	3,4	...*.......	0
+締め括り司	shi me ku ku ri shi	5	..*...	0
+ひき殺す白浜台	hi ki ko ro su   shi ra ha ma da i	4,4	*...........	0
+手なれれきふじん	te na re re   ki fu ji N	3,0	.....*...	0
+譜しぶとい	fu   shi bu to i	0,3	*.....	0
+とまっ伯備線	to   ma Q ha ku bi se N	0,2	.........	0
+壬生森前入浸れ	mi bu mo ri ma e   i ri bi ta re	0,4	............	0
+すっぱく摩れあわ	su Q pa ku su re a wa	3	...*....	0
+繁忙惟義	ha N bo :   ko re yo shi	0,2	.........	0
+喜べる見覚え	yo ro ko be ru   mi o bo e	4,0	..........	0
+やすほ戸	ya su ho to	3	.*..	0
+キリコ手向かえ	ki ri ko   te mu ka e	1,3	........	0
+だきあえよしゃどう	da ki a e yo   sha do :	4,1	.........	0
+めあわす征男	me a wa su   yu ki o	3,0	........	0
+斜子萱森	na na ko ka ya mo ri	4	.......	0
+上三条岡村新田	ka mi sa N jo : o ka mu ra shi N de N	11	..............	0
+玉木鐵工所寄せ付けりゃ	ta ma ki te Q ko : sho   yo se tsu ke rya	1,4	..*........*..	0
+タイガー女グセ	ta i ga : o N na gu se	5	.........	0
+押し切ん打切れ	o shi ki N u chi ki re	3	.*...*..	0
+こぎつけよ繋止めよ	ko gi tsu ke yo tsu na gi to me yo	4	..*........	0
+せみくじらさしきり	se mi ku ji ra   sa shi ki ri	3,3	.......*..	0
+狩留家高イビキ	ka ru ga ta ka i bi ki	6	........	0
+縫い合せ褒めれ	nu i a wa se bo me re	5	........	0
+熟れひっとらえろ	na re hi Q to ra e ro	2	........	0
+相入れなきゃ井嶋金銀工業	a i i re na kya   i ji ma ki N gi N ko : gyo :	5,8	..................	0
+骨が折れっ学舎	ho ne ga   o re Q   ga ku sha	2,2,1	.........*.	0
+東深川鷲尾	hi ga shi fu ka wa wa shi o	7	..*......	0
+美代乃すりこみゃ	mi yo no   su ri ko mya	1,3	........	0
+鹿浜花園線	shi ka ha ma ha na zo no se N	0	*.........	0
+うちあげれいたぶりゃ	u chi a ge re i ta bu rya	0	.........	0
+幌新太刀別川むきあえ	ho ro shi N ta chi be tsu ga wa   mu ki a e	8,3	...............	0
+すみなしゃくんしょう	su mi na sha   ku N sho :	3,0	.........	0
+手稲ぬけあがり	te i ne   nu ke a ga ri	0,4	.........	0
+晴あが章句	ha re a ga   sho : ku	4,1	........	0
+包まりゃ二上山	ku ru ma rya   ni jo : za N	3,2	..........	0
+下高井戸折り曲げろ	shi mo ta ka i do   o ri ma ge ro	4,0	............	0
+歯槽燃せる	shi so :   mo ya se ru	0,0	*.......	0
+呪うちぢまら	no ro u chi ji ma ra	2	.......	0
+近え博鳳堂	ko no e ha ku ho : do :	3	....*....	0
+浴びせかける酒焼け	a bi se ka ke ru   sa ka ya ke	5,0	...........	0
+美月かくすう	mi zu ki   ka ku su :	1,0	..*..*..	0
+うわむけヨンキュウ	u wa mu ke   yo N kyu :	0,1	.........	0
+オートクチュール兎内	o : to ku chu : ru to na i	8	...*......	0
+甲斐甲斐ゅうるこく	ka i ga i shu u   ru ko ku	5,0	..........	0
+とけよもじり	to ke yo mo ji ri	2	......	0
+切りかえれやから	ki ri ka e re ya ka ra	3	........	0
+おとし入れよはつこ	o to shi i re yo   ha tsu ko	5,1	........*.	0
+よびいれれ聞きにくかろ	yo bi i re re   ki ki ni ku ka ro	4,4	......*.....	0
+引っ越門田本	hi Q ko se   ka do ta ho N	4,3	..........	0
+トモグラフィ住吉町七条	to mo gu ra fi su mi yo shi cho : shi chi jo :	12	....*...*......	0
+舞谷御前山下直見	ma i da ni go ze N ya ma shi mo na o mi	12	..............	0
+じゅん化へたばん	ju N ka e   ta ba N	0,2	........	0
+ジジイよみくらべよ	ji ji :   yo mi ku ra be yo	1,5	..........	0
+井阪商店湊泉	i sa ka sho : te N mi na to i zu mi	11	.............	0
+井尻もえうつれ	i ji ri   mo e u tsu re	1,4	.........	0
+八鹿酒造締め付けっ	ya tsu shi ka shu zo :   shi me tsu ke Q	5,4	.*........*..	0
+送りオオカミ末	o ku ri o : ka mi ma tsu	0	.........	0
+木許かたわら	ki mo to   ka ta wa ra	1,0	........	0
+領収証し経	ryo : shu : sho : shi kyo :	7	.........	0
+咲い土塁	sa i   do ru i	0,0	......	0
+かけあいたちまじれ	ka ke a i ta chi ma ji re	3	.........	0
+立代われ通ろ	ta chi ka wa re to : ro	5	.*......	0
+どんかんきりたおさ	do N ka N   ki ri ta o sa	0,0	..........	0
+乗り遅れれひきかえそ	no ri o ku re re hi ki ka e so	5	......*....	0
+かみさびうごかしゃ	ka mi sa bi u go ka sha	4	........	0
+騒しいけすかなし	sa wa ga shi i ke su ka na shi	4	......*...	0
+寝所埋め込め	ne do ko   u me ko me	0,4	........	0
+にんぽうせいくん	ni N po : se i ku N	5	........	0
+美しかれ絶え果れ	u tsu ku shi ka re ta e ha te re	4	.*.........	0
+掻き合せん振放ち	ka ki a wa se N fu ri ha na chi	5	...........	0
+紅一点上ろ	ko : i Q te N   no bo ro	1,0	..........	0
+ウツウツ高日向山	u tsu u tsu   ta ka hi na ta ya ma	0,0	...*........	0
+うけとめっ一子相伝	u ke to me Q   i Q shi so : de N	4,1	........*....	0
+手折れ聞き出さ	ta o re ki ki da sa	3	...*...	0
+とりかえし中央病院	to ri ka e shi chu : o : byo : i N	10	....*........	0
+下貝塚佐志賀	shi mo ka i zu ka sa shi ga	6	.........	0
+歓べん突き抜けっ	yo ro ko be N tsu ki nu ke Q	4	.....*....	0
+大下島登仙	o : ge ji ma to : se N	6	.........	0
+乗り越え照臭かろ	no ri ko e   te re ku sa ka ro	4,3	...........	0
+和市一夜山	wa i chi i chi ya sa N	6	........	0
+きぬ立教女学院	ki nu ri tsu kyo : jo ga ku i N	8	...*.......	0
+大賀郷取交せ	o : ka go :   to ri ka wa se	3,5	...........	0
+かわらけぽっつり	ka wa ra ke   po Q tsu ri	0,3	.........	0
+約めよ眼鏡	tsu zu me yo   me ga ne	3,1	........	0
+枝垂柳栗合	shi da re ya na gi ku ri a i	8	..........	0
+松本引越センター江戸むらさき	ma tsu mo to hi Q ko shi se N ta : e do mu ra sa ki	12	.......*..........	0
+満明東家	mi tsu a ki a zu ma ya	4	........	0
+気ままロー	ki ma ma ro :	3	.....	0
+光らせんちゅうこう	hi ka ra se N   chu : ko :	4,0	*.........	0
+卵焼き吟じる	ta ma go ya ki   gi N ji ru	0,0	..........	0
+あそばせ通運	a so ba se   tsu : u N	0,0	.........	0
+中山町西広崎	na ka ya ma cho : ni shi hi ro sa ki	9	.......*....	0
+となら賢婦人	to   na ra   ke N pu ji N	0,1,3	..........	0
+余儀なかろ哀惜	yo gi na ka ro   a i se ki	3,0	..........	0
+扱き使えん稲田南	ko ki tsu ka e N   i na da mi na mi	5,0	.*...........	0
+打ち噛せたぐえる	bu chi ka ma se ta gu e ru	4	.*.......	0
+廃り七ツ塚	su ta ri na na tsu zu ka	6	*.......	0
+総富地川新多	so tsu chi ga wa ni : da	5	.*......	0
+弥五郎坂燐灰土	ya go ro : sa ka ri N ka i do	9	...........	0
+千奈引き摺り出せ	chi na   hi ki zu ri da se	0,6	...*.....	0
+窯元葉村屋	ka ma mo to ha mu ra ya	7	........	0
+三国つつしん	sa N ko ku   tsu tsu shi N	2,3	...*..*..	0
+誘合わせれ守り立よ	sa so i a wa se re mo ri ta te yo	6	............	0
+なくしろ頚腺	na ku shi ro   ke : se N	1,0	.*.......	0
+あいせき刷り	a i se ki zu ri	0	......	0
+脈打たなるけれ	mya ku u ta   na ru ke re	3,2	.........	0
+神徳新浜寺大橋	shi N to ku shi N ha ma de ra o : ha shi	10	...*..........	0
+咲き始める呼び寄せろ	sa ki ha ji me ru yo bi yo se ro	0	.*.........	0
+久屋原きりもち	ku ya ha ra ki ri mo chi	6	........	0
+偽証浸けよ	gi sho :   tsu ke yo	0,0	....*..	0
+入れちがうこぐらきゃ	i re chi ga u   ko gu ra kya	4,3	..........	0
+ホストなまっちろけりゃ	ho su to   na ma Q chi ro ke rya	1,5	.*.........	0
+奥方つがわ	o ku ga ta   tsu ga wa	0,0	........	0
+多門海吉	ta mo N mi yo shi	4	......	0
+身構よ咲きにおえ	mi ga ma e yo sa ki ni o e	3	..........	0
+整え直そ手取	to to no e na o so   te do ri	6,0	...........	0
+塩屋南えいが	shi o ya mi na mi e i ga	7	.........	0
+泥ぶかからいじらしかれ	do ro bu ka ka ra i ji ra shi ka re	4	.........*..	0
+ふるいたとコメツキムシ	fu ru i ta to   ko me tsu ki mu shi	1,4	........*...	0
+求道そん	kyu : do : so N	4	......	0
+悪例赤ずきん	a ku re : a ka zu ki N	7	.........	0
+溶きほぐすじゃどう	to ki ho gu su ja   do :	4,1	.*.......	0
+綾織町下綾織根浮岬	a ya o ri cho : shi mo a ya o ri ne bu sa ki	13	................	0
+みかんせい牛田本	mi ka N se i u shi ta ho N	8	......*...	0
+甲山脱けろ	ko : za N   nu ke ro	0,0	........	0
+横瀬郷山之内	yo ko se go : ya ma no u chi	5	..........	0
+いねこき西賀茂丸川	i ne ko ki ni shi ga mo ma ru ka wa	10	............	0
+柳林御座山	ya na gi ba ya shi o gu ra sa N	9	...........	0
+り婚話し込ま	ri ko N   ha na shi ko ma	0,4	......*..	0
+新子安加賀笠間	shi N ko ya su ka ga ka sa ma	8	....*.....	0
+飛びこみ摘ん	to bi ko mi   tsu N	0,0	.......	0
+丹陽町三ツ井新井宏昌	ta N yo : cho : mi tsu i a ra i   hi ro ma sa	3,2	.................	0
+あじわえアンナ	a ji wa e   a N na	4,1	........	0
+つか読み耽ら	tsu ka yo mi fu ke ra	1	....*..	0
+焼山此原るいせ	ya ke ya ma ko no ha ra   ru i se	6,3	............	0
+自由戦線中毒	ji yu : se N se N chu : do ku	8	...........	0
+引回しゃ怒らす	hi ki ma wa sha i ka ra su	4	*........	0
+静間食えん	shi zu ma sho ku e N	4	.......	0
+潜っしりすぼみ	mo gu Q   shi ri su bo mi	2,3	.........	0
+おさまるしょうじる	o sa ma ru sho : ji ru	3	........	0
+下西谷本三川	shi mo ni shi da ni mo to mi ka wa	9	...........	0
+打っ放そセツ子	bu Q pa na so   se tsu ko	4,1	.......*.	0
+取崩せりゃよみかえよ	to ri ku zu se rya yo mi ka e yo	5	...........	0
+加賀電子烏山	ka ga de N shi ka ra su ya ma	3	....*.....	0
+くみとれ才木山	ku mi to re   sa i ki ya ma	4,0	..........	0
+セパレートバテレン	se pa re : to ba te re N	6	.........	0
+小いき武蔵ケ丘	ko i ki   mu sa shi ga o ka	0,4	..........	0
+沙弥かきむしれ	sa ya   ka ki mu shi re	1,4	........	0
+待侘れもの憂ぅ	ma chi wa bi re   mo no u u	0,3	..........	0
+うす白くっ柿さき	u su ji ro ku Q   ka ki sa ki	5,2	...........	0
+封込めならびなから	fu : ji ko me   na ra bi na ka ra	5,4	............	0
+きつね知之浦	ki tsu ne chi no u ra	4	*......	0
+壁がみ松之下	ka be ga mi ma tsu no shi ta	7	.......*.	0
+織り込め共栄	o ri ko me   kyo : e :	4,0	.........	0
+駄文雨畑湖	da bu N a me ha ta ko	7	........	0
+てつだうけしぼうず	te tsu da u   ke shi bo : zu	3,0	..........	0
+そりわすれれ搾り出し	so ri wa su re re   shi bo ri da shi	5,0	............	0
+極微胸	kyo ku bi mu ne	3	.....	0
+成願寺ぬくとかれ	jo : ga N ji   nu ku to ka re	1,3	.......*...	0
+かせいソーダ池脇会計事務所	ka se i so : da i ke ha ta ka i ke : ji mu sho	16	.................	0
+薬院伊福ＷＯＷＷＯＷ	ya ku i N i fu ku wa u wa u	8	.....*.....	0
+中車癰	chu : sha yo :	3	.....	0
+看取れれふしゅ	mi to re re   fu shu	3,1	.......	0
+立去ん為遂っ	ta chi sa N shi to ge Q	3	.*..*...	0
+しし鷲部	shi shi wa shi be	3	*....	0
+もうしこん鎮目	mo : shi ko N   shi zu me	4,1	..*......	0
+若かっ閉ざん	wa ka ka Q   he : za N	2,0	.........	0
+坐り込めよヤンマーデイゼル	su wa ri ko me yo   ya N ma : de i ze ru	5,5	...............	0
+烏滸がましけれ六趣	o ko ga ma shi ke re   ro ku shu	5,1	.........*.	0
+インサイダー庵	i N sa i da : a N	6	........	0
+小はずかしき畠口	ko ha zu ka shi ki   ha ta gu chi	5,2	.....*.....	0
+ひしゃげる汲み取れ	hi sha ge ru ku mi to re	4	*.......	0
+西箕輪犇き合い	ni shi mi no wa   hi shi me ki a i	3,5	......*.....	0
+コルドバ五十崎	ko ru do ba i ka za ki	5	........	0
+八曽山遣ん	ha Q so sa N   ya N	3,0	........	0
+大白飯倉台	o : shi ro   i : gu ra da i	0,4	...........	0
+よそおえ奮い起しゃ	yo so o e fu ru i o ko sha	4	..........	0
+水木はなよめ	mi zu ki   ha na yo me	1,0	..*.....	0
+はね上げ草臥っ	ha ne a ge ku ta bi re Q	4	....*....	0
+見取買控え	mi to ri ka i bi ka e	3	........	0
+質せろ貨物会社・西武分界点	ta da se ro   ka mo tsu ga i sha se : bu bu N ka i te N	3,4	....................	0
+虐めよめあたらしけりゃ	i ji me yo   me a ta ra shi ke rya	0,5	............	0
+芸文社とけ	ge : bu N sha to ke	3	.......	0
+山市場祖国	ya ma i chi ba so ko ku	6	........	0
+佐賀利山かぎり	sa ga ri ya ma ka gi ri	6	........	0
+ふて腐れ平吹	fu te ku sa re   hi ra bu ki	5,2	*.*.......	0
+がくじ不運	ga ku ji fu u N	4	......	0
+中正黄淑姫	chu : se : o : shu ku ki	7	.......*.	0
+数え立てる吸い取る	ka zo e ta te ru su i to ru	5	..........	0
+しめ切り送届れ	shi me ki ri o ku ri to do ke re	3	...........	0
+うす白くっ幾春別川	u su ji ro ku Q   i ku shu N be tsu ga wa	5,6	........*......	0
+見下ろせ私しろ	mi o ro se wa ta ku shi shi ro	0	......*...	0
+踏潰し市右エ門島	fu mi tsu bu shi   i chi u e mo N ji ma	4,0	..............	0
+羽撃きゃ大塚戸	ha ba ta kya   o : tsu ka do	3,3	..........	0
+智加三ツ野	to mo ka mi tsu no	4	......	0
+跳上がりゃあつかまし	ha ne a ga rya   a tsu ka ma shi	4,5	.......*...	0
+師承あゆも	shi sho : a yu mo	3	*.....	0
+ちちくさかっ見分よ	chi chi ku sa ka Q   ke N bu N yo	4,0	*.*.........	0
+いそがしきゃ惣山	i so ga shi kya   so : ya ma	4,0	..........	0
+とうみてつづき	to : mi te tsu zu ki	5	.......	0
+季節風怠う	ki se tsu fu :   da ru u	3,2	*........	0
+物言いたくぎん総合研究所	mo no i i   ta ku gi N so : go : ke N kyu : sho	0,0	..................	0
+泳がせん武芸者	o yo ga se N   bu ge : sha	4,2	..........	0
+不利信木	fu ri   no bu ki	1,0	......	0
+たりるあぶなげなから	ta ri ru   a bu na ge na ka ra	0,4	...........	0
+ひきつっ広和	hi ki tsu Q   hi ro ka zu	3,2	*........	0
+日和佐海星	hi wa sa   ka i se :	0,0	........	0
+旋頭歌金ケ沢	se do : ka ka ne ga sa wa	4	.........	0
+宅間休めよ	ta ku ma   ya su me yo	1,2	........	0
+ご恵気忙しき	go ke :   ki ze wa shi ki	0,4	.........	0
+下らなう旧れ	ku da ra na u fu re	0	.......	0
+野かくたるま	ya ka ku ta ru   ma	4,1	..*....	0
+いんばん極ん	i N ba N   ki wa ma N	0,3	.........	0
+目頭たくしあげっ	me ga shi ra   ta ku shi a ge Q	2,5	......*....	0
+充実綯交ぜ	ju : ji tsu na i ma ze	5	........	0
+磨れれおしかくす	su re re o shi ka ku su	2	....*.*.	0
+真秀回灯籠	ma ho ma wa ri do : ro :	2	.........	0
+立ち上りゃ上和白	ta chi no bo rya   ka mi wa ji ro	4,3	...........	0
+空々しい眇ん	so ra zo ra shi i su ga me N	5	..........	0

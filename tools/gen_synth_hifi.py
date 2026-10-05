@@ -128,7 +128,9 @@ def emit(path):
         "",
         table("g_synhifi_7", t7(FS)),
         "",
-        table("g_synhifi_8", t8(FS)),
+        # F5 in stock voices can reach 6 kHz. Include Nyquist itself, which
+        # frame.c still looks up (only frequencies above it are bypassed).
+        table("g_synhifi_8", t8(FS, FS // 16 + 1)),
         "",
         "/* The fixed resonator frame.c pairs with a frequency from track 16. */",
         "const int32_t g_synhifi_2038 = %d;" % syn2038(FS),
@@ -142,7 +144,7 @@ def emit(path):
     ]
     with open(path, "w", newline="\n") as fp:
         fp.write("\n".join(body))
-    print("wrote %s (%d values)" % (os.path.relpath(path, ROOT), 180 + 180 + 700 + 1))
+    print("wrote %s (%d values)" % (os.path.relpath(path, ROOT), 180 + 180 + FS // 16 + 1 + 3))
     print("  generated for %d Hz" % FS)
     print("  syn_2038 = %d  (8k had %d, 11k had %d)"
           % (syn2038(FS), syn2038(8000), syn2038(11025)))

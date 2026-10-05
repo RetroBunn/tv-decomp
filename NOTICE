@@ -223,6 +223,96 @@ MindMaker's.
 If you hold rights in that product and would rather the voices were not
 described here, please open an issue on the repository and they will be removed.
 
+Japanese: naist-jdic and Open JTalk
+-----------------------------------
+
+`data/ja/jadic.bin` is compiled from **naist-jdic**, the morphological
+dictionary distributed with Open JTalk, release 1.11 of December 2018.
+`data/ja/jadic.provenance.txt` records the source folder, the release and a
+SHA-256 for each input file. It carries, for each of 486,757
+entries, the surface, the reading as said and the reading as written, the
+accent type, the mora count and the accent chain rule, plus the 1377x1377
+connection cost matrix the analyser needs. Without it the Japanese front end
+cannot read kanji and has no accent to speak with.
+
+It is **redistributed** in the NVDA add-on and the SAPI 5 installer, which put
+it beside the library, because that is the only way Japanese reads kanji on an
+installed copy. naist-jdic's licence below permits redistribution in binary
+form with the notice retained, which is why this file travels with it.
+
+    Copyright (c) 2009, Nara Institute of Science and Technology, Japan.
+    All rights reserved.
+
+    Redistribution and use in source and binary forms, with or without
+    modification, are permitted provided that the following conditions are
+    met:
+
+    Redistributions of source code must retain the above copyright notice,
+    this list of conditions and the following disclaimer.
+    Redistributions in binary form must reproduce the above copyright
+    notice, this list of conditions and the following disclaimer in the
+    documentation and/or other materials provided with the distribution.
+    Neither the name of the Nara Institute of Science and Technology
+    (NAIST) nor the names of its contributors may be used to endorse or
+    promote products derived from this software without specific prior
+    written permission.
+
+    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+    "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+    LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+    A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+    OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+    SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+    LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+    DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+    THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+    (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+    OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+The front end's stages follow **Open JTalk**, which breaks its text analysis
+into separate modules whose rules are explicit tests on morphological
+category -- `njd_set_accent_phrase` is eighteen numbered rules over
+noun/verb/adjective/particle/suffix and nothing else. Those rules were read
+as a specification and written out again in `build/Japanese_test/jp_njd.py`
+and `ja_port/`; no Open JTalk code is copied into this repository.
+
+    Copyright (c) 2008-2015  Nagoya Institute of Technology
+                             Department of Computer Science
+    All rights reserved.
+
+    Redistribution and use in source and binary forms, with or without
+    modification, are permitted provided that the following conditions are
+    met:
+
+    - Redistributions of source code must retain the above copyright
+      notice, this list of conditions and the following disclaimer.
+    - Redistributions in binary form must reproduce the above copyright
+      notice, this list of conditions and the following disclaimer in the
+      documentation and/or other materials provided with the distribution.
+    - Neither the name of the HTS working group nor the names of its
+      contributors may be used to endorse or promote products derived from
+      this software without specific prior written permission.
+
+    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+    "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+    LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+    A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+    OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+    SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+    LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+    DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+    THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+    (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+    OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+Neither project's synthesiser is used or referenced. Open JTalk synthesises
+with an HMM; OpenTV is a formant synthesiser and the two have nothing in
+common below the text analysis. `open_jtalk-1.11/` is a reference checkout
+and is not committed -- `tools/gen_ja_dict.py` and `tools/gen_ja_rules.py`
+are how `data/ja/jadic.bin` and the rule tables were produced from it, and
+they are kept in the tree so that anyone with the checkout can confirm that
+what is committed here is what comes out of it.
+
 The original binaries
 ---------------------
 
@@ -238,3 +328,22 @@ everything else still works.
 `tools/extract_data.py` is how `data/` was produced, and is kept in the tree
 so that anyone with the original can check that what is committed here is
 what comes out of it.
+
+Other systems read as references
+--------------------------------
+
+Three shipping Japanese text-to-speech systems were inspected locally, from
+licensed installations, to answer one design question: whether a Japanese
+system reads an English word by looking it up or by rule. They are Microsoft's
+OneCore Japanese voices, Lernout & Hauspie's TTS3000, and IBM/Eloquence
+ViaVoice. `jp_res/open_questions.md` section 4.3 records what was observed --
+file sizes, the shape of the data, and a module's exported function names.
+
+**Nothing in this repository is derived from any of them.** No code was
+disassembled, nothing was executed, and no rule table, lexicon or other data
+was taken. What was learned is architectural: that all three pronounce
+words beyond a fixed list, and that L&H exposed one G2P interface per language
+with a user-dictionary hook. How any of them divides the work between rules
+and lexical data is not something an outside inspection settles, and this
+makes no claim about it. Those are observations about a design, and the design
+is not what is being reproduced here.

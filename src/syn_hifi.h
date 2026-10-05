@@ -26,7 +26,9 @@
 
 extern const int32_t g_synhifi_6[180];
 extern const int32_t g_synhifi_7[180];
-extern const int32_t g_synhifi_8[700];
+/* Frequency lookups step by 8 Hz, including the Nyquist endpoint. */
+#define TV_SYNHIFI_FREQ_COUNT (TV_SYNHIFI_RATE / 16 + 1)
+extern const int32_t g_synhifi_8[TV_SYNHIFI_FREQ_COUNT];
 /* The fixed resonator a frame pairs with a frequency from track 16. */
 extern const int32_t g_synhifi_2038;
 /* filt_coef[12], [13] and [33]: the same resonator, and the only entries of the

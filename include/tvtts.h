@@ -445,7 +445,39 @@ TVTTS_API int TVTTS_CALL tvtts_rate_sequence(char *buf, size_t cap, int wpm);
  */
 #define TVTTS_EXT_CAMEL 0x40u
 
-#define TVTTS_EXT_ALL   0x7fu
+/*
+ * TVTTS_EXT_JA_ROMAJI reads a Latin word in Japanese as ROMAJI rather than as
+ * English.  It is OFF by default, and the default is the interesting part.
+ *
+ * `take` is both the Japanese タケ and the English テイク, and nothing in the
+ * spelling says which was meant.  Three shipping Japanese systems were
+ * listened to -- Google, Microsoft OneCore and ETI-Eloquence -- and all three
+ * read a bare `take` as テイク: a Latin word is foreign text, looked up and
+ * then guessed at with English rules.  So that is the default here, and
+ * `mouse` is マウス rather than モーセ, `fire` ファイア rather than フィレ.
+ *
+ * Turn this on and an utterance that parses CLEANLY as romaji -- every letter
+ * consumed, nothing in the dictionary -- is read as Japanese instead:
+ * `konnichiwa` is コンニチワ` and not コニチーワ.  That is what somebody who
+ * cannot type kana wants, and it is why the behaviour is kept rather than
+ * removed.  It costs the English reading of every short Latin word that
+ * happens to be parseable as romaji, which is most of them.
+ *
+ * Either way the DICTIONARY wins first, so `Windows` is ウィンドーズ and
+ * `Amazon` アマゾン with its own accent, and an initialism is still spelled:
+ * `NVDA` is エヌブイディーエー.  Japanese only; the other languages ignore it.
+ */
+#define TVTTS_EXT_JA_ROMAJI 0x80u
+
+#define TVTTS_EXT_ALL   0xffu
+
+/*
+ * What is on when nothing has said otherwise: everything except the romaji
+ * reading, which is a CHOICE rather than a fix and whose other side is the
+ * one three shipping systems make.  TVTTS_EXT_ALL turns it on along with the
+ * rest, which is what a caller asking for "all of it" should get.
+ */
+#define TVTTS_EXT_DEFAULT (TVTTS_EXT_ALL & ~TVTTS_EXT_JA_ROMAJI)
 
 /*
  * How a sung note wavers, both in hundredths of a hertz: the rate, and the

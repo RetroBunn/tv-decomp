@@ -6,6 +6,12 @@ An add-on is a zip with manifest.ini at the root, so this copies the tree in
 nvda-addon/ and drops the built library in beside the driver.  NVDA is a
 64-bit process, so the 64-bit library is the one that goes in; --32 builds
 the package for a 32-bit host (an older NVDA, or JAWS) instead.
+
+The Japanese dictionary goes in beside the library when it has been built,
+because that is where the library looks for it (ja_dict_path), and without it
+Japanese reads kana and romaji and drops every kanji.  It is 26 MB, which is
+most of the package -- so --no-ja leaves it out, for a build that is only ever
+going to speak English and Spanish.
 """
 import os
 import re
@@ -38,6 +44,19 @@ def main():
     # The driver asks for "tvtts.dll" whatever it was built as, so the
     # package never has to know which one it got.
     shutil.copy2(dll, os.path.join(stage, "synthDrivers", "tvtts.dll"))
+    # And the Japanese dictionary beside it, which is where ja_dict_path looks
+    # first.  Without it the Japanese voices still work -- they read kana and
+    # romaji exactly as they did before the analyser existed -- but every
+    # kanji is dropped, so this is not optional for a user who wants Japanese.
+    jadic = os.path.join(ROOT, "data", "ja", "jadic.bin")
+    if "--no-ja" in sys.argv[1:]:
+        print("leaving the Japanese dictionary out (--no-ja)")
+    elif os.path.isfile(jadic):
+        shutil.copy2(jadic, os.path.join(stage, "synthDrivers", "jadic.bin"))
+    else:
+        print("WARNING: %s is not built, so this add-on will not read kanji."
+              % os.path.relpath(jadic, ROOT))
+        print("         run python tools/gen_ja_dict.py")
 
     name = "opentv-%s%s.nvda-addon" % (version, "" if bits == 64 else "-x86")
     os.makedirs(OUT, exist_ok=True)

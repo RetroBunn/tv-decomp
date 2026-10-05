@@ -19,6 +19,7 @@ GetLastError@0
 GetModuleFileNameA@12
 GetModuleFileNameW@12
 GetModuleHandleA@4
+GetModuleHandleExA@12
 GetProcAddress@8
 GetProcessHeap@0
 GetStdHandle@4

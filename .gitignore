@@ -70,14 +70,44 @@ dkms.conf
 # and never redistributed from here.  What was read is described in NOTICE and
 # in docs/SINGING.md.
 /dectalk/
-# Open JTalk, kept locally to read its Japanese front end out of.  Three-clause
-# BSD (Nagoya Institute of Technology; MeCab by Kudo and NTT; the NAIST
-# dictionary by Nara Institute of Science and Technology), so unlike the two
-# above it could be redistributed -- it is kept out because it is a reference
-# we read, not a part of OpenTV.  See NOTICE for what was read.
-/libopenjtalk/
+# Open JTalk 1.11, kept locally to read its Japanese front end out of.
+# Three-clause BSD (Nagoya Institute of Technology; MeCab by Kudo and NTT; the
+# NAIST dictionary by Nara Institute of Science and Technology), so unlike the
+# two above it could be redistributed -- it is kept out because it is a
+# reference we read, not a part of OpenTV.  See NOTICE for what was read.
+#
+# The generators read it: data/ja/jadic.bin is compiled from its dictionary
+# and build/Japanese_test/ojt_tables.py from its rule headers, and
+# data/ja/jadic.provenance.txt records the release and the hash of every
+# input.  build/check/openjtalk_morph_audit.py compiles its five NJD stages
+# into the reference library the parity tool compares against.
+/open_jtalk-1.11/
+# Phonetics papers the Japanese work is sourced from, kept locally to read.
+# Published, copyrighted, and not ours to redistribute: the findings are cited
+# in the code and in build/Japanese_test/README.txt, the PDFs stay out.
+# open_questions.md is ours and is the point of keeping the folder, so it is
+# the one thing in here that is tracked.
+/jp_res/*
+!/jp_res/open_questions.md
 /work/
-/build/
+# ...but the Japanese synthesis is SOURCE, not a build product.  It only sits
+# under build/ because that is where it was started; it is original work of
+# ours, derived from published phonetics rather than from any Centigram
+# binary, and nothing else in the project reproduces it.  The generated audio
+# is still excluded by the *.wav rule below.
+/build/*
+!/build/Japanese_test/
+
+# The reference harness is source too, and tools/ja_stage_parity.py imports
+# it, so leaving it out would ship a tool that cannot run.  It sits under
+# build/check only because that is where the verification binaries go.  The
+# library it compiles -- njd-reference.dll -- stays out: it is built from the
+# Open JTalk checkout, which is itself not in the repository.
+!/build/check/
+/build/check/*
+!/build/check/openjtalk_morph_audit.py
+!/build/check/morphology_followup.py
+
 /ref/
 *.wav
 

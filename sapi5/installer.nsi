@@ -89,6 +89,12 @@ Section "OpenTV SAPI 5 voices" SecMain
     Abort
 
   SetOverwrite on
+  ; The Japanese dictionary, beside the DLLs, which is where the library looks
+  ; for it (ja_dict_path).  Without it the Japanese voices read kana and
+  ; romaji -- exactly as they did before the analyser existed -- and drop
+  ; every kanji, so it is not optional for anyone who wants Japanese.  It is
+  ; 26 MB and it is most of this installer.
+  File "/oname=jadic.bin" "..\data\ja\jadic.bin"
   File "/oname=LICENSE.txt" "..\LICENSE"
   File "/oname=NOTICE.txt"  "..\NOTICE"
 
@@ -110,6 +116,7 @@ Section "Uninstall"
 
   Delete /REBOOTOK "$INSTDIR\tvsapi64.dll"
   Delete /REBOOTOK "$INSTDIR\tvsapi.dll"
+  Delete "$INSTDIR\jadic.bin"
   Delete "$INSTDIR\LICENSE.txt"
   Delete "$INSTDIR\NOTICE.txt"
   Delete "$INSTDIR\uninstall.exe"

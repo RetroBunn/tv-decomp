@@ -1,0 +1,143 @@
+Samples for the dictionary front end, 11025 Hz.
+
+A pair file is old-then-new with half a second between.
+
+a01-hashi-acc1.wav                 箸  chopsticks, accent 1 -- the fall is after the first mora
+a02-hashi-acc2.wav                 橋  bridge, accent 2 -- on the last mora, so bare it cannot show
+a03-hashi-acc0.wav                 端  edge, accent 0 -- no fall; bare, identical to 橋 above
+a04-hashiga-acc1.wav               箸が  chopsticks + ga: falls after mora 1
+a05-hashiga-acc2.wav               橋が  bridge + ga: the fall lands ON the particle
+a06-hashiga-acc0.wav               端が  edge + ga: no fall, high through the particle
+a07-ame-acc1.wav                   雨  rain, accent 1
+a08-ame-acc0.wav                   飴  sweet, accent 0
+a09-kakiga-acc1.wav                牡蠣が  oyster + ga, accent 1
+a10-kakiga-acc0.wav                柿が  persimmon + ga, accent 0
+a11-kakiga-acc2.wav                垣が  fence + ga, accent 2
+a99-all.wav                        all of them in order, for comparison
+b00-kanji-new.wav                  私は日本語を話します。
+b00-kanji-old.wav                  the same sentence as the old path read it: "はをします"
+b00-kanji-pair.wav                 old then new
+b01-kanji-new.wav                  今日はいい天気ですね。
+b01-kanji-old.wav                  the same sentence as the old path read it: "はいいですね"
+b01-kanji-pair.wav                 old then new
+b02-kanji-new.wav                  電車が駅に到着しました。
+b02-kanji-old.wav                  the same sentence as the old path read it: "がにしました"
+b02-kanji-pair.wav                 old then new
+b03-kanji-new.wav                  その本を読んでください。
+b03-kanji-old.wav                  the same sentence as the old path read it: "そのをんでください"
+b03-kanji-pair.wav                 old then new
+b04-kanji-new.wav                  明日の会議は何時からですか？
+b04-kanji-old.wav                  the same sentence as the old path read it: "のはからですか"
+b04-kanji-pair.wav                 old then new
+b05-kanji-new.wav                  東京都の人口は増えています。
+b05-kanji-old.wav                  the same sentence as the old path read it: "のはえています"
+b05-kanji-pair.wav                 old then new
+c00-devoice-new.wav                一  ichi: /chi/ is the accent nucleus, so it keeps its voice
+c00-devoice-old.wav                一  the old rule
+c00-devoice-pair.wav               一  old then new
+c01-devoice-new.wav                十月  juugatsu: /tsu/ is the nucleus
+c01-devoice-old.wav                十月  the old rule
+c01-devoice-pair.wav               十月  old then new
+c02-devoice-new.wav                ひく  hiku: the old rule devoiced both morae; only one may
+c02-devoice-old.wav                ひく  the old rule
+c02-devoice-pair.wav               ひく  old then new
+c03-devoice-new.wav                いつつ  itsutsu: adjacent candidates, and the nucleus
+c03-devoice-old.wav                いつつ  the old rule
+c03-devoice-pair.wav               いつつ  old then new
+c04-devoice-new.wav                明日の会議  ashita: /shi/ devoices, /ta/ does not
+c04-devoice-old.wav                明日の会議  the old rule
+c04-devoice-pair.wav               明日の会議  old then new
+d00-phrase-new.wav                 私は毎日学校へ行きます。   accents [0, 1, 0, 3]
+d00-phrase-flat.wav                私は毎日学校へ行きます。   the same phrasing, every accent heiban
+d01-phrase-new.wav                 友達と一緒に図書館で勉強しました。   accents [0, 0, 2, 0, 2]
+d01-phrase-flat.wav                友達と一緒に図書館で勉強しました。   the same phrasing, every accent heiban
+d02-phrase-new.wav                 日本語学校の先生はとても親切です。   accents [5, 3, 0, 1]
+d02-phrase-flat.wav                日本語学校の先生はとても親切です。   the same phrasing, every accent heiban
+e00-fukusuu.wav                    複数   adjacent devoicing: was フ-ク-スー with both devoiced, now only the first, which is what upstream gives
+e01-utsukushisa.wav                美しさ   the same rule in a longer word
+e02-arigatou.wav                   ありがとうございます   a compound entry: its two components and their accents 2 and 4 were being thrown away, so it spelled out its kana flat
+e03-seppa.wav                      せっぱ詰まる   the same bug, and this one produced no morae at all
+e04-1250yen.wav                    1250円   the normaliser ran the wrong way, so every digit missed the dictionary and became a pause
+e05-abc.wav                        ＡＢＣ   and so did Latin letters
+e06-gattsupoozu.wav                ガッツポーズ   halfwidth kana now compose before the lookup
+f00-1250yen.wav                    1250円   sen nihyaku gojuu en -- place value
+f01-nedan.wav                      値段は1250円です。   the same number in a sentence
+f02-ippon.wav                      一本   ippon, not ichi-hon: the counter semi-voices
+f03-sanbon.wav                     三本   sanbon: and here it voices instead
+f04-roppon.wav                     六本   roppon
+f05-sanbyaku.wav                   三百円   sanbyaku en: hyaku voices after san
+f06-ichiman.wav                    一万二千三百四十五円   12,345 yen -- four place-value groups
+f07-decimal.wav                    1.5   itten go -- the decimal point
+f08-phone.wav                      03-1234-5678   an identifier, not a quantity: read digit by digit, with 0 2 5 lengthened to zero nii goo
+f09-sanji.wav                      会議は三時半からです。   a time
+g00-honya.wav                      本屋   honya: /N/ before /y/, the broken context
+g01-tenin.wav                      店員   tenin: /N/ before a vowel, then a final /N/
+g02-sanpo.wav                      散歩   sanpo: /N/ before /p/, which always worked
+g03-renai.wav                      恋愛   ren'ai: /N/ before a vowel
+g04-denwa.wav                      電話   denwa: /N/ before /w/
+g05-nihon.wav                      日本語   nihongo: /N/ before /g/, velar
+g06-phone.wav                      03-1234-5678   the phone number the problem was heard in
+h00-hitotsubu.wav                  一粒   hitotsubu, not ichiryuu: 粒 takes the native one   accents [2]
+h01-futakuchi.wav                  二口   futakuchi: and the native two   accents [2]
+h02-hitotaba.wav                   一束   hitotaba   accents [2]
+h03-hitotoori.wav                  一通り   hitotoori -- 通り is read トオリ and pronounced トーリ, so this one only works if the dictionary carries both   accents [3]
+h04-santsubu.wav                   三粒   santsubu: 1.11 REMOVED the native three from the same table, so this is NOT mitsubu -- and the row is still in the header, commented out, which is how it got taken by mistake   accents [2]
+h05-hitori.wav                     一人   hitori   accents [2]
+h06-futsuka.wav                    二日   futsuka   accents [0]
+h07-tsuitachi.wav                  五月一日   gogatsu tsuitachi: 一日 after a month   accents [1, 4]
+h08-hatsuka.wav                    二十日   hatsuka, not nijuu-nichi   accents [0]
+h09-juuyokka.wav                   十四日   juuyokka   accents [1]
+h10-gojuuichi.wav                  五十一   gojuuichi -- flat: the ten after a five, six or eight loses its fall when another digit follows   accents [0, 2]
+h11-gojuu.wav                      五十   gojuu -- and keeps it when nothing does   accents [1]
+h12-nanahyaku.wav                  七百   nanahyaku: seven before a hundred falls on the second mora   accents [2]
+h13-sanzen.wav                     三千   sanzen   accents [3]
+h14-ichioku.wav                    一億   ichioku   accents [2]
+h15-rokuchou.wav                   六兆   rokuchou   accents [2]
+h16-juuni.wav                      十二   juuni -- a ten heading its own phrase is flat   accents [0, 1]
+i00-invented-blorf.wav             blorf -> ブローフ   accent 2
+i00-invented-zindle.wav            zindle -> ジンドル   accent 1
+i00-invented-frobnic.wav           frobnic -> フロブニック   accent 4
+i00-invented-splunge.wav           splunge -> スプランジ   accent 3
+i00-invented-glorp.wav             glorp -> グロープ   accent 2
+i00-invented-thrimble.wav          thrimble -> スリンブル   accent 2
+i00-invented-vorpal.wav            vorpal -> ボープル   accent 1
+i00-invented-brindle.wav           brindle -> ブリンドル   accent 2
+i00-invented-snarf.wav             snarf -> スナーフ   accent 2
+i00-invented-kludge.wav            kludge -> クラッジ   accent 2
+i00-invented-all.wav               invented words, which is what the rules are for
+i01-familiar-test.wav              test -> テスト   accent 1
+i01-familiar-desk.wav              desk -> デスク   accent 1
+i01-familiar-cat.wav               cat -> キャット   accent 1
+i01-familiar-cup.wav               cup -> カップ   accent 1
+i01-familiar-book.wav              book -> ブック   accent 1
+i01-familiar-bed.wav               bed -> ベッド   accent 1
+i01-familiar-bottle.wav            bottle -> ボトル   accent 1
+i01-familiar-little.wav            little -> リトル   accent 1
+i01-familiar-stop.wav              stop -> ストップ   accent 2
+i01-familiar-rock.wav              rock -> ロック   accent 1
+i01-familiar-box.wav               box -> ボックス   accent 1
+i01-familiar-bus.wav               bus -> バス   accent 1
+i01-familiar-much.wav              much -> マッチ   accent 1
+i01-familiar-music.wav             music -> ミュージック   accent 3
+i01-familiar-cute.wav              cute -> キュート   accent 1
+i01-familiar-fire.wav              fire -> ファイア   accent 1
+i01-familiar-google.wav            google -> グーグル   accent 1
+i01-familiar-all.wav               familiar words the rules get right, for calibration
+i02-spelling-computer.wav          computer -> コンピューター   accent 3
+i02-spelling-america.wav           america -> アメリカ   accent 2
+i02-spelling-internet.wav          internet -> インターネット   accent 5
+i02-spelling-pilot.wav             pilot -> パイロット   accent 3
+i02-spelling-lemon.wav             lemon -> レモン   accent 1
+i02-spelling-method.wav            method -> メソッド   accent 2
+i02-spelling-banana.wav            banana -> バナナ   accent 1
+i02-spelling-camera.wav            camera -> キャメラ   accent 1
+i02-spelling-about.wav             about -> アバウト   accent 2
+i02-spelling-all.wav               the reduced-vowel rule: the Japanese vowel comes from the SPELLING, which is what made computer コンピューター instead of キンピューター
+i03-misses-button.wav              button -> バトン   accent 1
+i03-misses-hello.wav               hello -> ヘロー   accent 1
+i03-misses-orange.wav              orange -> アーアンジ   accent 3
+i03-misses-water.wav               water -> ウオーター   accent 2
+i03-misses-window.wav              window -> ウインド   accent 2
+i03-misses-phone.wav               phone -> フォーン   accent 1
+i03-misses-table.wav               table -> テイブル   accent 2
+i03-misses-all.wav                 the ones that disagree with the established loanword -- spelling history, or a gap in the kana the reader has
