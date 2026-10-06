@@ -130,7 +130,7 @@ runtime functions the engine calls, and `src/port/stubs.c` the one call it
 makes back into the layer above it.
 
 The constant tables have to come from somewhere, and they come from
-`data/en/engine.tvdata`, which is committed -- an ordinary build needs no
+`lang/enu/data/engine.tvdata`, which is committed -- an ordinary build needs no
 Centigram binary at all.  `tools/extract_data.py` is what produced it out
 of the original, and `tools/gen_data.py` reads either that file or a DLL,
 interchangeably, writing an assembly file that puts the same bytes at the

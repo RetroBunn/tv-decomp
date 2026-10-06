@@ -76,7 +76,7 @@ def main():
               'examples': examples}
     save('morphology-followup-counts.json', result)
 
-    files = [ROOT / 'build/check/njd-reference.dll', ROOT / 'data/ja/jadic.bin',
+    files = [ROOT / 'build/check/njd-reference.dll', ROOT / 'lang/jpn/data/jadic.bin',
              ROOT / 'tools/gen_ja_dict.py', ROOT / 'tools/gen_ja_rules.py']
     for stage in ['njd', *A.STAGES]:
         files.extend(sorted((ROOT / SRC / stage).glob('*.c')))

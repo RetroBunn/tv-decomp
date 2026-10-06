@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Compile the naist-jdic dictionary into one file both front ends can read.
 
-    python tools/gen_ja_dict.py            # -> data/ja/jadic.bin
+    python tools/gen_ja_dict.py            # -> lang/jpn/data/jadic.bin
 
 WHY A COMPILER AND NOT THE CSV.  naist-jdic ships as 53 MB of CSV plus a 26 MB
 text connection matrix, and the Japanese front end has to look words up while
@@ -100,7 +100,7 @@ ROOT = os.path.dirname(HERE)
 # the fall in the wrong place.  Re-pointing this at one is a format bump, not
 # a path change -- see VERSION below.
 DIC = os.path.join(ROOT, 'open_jtalk-1.11', 'mecab-naist-jdic')
-OUT = os.path.join(ROOT, 'data', 'ja', 'jadic.bin')
+OUT = os.path.join(ROOT, 'lang', 'jpn', 'data', 'jadic.bin')
 
 MAGIC = b'OPENTVJ1'
 VERSION = 4   # 1 lost compound components; 2 was 1.09 data; 3 had no read

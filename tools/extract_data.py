@@ -2,9 +2,9 @@
 
 Usage: python tools/extract_data.py [<dll>] [<out.tvdata>] [<srcdir>]
 
-With no arguments it does English: CGRM_EN.DLL, data/en/engine.tvdata, src/.
+With no arguments it does English: CGRM_EN.DLL, lang/enu/data/engine.tvdata, src/.
 Spanish is
-  python tools/extract_data.py TruVoice/CGRM_ES.DLL data/es/engine.tvdata es
+  python tools/extract_data.py TruVoice/CGRM_ES.DLL lang/spa/data/engine.tvdata es
 
 This is run once, by someone who has the original, and the result is
 committed.  An ordinary build then needs no Centigram binary at all: see
@@ -36,7 +36,7 @@ def main():
     args = sys.argv[1:]
     image = args[0] if args else os.path.join(ROOT, "TruVoice", "CGRM_EN.DLL")
     out = (args[1] if len(args) > 1
-           else os.path.join(ROOT, "data", "en", "engine.tvdata"))
+           else os.path.join(ROOT, "lang", "enu", "data", "engine.tvdata"))
     srcdir = args[2] if len(args) > 2 else "src"
     if not os.path.isfile(image):
         sys.exit("extract_data: %s not found.  This step needs your own copy "

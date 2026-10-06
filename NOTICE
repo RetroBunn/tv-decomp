@@ -9,7 +9,7 @@ The data under `data/` is not.
 What it is
 ----------
 
-`data/en/engine.tvdata` holds the constant tables the American English
+`lang/enu/data/engine.tvdata` holds the constant tables the American English
 TruVoice engine reads: its letter-to-sound rules, its exception dictionary
 and suffix tables, the phoneme inventory and the per-phoneme formant,
 duration and amplitude tables, the prosody and duration-by-rate tables, and
@@ -226,9 +226,9 @@ described here, please open an issue on the repository and they will be removed.
 Japanese: naist-jdic and Open JTalk
 -----------------------------------
 
-`data/ja/jadic.bin` is compiled from **naist-jdic**, the morphological
+`lang/jpn/data/jadic.bin` is compiled from **naist-jdic**, the morphological
 dictionary distributed with Open JTalk, release 1.11 of December 2018.
-`data/ja/jadic.provenance.txt` records the source folder, the release and a
+`lang/jpn/data/jadic.provenance.txt` records the source folder, the release and a
 SHA-256 for each input file. It carries, for each of 486,757
 entries, the surface, the reading as said and the reading as written, the
 accent type, the mora count and the accent chain rule, plus the 1377x1377
@@ -309,7 +309,7 @@ Neither project's synthesiser is used or referenced. Open JTalk synthesises
 with an HMM; OpenTV is a formant synthesiser and the two have nothing in
 common below the text analysis. `open_jtalk-1.11/` is a reference checkout
 and is not committed -- `tools/gen_ja_dict.py` and `tools/gen_ja_rules.py`
-are how `data/ja/jadic.bin` and the rule tables were produced from it, and
+are how `lang/jpn/data/jadic.bin` and the rule tables were produced from it, and
 they are kept in the tree so that anyone with the checkout can confirm that
 what is committed here is what comes out of it.
 

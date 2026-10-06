@@ -39,7 +39,7 @@ import jp_speak as S, jp_mora as M
 
 OUT = os.path.join(HERE, 'oracle_frames.tsv')
 # The release the rest of the pipeline is built from; see
-# data/ja/jadic.provenance.txt.  Read here only as a corpus -- a varied
+# lang/jpn/data/jadic.provenance.txt.  Read here only as a corpus -- a varied
 # word list -- but reading a different one than the front end uses would
 # be a needless second source of difference.
 DICT = os.path.join('open_jtalk-1.11', 'mecab-naist-jdic',

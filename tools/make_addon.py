@@ -48,7 +48,7 @@ def main():
     # first.  Without it the Japanese voices still work -- they read kana and
     # romaji exactly as they did before the analyser existed -- but every
     # kanji is dropped, so this is not optional for a user who wants Japanese.
-    jadic = os.path.join(ROOT, "data", "ja", "jadic.bin")
+    jadic = os.path.join(ROOT, "lang", "jpn", "data", "jadic.bin")
     if "--no-ja" in sys.argv[1:]:
         print("leaving the Japanese dictionary out (--no-ja)")
     elif os.path.isfile(jadic):

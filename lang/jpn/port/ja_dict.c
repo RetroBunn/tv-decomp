@@ -1,7 +1,7 @@
 /*
  * The dictionary, and the Viterbi over it.
  *
- * Translated from build/Japanese_test/jp_dict.py.  data/ja/jadic.bin is
+ * Translated from build/Japanese_test/jp_dict.py.  lang/jpn/data/jadic.bin is
  * naist-jdic compiled by tools/gen_ja_dict.py: for each of 486,757 entries a
  * surface, a reading, the reading as written, an accent type, a mora count, a
  * part-of-speech tuple and an accent chain rule, plus the 1377x1377 connection
@@ -954,13 +954,14 @@ const char *ja_dict_path(char *buf, size_t cap)
      * Beside the module is where a package puts it -- the NVDA add-on and the
      * SAPI installer both ship it next to the DLL.  The two `..` entries are
      * for a development build, where the DLL is in build/bin and the
-     * dictionary is at data/ja/jadic.bin in the repository root; without them
+     * dictionary is at lang/jpn/data/jadic.bin in the repository; without them
      * nothing in the tree would find it without setting the environment
      * variable, which is a trap rather than a design.
      */
-    static const char *const rel[] = { "jadic.bin", "data/ja/jadic.bin",
-                                       "../data/ja/jadic.bin",
-                                       "../../data/ja/jadic.bin" };
+    static const char *const rel[] = { "jadic.bin",
+                                       "lang/jpn/data/jadic.bin",
+                                       "../lang/jpn/data/jadic.bin",
+                                       "../../lang/jpn/data/jadic.bin" };
     char dir[1024];
     const char *env = getenv("TVTTS_JA_DICT");
     size_t i;

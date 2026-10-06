@@ -261,7 +261,7 @@ static int do_voice_sources(void)
  * with a second implementation of the same reading -- it is agreeing with the
  * thing the rules were read from.
  *
- * Needs data/ja/jadic.bin.  Without it the analyser is skipped entirely and
+ * Needs lang/jpn/data/jadic.bin.  Without it the analyser is skipped entirely and
  * the kana path is unaffected, so this reports that rather than failing.
  */
 /* The 32-bit build links a minimal msvcrt import list, and mingw's snprintf

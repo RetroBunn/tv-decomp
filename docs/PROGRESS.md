@@ -110,7 +110,7 @@ handles; other node types are control commands it executes in passing.
   and `atol` read the "C" locale table the original CRT built into its own
   data, so bytes over 0x7f classify the same way; and `stubs.c` for the one
   call the engine makes back into the layer above it.  The constant tables
-  come from `data/en/engine.tvdata`, which is in the repository, so both
+  come from `lang/enu/data/engine.tvdata`, which is in the repository, so both
   the build and the program need no Centigram binary: the program loads no
   DLL, talks to no SAPI and reads no registry, and its only import is the
   C runtime.

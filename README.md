@@ -266,7 +266,7 @@ separately against the Python over 60,055 inputs.
 ### It reads kanji, and it knows the accent
 
 Both of those arrived late and they arrived together, because they come from
-the same place. `data/ja/jadic.bin` is naist-jdic compiled down: for each of
+the same place. `lang/jpn/data/jadic.bin` is naist-jdic compiled down: for each of
 486,757 entries a reading, an accent type, a mora count and an accent chain
 rule, with the 1377x1377 connection matrix a morphological analyser needs. The
 front end runs a Viterbi over it and then Open JTalk's rule stages, which are

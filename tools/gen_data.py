@@ -6,7 +6,7 @@ Usage: python tools/gen_data.py [--prefix P] <image> <srcdir> <out.s> <obj>...
 symbols are compiled with that prefix (see tools/gen_rename.py), so the labels
 here have to carry it too, while the annotations they are looked up by do not.
 
-<image> is either data/en/engine.tvdata, which is what an ordinary
+<image> is either lang/enu/data/engine.tvdata, which is what an ordinary
 build uses and needs no Centigram binary, or a TruVoice DLL for anyone
 who has one.  tools/extract_data.py makes the former out of the latter,
 and the two give byte-identical output.

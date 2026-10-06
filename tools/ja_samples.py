@@ -35,7 +35,7 @@ PROBES = [
 ]
 
 # And the things only the DICTIONARY can say.  Everything above is kana, which
-# the library could always read; these need data/ja/jadic.bin, the Viterbi and
+# the library could always read; these need lang/jpn/data/jadic.bin, the Viterbi
 # the five rule stages, and before the analyser was ported to C the library
 # dropped every one of these kanji and said only the particles.
 #

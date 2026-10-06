@@ -7,7 +7,7 @@ was given was kana with no accent, because the thing that supplies kanji
 readings and accent types is a morphological analyser over a dictionary, and
 there wasn't one.
 
-There is now. `data/ja/jadic.bin` (tools/gen_ja_dict.py) holds naist-jdic: for
+There is now. `lang/jpn/data/jadic.bin` (tools/gen_ja_dict.py) holds naist-jdic: for
 every one of 486,757 entries a reading, an accent type, a mora count and an
 accent chain rule, plus the 1377x1377 connection matrix that decides where one
 word ends and the next begins.
@@ -40,7 +40,7 @@ from ojt_tables import (CONV as _CONV, MORA as _MORA,
                         PRONUNCIATION_CONST as _PRONUNCIATION_CONST)
 
 ROOT = os.path.dirname(os.path.dirname(HERE))
-DICT = os.path.join(ROOT, 'data', 'ja', 'jadic.bin')
+DICT = os.path.join(ROOT, 'lang', 'jpn', 'data', 'jadic.bin')
 
 MAGIC = b'OPENTVJ1'
 ENTRY = struct.Struct('<IIIHHhHBBBBI')

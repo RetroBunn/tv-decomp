@@ -133,7 +133,7 @@ fi
 # constant tables it reads are committed under data/ -- see NOTICE for whose
 # work those are.  Set TV_DLL to build from your own copy of the original
 # instead; tools/extract_data.py says why the two are interchangeable.
-DATA=${TV_DLL:-${TV_DATA:-data/en/engine.tvdata}}
+DATA=${TV_DLL:-${TV_DATA:-lang/enu/data/engine.tvdata}}
 if [ ! -f "$DATA" ]; then
   echo "no $DATA: set TV_DATA or TV_DLL, or run tools/extract_data.py" >&2
   exit 1
@@ -198,7 +198,7 @@ echo "built $CHECK/ja_check32.exe"
 # name of its own prefixed es_, from a header tools/gen_rename.py writes out of
 # the annotations, and its data is laid out under the same prefix.  src/port/api.c
 # is the only file that knows there is more than one engine.
-ES_DATA=${TV_DLL_ES:-${TV_DATA_ES:-data/es/engine.tvdata}}
+ES_DATA=${TV_DLL_ES:-${TV_DATA_ES:-lang/spa/data/engine.tvdata}}
 if [ -n "$(find lang/spa/engine -name '*.c' 2>/dev/null)" ] && [ -f "$ES_DATA" ]; then
   ESPORT=$OBJ/esport
   mkdir -p "$ESPORT/obj"

@@ -408,7 +408,7 @@ field.  Two types it refers to, `TextIn` and `SapiCentral`, are forward
 declared in `lang/spa/engine/es_engine.h` and not laid out yet; declaring them keeps the
 fields that hold them, and every offset after them, honest.
 
-`data/es/` is empty on purpose.  `tools/extract_data.py` decides what to
+`lang/spa/data/` is empty on purpose.  `tools/extract_data.py` decides what to
 pull from a DLL partly from the address annotations in the source, and there
 are not yet enough Spanish ones to drive it.
 
@@ -2188,7 +2188,7 @@ and the hook build proves the change was empty, because `TV_REF` is a no-op cast
 there and all 205 configurations still come out identical.
 
 **The data.**  `python tools/extract_data.py TruVoice/CGRM_ES.DLL
-data/es/engine.tvdata es` lifts the tables out: 155,857 bytes in six chunks,
+lang/spa/data/engine.tvdata es` lifts the tables out: 155,857 bytes in six chunks,
 1,039 relocations.  Spanish has a `.bss` that English does not -- 104 KB at
 0x1002e000, where the lexicon and abbreviation tables are copied at load time so
 the host can add to them -- and because it is zero-filled it costs the

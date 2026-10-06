@@ -135,7 +135,7 @@ def main():
     report = {'reference_version': 'Built from %s' % SRC,
               'scope': 'NJD stages on identical input nodes; not a MeCab/Viterbi parity test',
               'sha256': {}}
-    for rel in ['data/ja/jadic.bin', SRC + '/njd/njd_node.c'] + [
+    for rel in ['lang/jpn/data/jadic.bin', SRC + '/njd/njd_node.c'] + [
             SRC + '/' + s + '/' + s + '.c' for s in STAGES]:
         report['sha256'][rel] = hashlib.sha256((ROOT / rel).read_bytes()).hexdigest()
     report['normalization'] = [[t, D.normalize(t), normalize(t)]

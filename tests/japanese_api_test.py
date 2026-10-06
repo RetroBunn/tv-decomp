@@ -146,13 +146,13 @@ class JapaneseVoiceTests(unittest.TestCase):
         different devoiced mora -- the PCM would differ, because all three
         change the frames.
 
-        Skipped rather than failed when data/ja/jadic.bin is absent: without
+        Skipped rather than failed when the dictionary is absent: without
         it the library is meant to fall back to the kana path, which is what
         the rest of this file tests.
         """
         import jp_front as F
-        if not (ROOT / 'data' / 'ja' / 'jadic.bin').is_file():
-            self.skipTest('data/ja/jadic.bin is not built')
+        if not (ROOT / 'lang' / 'jpn' / 'data' / 'jadic.bin').is_file():
+            self.skipTest('lang/jpn/data/jadic.bin is not built')
         texts = ['私は日本語を話します。', '値段は1,250円です。',
                  '箸が', '橋が', '端が',
                  '明日の会議は何時からですか？', '一粒', '二十日']
@@ -219,8 +219,8 @@ class JapaneseVoiceTests(unittest.TestCase):
         to be /wi.N.do/ alone and ウィンドーズ with any Japanese after it.
         """
         import jp_front as F
-        if not (ROOT / 'data' / 'ja' / 'jadic.bin').is_file():
-            self.skipTest('data/ja/jadic.bin is not built')
+        if not (ROOT / 'lang' / 'jpn' / 'data' / 'jadic.bin').is_file():
+            self.skipTest('lang/jpn/data/jadic.bin is not built')
         # The three steps, in the order the router tries them.  The lexicon
         # group is the one the measurement forced: every Japanese system reads
         # a bare `take` as English テイク, and trying romaji first got 107 of
@@ -339,8 +339,8 @@ class JapaneseVoiceTests(unittest.TestCase):
         import jp_g2p as GP
         import jp_front as F
         import jp_njd as NJ
-        if not (ROOT / 'data' / 'ja' / 'jadic.bin').is_file():
-            self.skipTest('data/ja/jadic.bin is not built')
+        if not (ROOT / 'lang' / 'jpn' / 'data' / 'jadic.bin').is_file():
+            self.skipTest('lang/jpn/data/jadic.bin is not built')
         words = ['computer', 'blorf', 'zindle', 'frobnic', 'kludge',
                  'mouse', 'fire', 'test', 'cat', 'music']
         try:

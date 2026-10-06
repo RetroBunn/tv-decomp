@@ -94,7 +94,7 @@ Section "OpenTV SAPI 5 voices" SecMain
   ; romaji -- exactly as they did before the analyser existed -- and drop
   ; every kanji, so it is not optional for anyone who wants Japanese.  It is
   ; 26 MB and it is most of this installer.
-  File "/oname=jadic.bin" "..\data\ja\jadic.bin"
+  File "/oname=jadic.bin" "..\lang\jpn\data\jadic.bin"
   File "/oname=LICENSE.txt" "..\LICENSE"
   File "/oname=NOTICE.txt"  "..\NOTICE"
 

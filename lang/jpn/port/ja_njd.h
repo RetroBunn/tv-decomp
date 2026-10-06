@@ -37,7 +37,7 @@
 /* ---- the compiled dictionary (ja_dict.c) -------------------------------- */
 
 /*
- * data/ja/jadic.bin, format version 4, as tools/gen_ja_dict.py writes it.
+ * lang/jpn/data/jadic.bin, format version 4, as tools/gen_ja_dict.py writes it.
  * The whole file is read into one buffer and nothing is copied out of it: the
  * string pools are NUL-separated, so a surface or a reading is a pointer into
  * the buffer, and a part-of-speech tuple is six consecutive strings.
@@ -68,7 +68,7 @@ const char *ja_dict_error(int code);
 
 /*
  * Where the dictionary is: $TVTTS_JA_DICT if set, else jadic.bin or
- * data/ja/jadic.bin beside the loaded module and then beside the executable.
+ * lang/jpn/data/jadic.bin beside the loaded module, then beside the executable.
  * Writes an absolute path into `buf` and returns it, or NULL if none exists.
  */
 const char *ja_dict_path(char *buf, size_t cap);

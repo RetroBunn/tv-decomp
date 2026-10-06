@@ -76,9 +76,9 @@ dkms.conf
 # two above it could be redistributed -- it is kept out because it is a
 # reference we read, not a part of OpenTV.  See NOTICE for what was read.
 #
-# The generators read it: data/ja/jadic.bin is compiled from its dictionary
+# The generators read it: lang/jpn/data/jadic.bin is compiled from its dictionary
 # and build/Japanese_test/ojt_tables.py from its rule headers, and
-# data/ja/jadic.provenance.txt records the release and the hash of every
+# lang/jpn/data/jadic.provenance.txt records the release and the hash of every
 # input.  build/check/openjtalk_morph_audit.py compiles its five NJD stages
 # into the reference library the parity tool compares against.
 /open_jtalk-1.11/

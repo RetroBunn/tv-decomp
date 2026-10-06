@@ -484,7 +484,7 @@ The analyser is in C (`lang/jpn/port/ja_dict.c`, `ja_njd.c`, `ja_digit.c`,
 at both word widths, so the shipped library reads kanji. What is left is a
 packaging question rather than a linguistic one, and it has two parts.
 
-**Finding the file.** `data/ja/jadic.bin` is read from disk, not compiled in,
+**Finding the file.** `lang/jpn/data/jadic.bin` is read from disk, not compiled in,
 because 26 MB in the DLL would be paid for by every English user. The search
 is `$TVTTS_JA_DICT`, then beside the loaded module, then beside the
 executable; the NVDA add-on and the SAPI installer both put it beside the DLL.
