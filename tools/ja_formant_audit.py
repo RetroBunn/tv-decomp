@@ -126,7 +126,7 @@ def main():
         consonant_limit='Tanaka measured F2 in the middle of release/frication NOISE, not at voiced-vowel onset. Existing transition rows inspired by that paper are proxies. No replacement voiced-onset table was established here.',
         targets=[], audio=[], acoustic_diagnostic=[],
         acoustic_method='Stock voice 0 at 100 Hz, 700 control ms; autocorrelation LPC of raw PCM from 250 to 600 ms, preemphasis .97, Hamming window, order 2+floor(sr/1000). Estimator-dependent poles, not grounds for retuning targets.',
-        listening_status='Not perceptually validated')
+        listening_status='Heard and judged better on 2026-10-05, on words-before-after.wav; a preference between two renderings, not a measurement of either')
     for v in 'aiueo':
         for ctx in ('', 'k', 's', 'py', 'h') if v == 'u' else ('',):
             for long in (False, True):

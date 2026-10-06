@@ -3033,3 +3033,82 @@ Every word measured now ends at exactly 0. The oracle was regenerated and the
 C matches it at both word widths. Four cases in japanese_diagnostic_test.py
 hold the tail and two in japanese_api_test.py hold the escape, including that
 an inline pitch does not stick to the synthesiser.
+
+
+2026-10-05: the vowel targets were long vowels all along
+----------------------------------------------------------
+Mokhtari & Tanaka's 35 formant and bandwidth values were transcribed correctly
+and used as SHORT targets, with a further shift added on top for long vowels.
+Their material is not short vowels.  Appendix A says what the selection was for
+in its own caption -- "which aimed to identify the lengthiest and potentially
+most steady-state vowel nuclei" -- and counting the 110 bolded nuclei gives 89
+long and 21 doubled, with no short vowel among them:
+
+    /i/  zaii kuiiji shujii iiki kariio obiiwai yuiitsu          7 doubled
+    /e/  kareeda                                                 1
+    /a/  baai kaatsu shiraae hadaai haari akaaza yaawase         7
+    /o/  none                                                    0
+    /uu/ usuusu uzuuzu shukuu shibuuchiwa ramuu-ru myakuutsu     6
+
+So the reference anchors the LONG target, and the short one is estimated by
+subtracting Yazawa & Kondo's long-minus-short differences.  The error
+compounded: a sustained-vowel measurement was used as the short target AND
+shifted again for length, so long vowels ran past an already sustained
+reference.  Long /o/ had F2 720 where the published median is 857.
+
+Checked against the sources rather than against the audit's own script: the
+pooled medians recompute from the 2750-row ETL file (5 speakers x 5 vowels x 22
+words x 5 frames), all ten V_DUR values reproduce from Yazawa & Kondo's dataset
+over male EMBEDDED tokens at 80 observations each, and all five length deltas
+reproduce over male BOTH positions at 160 each.  The two selections differ on
+purpose -- durations exclude isolated citation forms because a reader produces
+connected text -- and that difference is worth keeping in mind before anyone
+recomputes one of them from "the dataset" and quietly gets the other wrong.
+
+The delta signs are physically coherent, which a sign error would have passed
+silently: long /i/ fronter (F2 +139), long /o/ backer (-136), long /a/ opener
+(F1 +57).
+
+Heard and judged better on 2026-10-05.  That is a preference between two
+renderings, not a measurement of either, and the limits stand: transferring an
+additive contrast between corpora is an approximation, F4 and the bandwidths
+have no matched length data, and Tanaka's consonant figures measure release
+noise rather than a voiced transition endpoint.
+
+
+2026-10-05: the timing allocator, and why its own figures move
+----------------------------------------------------------------
+Four allocation bugs, all in how the mora budget redistributes time:
+compensation cut `kiita`'s scheduled long-vowel extension from 80 ms to 40;
+it treated consonant transitions and vowel tapers as expendable steady vowel;
+one phrase's budget could shorten vowels in the phrase before it; and rounding
+during expansion could shorten a vowel it was supposed to lengthen.  Where
+keeping the cues costs more than the nominal budget, the utterance now runs
+slightly longer rather than eating them.
+
+Checked rather than taken on trust.  `kita` is 37 frames and `kiita` 45, so
+the long increment is the full 80 ms again.  All ten V_DUR values reproduce
+from Yazawa & Kondo's dataset over male EMBEDDED tokens at exactly 80
+observations each.
+
+THE CORPUS FIGURES ARE NOT A FIXED PROPERTY, which is worth knowing before
+anyone quotes them.  The audit freezes a baseline copy of jp_speak.py but NOT
+of jp_voice.py, so both sides of the comparison use whatever vowel targets are
+current.  Measured against the same baseline:
+
+    reported, under the old vowel targets   111 words changed, max 140 ms
+    re-run under the corrected ones          80 words changed, max 100 ms
+
+Same timing fix, different formant targets underneath, so different glide
+lengths and a different delta.  Both are honest measurements of different
+things, and the second is the one that matches the shipped tree.
+
+Note also which denominator a mean uses: 5.48 ms is the average over all 533
+words, 453 of which did not move at all.  Over the 80 that did it is 36.5 ms.
+The audit's own JSON gives median_change_ms 0, which says the same thing.
+
+Heard and judged good on 2026-10-05, on timing-before-after.wav -- kiita,
+shashin, sashisuseso and papa | aoiueo.  A preference between two renderings,
+not a validated segmentation: the 35 ms vowel allowance, the nasal and glide
+holds, the universal slew, the final fade and the rate law all remain
+uncalibrated, and the audit says so itself.

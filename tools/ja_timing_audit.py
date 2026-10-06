@@ -63,7 +63,7 @@ def main():
             assert round(reference[key]['mean_ms'], 1) == S.V_DUR[v][i]
     report = dict(
         kind='Control-allocation audit; not validated acoustic segmentation',
-        listening_status='Not perceptually validated',
+        listening_status='Heard and judged good on 2026-10-05, on timing-before-after.wav; a preference between two renderings, not a validated segmentation',
         source_sha256={str(p.relative_to(ROOT)): digest(p) for p in (
             DATA, Path(S.__file__), ROOT / 'lang/jpn/port/ja_frame.c',
             ROOT / 'build/bin/tvtts64.dll', Path(__file__))},
