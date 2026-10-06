@@ -36,7 +36,7 @@
  * sequence, and the same SAPI central object layout -- so all the harness
  * needs is where each one keeps things.  How the Spanish addresses and
  * offsets were established is written up in docs/SPANISH.md, and the field
- * offsets are listed in es/engine.fields. */
+ * offsets are listed in lang/spa/engine/engine.fields. */
 typedef struct {
     const char *name;
     /* engine object methods */

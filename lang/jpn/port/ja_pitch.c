@@ -25,7 +25,7 @@
  * Those are the platform's, and Python's are too, so a last-bit disagreement
  * between the two libms would show up as a one-unit difference in track 17 on
  * the odd frame.  tests/ja_check.c would catch it and name the frame; see
- * jp_res/open_questions.md for what was actually measured.
+ * lang/jpn/research/open_questions.md for what was actually measured.
  */
 #include <math.h>
 #include <stdlib.h>

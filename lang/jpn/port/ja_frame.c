@@ -45,6 +45,37 @@
 /* A geminate before a fricative is noise, not silence: see the geminate
  * branch in ja_build.  The Python calls this FRIC_GEMINATE too. */
 #define FRIC_GEMINATE 1
+/*
+ * Frames of amplitude ramp at the very end of an utterance.  The engine's own
+ * output ends at zero -- English and Spanish both measure 0 for the last
+ * sample -- because their frames decay; these stopped dead, so the last sample
+ * sat wherever the waveform was, up to 40% of the loudest one in the word, and
+ * the step to silence was heard as a click.  Worst on the single letters and
+ * cursor announcements a screen reader says constantly.  Three frames is
+ * 30 ms, the same fade jp_speak.render has always applied to its WAVs.
+ */
+#define FINAL_FADE      6
+/*
+ * Decibels of fall per frame.  Tracks 0, 1 and 2 are about a decibel a unit,
+ * so this is SUBTRACTED from them: a linear decibel slope.  Scaling them
+ * towards zero instead is -20 dB a frame, four times Spanish's slope, and the
+ * ear called that a cut even though it reached silence exactly.  Measured as
+ * an envelope in 10 ms cells, dB below the word's loudest:
+ *
+ *     es hola      -7  -11  -20  -29  -30  -30  -29  -inf
+ *     ja before    -7  -20  -28  -43  -inf
+ *     ja after     -4   -9  -14  -19  -22  -26  -30  -34  -inf
+ */
+#define FINAL_FADE_STEP 5
+#define FINAL_FADE_MIN  6
+/*
+ * And silent frames after it, because the ramp alone changed nothing: the
+ * engine renders the frames it is given and stops, so the filter is still
+ * ringing when the samples run out.  Five is where the last sample reaches
+ * exactly zero for every word measured; with the ramp but no padding it sat
+ * at up to 58% of the loudest sample in the word, and that step is the click.
+ */
+#define FINAL_PAD       6
 #define NASAL_BW     60
 
 /* Idemaru & Guion 2008: a geminate is not just a longer closure.  The
@@ -501,7 +532,8 @@ static int offglide(const bctx *B, fvec *v, const ja_post prev_sp,
 
 typedef struct {
     int start, steady, len, head, nominal, give;
-    int has_steady;
+    int has_steady, adjustable, budget_break;
+    uint8_t steady_frame[JA_NTRACK];
 } span;
 
 static int span_len(const span *sp, int n_sp, int total, int i)
@@ -542,31 +574,31 @@ static int voiceless(int c)
 /* ---- Homma's word-level compensation ------------------------------------ */
 
 /*
- * Homma 1981: temporal compensation works within a WORD, not a mora.  Each
- * mora is worth a nominal number of frames; a consonant that needs more than
- * its share is paid for by the vowels of the whole word rather than by letting
- * the word grow.  Her evidence is /papa/ at 260 ms against /gaga/ at 267 --
- * the first syllable differs by 37 ms, the words by 7.
+ * Homma 1981 reports compensation within a word: /papa/ at 260 ms against
+ * /gaga/ at 267, despite a 37-ms difference in their first syllables. This
+ * motivates sharing a nominal budget across morae, but does not establish
+ * exact isochrony. Redistribution here remains a modelling approximation.
  *
- * Only plain steady vowel is spent.  Not the geminate closure, which is the
- * length cue itself; not a pause; and not the head of a glottalised vowel,
- * whose first frames carry the creak dip.
+ * Lexical-word boundaries are not available here. At least keep the budget
+ * within a continuous stretch between explicit pauses, so a later phrase
+ * cannot change an earlier phrase's segment allocations.
+ *
+ * Only unchanged steady vowel is adjustable. Protect offglides and tapers
+ * already written into its tail, glottal heads, and the explicit long-vowel
+ * increment (like geminate closure). An infeasible budget may overrun.
  */
 static int compensate(fvec *out, span *sp, int n_sp,
                       const int *q_sp, const int *q_rel, int n_q,
                       double *ends, double *q_out)
 {
-    int target = 0, delta, i, idx, n_adj = 0, tot = 0, err, j;
+    int delta, i, idx, n_adj = 0, tot, err, j, first, last;
     int *adj, *cap, *give, *pos;
     fvec nv;
 
     for (i = 0; i < n_sp; i++)
-        target += sp[i].nominal;
-    delta = target - out->n;
-    for (i = 0; i < n_sp; i++)
-        if (sp[i].has_steady)
+        if (sp[i].adjustable)
             n_adj++;
-    if (n_adj == 0 || delta == 0) {
+    if (n_adj == 0) {
         for (i = 0; i < n_sp; i++)
             ends[i] = (sp[i].start + span_len(sp, n_sp, out->n, i)) / 100.0;
         for (i = 0; i < n_q; i++)
@@ -581,42 +613,63 @@ static int compensate(fvec *out, span *sp, int n_sp,
         free(adj); free(cap); free(give); free(pos);
         return -1;
     }
-    n_adj = 0;
-    for (i = 0; i < n_sp; i++)
-        if (sp[i].has_steady)
-            adj[n_adj++] = i;
-    for (i = 0; i < n_adj; i++) {
-        int room = sp[adj[i]].len - sp[adj[i]].head - (delta < 0 ? MIN_VOWEL : 0);
+    first = 0;
+    for (last = 0; last <= n_sp; last++) {
+        int end, target = 0, want;
 
-        cap[i] = imax(0, room);
-        tot += cap[i];
-        give[i] = 0;
-    }
-    if (tot > 0) {
+        if (last < n_sp && !sp[last].budget_break)
+            continue;
+        if (first == last) {
+            first = last + 1;
+            continue;
+        }
+        end = last < n_sp ? sp[last].start : out->n;
+        n_adj = 0;
+        for (i = first; i < last; i++) {
+            target += sp[i].nominal;
+            if (sp[i].adjustable)
+                adj[n_adj++] = i;
+        }
+        delta = target - (end - sp[first].start);
+        tot = 0;
         for (i = 0; i < n_adj; i++) {
-            int g = (int)ja_round((double)delta * (cap[i] / (double)tot));
+            const span *s = &sp[adj[i]];
+            int at = s->steady + s->head, stable = 0, k;
 
-            if (delta < 0 && g < -cap[i])
-                g = -cap[i];
-            give[i] = g;
+            for (k = at; k < s->steady + s->len; k++) {
+                if (memcmp(fv_at(out, k), s->steady_frame, JA_NTRACK) != 0)
+                    break;
+                stable++;
+            }
+            cap[i] = imax(0, stable - (delta < 0 ? MIN_VOWEL : 0));
+            tot += cap[i];
         }
-        /* rounding leftovers onto whichever run has the most room */
-        err = delta;
-        for (i = 0; i < n_adj; i++)
-            err -= give[i];
-        if (err) {
-            j = 0;
-            for (i = 1; i < n_adj; i++)
-                if (cap[i] > cap[j])
-                    j = i;
-            if (delta < 0)
-                give[j] = imax(give[j] + err, -cap[j]);
-            else
-                give[j] += err;
+        if (tot > 0 && delta) {
+            want = imax(delta, -tot);
+            err = want;
+            for (i = 0; i < n_adj; i++) {
+                give[i] = (int)ja_round(want * (cap[i] / (double)tot));
+                err -= give[i];
+            }
+            /* Preserve the exact feasible budget despite frame rounding. */
+            while (err) {
+                int step = err > 0 ? 1 : -1;
+                j = -1;
+                for (i = 0; i < n_adj; i++) {
+                    if (!cap[i] ||
+                        (err < 0 && give[i] <= (want < 0 ? -cap[i] : 0)) ||
+                        (err > 0 && want < 0 && give[i] >= 0))
+                        continue;
+                    if (j < 0 || cap[i] > cap[j]) j = i;
+                }
+                give[j] += step;
+                err -= step;
+            }
+            for (i = 0; i < n_adj; i++)
+                sp[adj[i]].give = give[i];
         }
+        first = last + 1;
     }
-    for (i = 0; i < n_adj; i++)
-        sp[adj[i]].give = give[i];
 
     fv_init(&nv);
     for (idx = 0; idx < n_sp; idx++) {
@@ -830,6 +883,7 @@ int ja_build(const ja_mora *morae, int n_morae, const ja_opts *o, ja_utt *u)
         rec->start = mora_start;
         rec->steady = 0; rec->has_steady = 0;
         rec->len = 0; rec->head = 0; rec->nominal = 0; rec->give = 0;
+        rec->budget_break = morae[n].kind == JA_M_BAR || morae[n].kind == JA_M_BARBAR;
 
         if (morae[n].kind == JA_M_SP) {
             /* An accent phrase boundary is a PITCH event, not a silence: the
@@ -1043,11 +1097,11 @@ int ja_build(const ja_mora *morae, int n_morae, const ja_opts *o, ja_utt *u)
          * length, because what was left to shorten was already at its floor.
          *
          * So they scale proportionally, with a floor of one frame.  It is
-         * monotone and it is the simplest thing that is not wrong in an
-         * obvious direction (consonants do shorten with rate, just less than
-         * vowels do).  At the default rate the factor is exactly 1.0 and both
-         * values are unchanged, which is why the oracle still holds.  Nobody
-         * has listened to the fast end yet.
+         * monotone, but not a calibrated Japanese rate law: rate sensitivity
+         * differs among consonant classes (Katsuda & Kang 2026), so a general
+         * claim that all consonants shorten less than vowels is unwarranted.
+         * At the default rate the factor is exactly 1.0 and both values are
+         * unchanged. Perceptual validation across rates remains separate.
          */
         if (hold > 0)
             hold = imax(1, (int)ja_round(hold * B.rate_scale));
@@ -1319,6 +1373,19 @@ int ja_build(const ja_mora *morae, int n_morae, const ja_opts *o, ja_utt *u)
             if (B.engine_voice == 1 && B.sr == 11025 &&
                 c == JA_C_KY && v == JA_V_U)
                 B.release_headroom = 5;
+            /* Preserving the full vowel transition changes the filter state
+             * reached after a one-frame palatal release. At the API maximum
+             * of 253 wpm, apyua (Kenta/Keiko) and akyea (Keiko) need these
+             * additional release-only allowances at 11 kHz. The measured
+             * peaks are 25408, 23712 and 24472 respectively. */
+            if (B.sr == 11025 && vot == 1) {
+                if (B.engine_voice == 2 && c == JA_C_PY)
+                    B.release_headroom = 8;
+                if (B.engine_voice == 9 && c == JA_C_KY)
+                    B.release_headroom = 9;
+                if (B.engine_voice == 9 && c == JA_C_PY)
+                    B.release_headroom = 7;
+            }
 
             /* The closure takes the locus posture (that is where the formants
              * were heading as the vowel before it ended); the burst takes its
@@ -1586,6 +1653,8 @@ int ja_build(const ja_mora *morae, int n_morae, const ja_opts *o, ja_utt *u)
          */
         rec->steady = steady_at;
         rec->has_steady = 1;
+        rec->adjustable = 1;
+        memcpy(rec->steady_frame, fv_at(&out, steady_at), JA_NTRACK);
         rec->len = imax(nv_, 1);
         rec->nominal = mora_frames(&B) + vowel_frames(&B, v, 0) - v_default(&B);
         rec->head = glottal[n] ? GLOTTAL_FRAMES : 0;
@@ -1607,11 +1676,12 @@ int ja_build(const ja_mora *morae, int n_morae, const ja_opts *o, ja_utt *u)
                             ends, q_out) != 0)
         fail = 1;
 
-    /* Kenta's devoiced /u/ leaves cascade state that can wrap when /s/
-     * switches to its noise posture at 11 kHz. Reduce just the last
-     * aspiration frame, after redistribution has fixed its position.
-     * The sashisuseso probe needs 17 units at 300 wpm; use 18 for headroom.
-     * This preserves the rest of the vowel and all timing and voicing. */
+    /* Kenta's /u/ leaves cascade state that can wrap when /s/ switches to
+     * its noise posture at 11 kHz. Taper just the final source frame after
+     * redistribution has fixed its position. The devoiced sashisuseso probe
+     * needs 17 aspiration units at the API's maximum rate; use 18. With the
+     * full transition preserved, the voiced 90-wpm probe needs five voicing
+     * units (peak 26400). Neither changes duration or the voicing decision. */
     if (!fail && B.engine_voice == 2 && B.sr == 11025) {
         for (n = 0; n + 1 < n_morae; n++) {
             int end = (int)ja_round(ends[n] * 100.0);
@@ -1619,6 +1689,7 @@ int ja_build(const ja_mora *morae, int n_morae, const ja_opts *o, ja_utt *u)
                 end > 0 && end <= out.n) {
                 uint8_t *f = out.f + (end - 1) * JA_NTRACK;
                 if (!f[0] && f[2]) f[2] = (uint8_t)imax(0, f[2] - 18);
+                else if (f[0]) f[0] = (uint8_t)imax(0, f[0] - 5);
             }
         }
     }
@@ -1629,6 +1700,43 @@ done:
         free(ends);
         free(q_out);
     } else {
+        /*
+         * Ramp the three amplitude tracks to zero over the last frames.
+         * Tracks 0, 1 and 2 are voicing, frication and aspiration -- the same
+         * three the volume attenuation works on, because they are the three
+         * that carry level.  The ramp is linear in track units, which are
+         * about a decibel each, so it is heard as a short decay rather than
+         * as a cut.  See FINAL_FADE above for why it is here at all.
+         */
+        if (out.n > 0 && FINAL_FADE > 0 && out.n >= FINAL_FADE_MIN) {
+            /* At most half the utterance, so a one-mora word still has a
+             * word in it; the ramp is a tail, not the whole thing. */
+            int k = imin(FINAL_FADE, imax(1, out.n / 2)), fi;
+
+            for (fi = 0; fi < k; fi++) {
+                uint8_t *f = out.f + (size_t)(out.n - k + fi) * JA_NTRACK;
+                int sub = FINAL_FADE_STEP * (fi + 1);
+                int t;
+
+                for (t = 0; t <= 2; t++)
+                    f[t] = (uint8_t)imax(0, (int)f[t] - sub);
+            }
+        }
+        if (out.n > 0 && FINAL_PAD > 0) {
+            uint8_t *p = fv_grow(&out, FINAL_PAD);
+
+            /*
+             * Out of memory here ships the utterance unpadded rather than
+             * failing it: the listener gets the click back, which is what
+             * they had before, instead of silence.  Failing in this branch
+             * would also skip the cleanup above and hand back a half-set
+             * ja_utt.
+             */
+            if (p != NULL) {
+                memset(p, 0, (size_t)FINAL_PAD * JA_NTRACK);
+                out.n += FINAL_PAD;
+            }
+        }
         u->frames = out.f;
         u->n = out.n;
         u->ends = ends;

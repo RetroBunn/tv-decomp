@@ -1372,9 +1372,9 @@ static int unit_params(void)
      * depends on how many voices OpenTV defines.  The DLL's ten, which have to
      * agree exactly, then the first number past the voices this engine has,
      * which both refuse, then the three faults.  The numbers between ten and
-     * that one are OpenTV's own (es/voices.c): the DLL refuses them silently
+     * that one are OpenTV's own (lang/spa/engine/voices.c): the DLL refuses them silently
      * and there is nothing to compare its behaviour against, which is the whole
-     * point of the bound es/params.c lifts. */
+     * point of the bound lang/spa/engine/params.c lifts. */
     uint32_t VOICE[ES_STOCK_VOICES + 4];
     int nvoice = 0;
     /* every wpm the parameter accepts, and the two faults either side of it:
@@ -1474,7 +1474,7 @@ static int unit_volume_full(void)
  * These are almost all stores, so the same poison-and-compare that tests the
  * setters tests them, and it tests rather more: a reset names fields by
  * writing them, so a whole-object comparison after one is a direct check on
- * the part of es/engine.fields that reset touches.  Output_Reset in
+ * the part of lang/spa/engine/engine.fields that reset touches.  Output_Reset in
  * particular is the witness that there is no o_20e8 in this engine -- if
  * there were, the original would clear it and we would not.
  */
@@ -5860,8 +5860,8 @@ static int unit_stopclosure(void)
  */
 typedef void(__thiscall *bld_t)(Engine *);
 
-/* A ring rather than a chain: es/cluster.c walks scan->next four deep and
- * es/adjust.c walks ctl->prev four back, and a ring cannot run out. */
+/* A ring rather than a chain: lang/spa/engine/cluster.c walks scan->next four deep and
+ * lang/spa/engine/adjust.c walks ctl->prev four back, and a ring cannot run out. */
 static Node g_bd_ring[12];
 
 /* every phoneme g_10057ce8 gives an id to */

@@ -3,7 +3,7 @@
 
 Run from the repository root:  python build/Japanese_test/make_vowel_length.py
 
-Two findings, from the two papers and the dataset in jp_res/acoustics/vowels/.
+Two findings, from the two papers and the dataset in lang/jpn/research/acoustics/vowels/.
 
 Hirata & Tsukada (2003): long vowels occupy a more peripheral part of the
 F1-F2 space than short ones -- a short vowel undershoots, a long one has time

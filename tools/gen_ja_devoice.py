@@ -3,7 +3,8 @@
 
     python tools/gen_ja_devoice.py
 
-Writes build/Japanese_test/jp_devoice_tab.py and ja_port/ja_devoice_tab.{c,h}.
+Writes build/Japanese_test/jp_devoice_tab.py and
+lang/jpn/port/ja_devoice_tab.{c,h}.
 
 njd_set_unvoiced_vowel's rule 5 runs three CANDIDATE classes, each with its own
 list of following morae, and the exclusions are the whole point: /su/ does not
@@ -49,8 +50,8 @@ import jp_njd as N         # noqa: E402
 import jp_speak as S       # noqa: E402
 
 PY_OUT = os.path.join(ROOT, 'build', 'Japanese_test', 'jp_devoice_tab.py')
-C_OUT = os.path.join(ROOT, 'ja_port', 'ja_devoice_tab.c')
-H_OUT = os.path.join(ROOT, 'ja_port', 'ja_devoice_tab.h')
+C_OUT = os.path.join(ROOT, 'lang', 'jpn', 'port', 'ja_devoice_tab.c')
+H_OUT = os.path.join(ROOT, 'lang', 'jpn', 'port', 'ja_devoice_tab.h')
 
 # romaji onset -> the C enumerator.  '' is the empty onset, which the C calls
 # JA_C_NONE and never reaches here, since every candidate has a consonant.

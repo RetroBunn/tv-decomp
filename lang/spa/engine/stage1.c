@@ -10,7 +10,7 @@
 /* @0x10058618 */
 extern const uint8_t g_10058618[0x200];
 
-/*: the two ways this file indexes the flag table; see es/adjust.c. */
+/*: the two ways this file indexes the flag table; see lang/spa/engine/adjust.c. */
 static int32_t s1_cls0(uint8_t v)
 {
     return (int32_t)(int16_t)(int8_t)v;
@@ -610,7 +610,7 @@ uint8_t TV_THISCALL Stage1_Lexicon(Engine *self)
     return 1;
 }
 
-/* The loanword lexicon's records, six bytes ahead of the keys es/tables.c
+/* The loanword lexicon's records, six bytes ahead of the keys lang/spa/engine/tables.c
  * reads: two bytes, the key's length as an int16, two more, then the key and
  * then the phonemes to say instead of it. */
 /* @0x1006afb0 */

@@ -12,16 +12,8 @@ d.tvtts_create_lang.restype=ctypes.c_void_p
 
 E = chr(27)
 
-# ---- the corpus targets (Mokhtari & Tanaka 2000, pooled medians, 5 male) ----
-TARGET = {           # F1    F2    F3    F4   B1   B2   B3
-    'a': (737, 1225, 2275, 3304, 170,  99, 180),
-    'i': (298, 2067, 2951, 3455,  61, 108, 126),
-    'u': (356, 1293, 2224, 3282,  52, 111, 106),
-    'e': (481, 1873, 2406, 3381,  54,  88, 222),
-    'o': (456,  856, 2343, 3246,  57, 101, 107),
-}
-# /u/ is context-dependent: F2 1323 after alveolar/palatal, 1081 after labial/velar
-U_FRONT, U_BACK = 1323, 1081
+# Sustained reference (long/doubled vowels), shared with the speech frontend.
+from jp_voice import V as TARGET, U_FRONT, U_BACK
 
 def rnd(x): return int(x + 0.5)
 

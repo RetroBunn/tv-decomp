@@ -371,7 +371,7 @@ struct Engine 0x8838
 # and copies the chosen one out with "mov word ptr [ecx], si", so this is
 # int16 here as it is in English.  The 11 kHz set is English's filt_coef_11k
 # to the bit; the 8 kHz set has -23934 and 17481 in slots 2 and 3 where
-# English has -24759 and 20770.  See the note in es/reset.c.
+# English has -24759 and 20770.  See the note in lang/spa/engine/reset.c.
 0x0004 int16_t  filt_coef[40]
 
 # Zeroed 32 bytes by sub_10017850; English calls its equivalent s3_1fbd[32].

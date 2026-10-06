@@ -15,7 +15,7 @@
  * one goes on the end.
  *
  * Adding a language is a row in the table below, a file like
- * es_port/tvtts_es.c, and nothing else.
+ * lang/spa/port/tvtts_es.c, and nothing else.
  *
  * Japanese is the third, and the first that is not a decompilation.  No
  * Japanese TruVoice exists, so there was nothing to be byte-exact against and

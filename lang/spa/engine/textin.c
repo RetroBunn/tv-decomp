@@ -511,7 +511,7 @@ int32_t TV_THISCALL TextIn_Emit(TextIn *self, int32_t final)
 }
 
 /* The tokenizer's own character table, one dword each, and not the same table
- * as the rule interpreter's in es/rule.c: bit 1 is punctuation, bit 2 one of
+ * as the rule interpreter's in lang/spa/engine/rule.c: bit 1 is punctuation, bit 2 one of
  * the three separators -./, bit 4 a letter -- which is what ends a CSI
  * sequence -- bit 8 a digit and bit 0x10 one of # $ % & @ ` ~. */
 /* @0x10061450 */

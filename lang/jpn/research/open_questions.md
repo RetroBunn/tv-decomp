@@ -479,7 +479,7 @@ on. Evidence and the table: `README.txt`, 2026-10-05.
 
 ### 4.1 The dictionary is 26 MB and it has to be found at run time
 
-The analyser is in C (`ja_port/ja_dict.c`, `ja_njd.c`, `ja_digit.c`,
+The analyser is in C (`lang/jpn/port/ja_dict.c`, `ja_njd.c`, `ja_digit.c`,
 `ja_front.c`) and reproduces every field of every line of `front_oracle.tsv`
 at both word widths, so the shipped library reads kanji. What is left is a
 packaging question rather than a linguistic one, and it has two parts.

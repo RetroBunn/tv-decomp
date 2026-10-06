@@ -217,7 +217,7 @@ decompiled and byte-exact: 196 of 196 functions and 87,277 of 87,277 bytes,
 100% of the code the 205 configurations reach, with the C runtime bound to
 the DLL's own copy rather than rewritten.  The tokenizer, both rule
 interpreters, the classifier, all five pipeline stages, the synthesiser and
-the sample generator are all in `es/`, and 205 of 205 corpus configurations,
+the sample generator are all in `lang/spa/engine/`, and 205 of 205 corpus configurations,
 the whole `unit_es` suite and a SAPI recording all come back identical.  What
 is left in the image is the DLL's SAPI 4 plumbing, which this project
 replaces rather than reproduces; 212 functions are written in all, and the only
@@ -275,7 +275,7 @@ numbered rules and nothing else. The rules were read as a specification and
 written out again; no Open JTalk code is in this repository. Both projects are
 BSD 3-clause. See NOTICE.
 
-**All of it is in C**, in `ja_port/ja_dict.c`, `ja_njd.c`, `ja_digit.c` and
+**All of it is in C**, in `lang/jpn/port/ja_dict.c`, `ja_njd.c`, `ja_digit.c` and
 `ja_front.c`, so this is what the shipped DLL does and not what a prototype
 does. `build/Japanese_test/` holds the Python the C was translated from and
 remains the reference; the two are held together by `front_oracle.tsv`, and
@@ -357,7 +357,7 @@ spelled out where a Japanese system says コンピューター. Three shipping s
 were inspected to see how they do it, and what that establishes is that all
 three pronounce beyond a fixed word list; how they divide the work between
 rules and lexical data is not established by what can be read from the
-outside. `jp_res/open_questions.md` §4.3 has the measurements, the
+outside. `lang/jpn/research/open_questions.md` §4.3 has the measurements, the
 architecture precedent, and the useful part: `tvtts_text_to_phonemes` already
 returns an English pronunciation string and already tells an invented word
 from an initialism, at the cost of synthesising to get it.
@@ -418,7 +418,7 @@ piece of the number work.
   baseline -- which makes the two female voices a short vocal tract at a male
   pitch. `src/port/main.c` shows the pattern a caller should follow.
 
-`jp_res/open_questions.md` is the live list of what is unresolved.
+`lang/jpn/research/open_questions.md` is the live list of what is unresolved.
 `tools/ja_samples.py` renders the voices, the phonetic probes and the kanji
 sentences through the library for listening, and
 `build/Japanese_test/make_dict.py` renders a wider set through the Python.

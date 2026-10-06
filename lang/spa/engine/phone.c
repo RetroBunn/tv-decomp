@@ -19,7 +19,7 @@
  *
  * Five letters -- H J Q V W -- have 255 in the selector, which the original
  * sign-extends to -1 and then indexes every table with.  None of them is a
- * phoneme the engine produces; they are not in the twenty-three es/cluster.c
+ * phoneme the engine produces; they are not in the twenty-three lang/spa/engine/cluster.c
  * lists nor among the five vowels.
  */
 #include "es_engine.h"

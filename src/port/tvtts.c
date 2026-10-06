@@ -13,7 +13,7 @@
  * copied here rather than rewritten.
  *
  * It owns the English engine, and only that.  The library carries one of these
- * per language -- es_port/tvtts_es.c is the Spanish one -- and the public names
+ * per language -- lang/spa/port/tvtts_es.c is the Spanish one -- and the public names
  * belong to src/port/api.c, which picks between them; what each language has to
  * provide is the en_ and es_ contract in include/tvtts_port.h.  What is left
  * public here is everything that touches no engine and so serves both: the

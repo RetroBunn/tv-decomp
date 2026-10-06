@@ -270,7 +270,7 @@ void TV_THISCALL Track_Emit(Engine *self, int32_t track)
 /* @0x10058618 */
 extern const uint8_t g_10058618[0x200];
 
-/*: the two flag-table index modes this file needs; see es/adjust.c on
+/*: the two flag-table index modes this file needs; see lang/spa/engine/adjust.c on
  * why g_10058618 is indexed four different ways across the engine. */
 static int32_t cls0_trk(uint8_t v)
 {

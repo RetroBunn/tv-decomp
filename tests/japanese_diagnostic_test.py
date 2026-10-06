@@ -245,5 +245,63 @@ class GeminateFricative(unittest.TestCase):
                              [round(x, 4) for x in b[1]], spec)
 
 
+class UtteranceTail(unittest.TestCase):
+    """An utterance has to end on silence, not wherever the waveform was.
+
+    Reported by ear as a click on every word ending in a vowel, worst on the
+    single letters and cursor announcements a screen reader says constantly.
+    Measured through the DLL, the last sample sat at up to 58% of the loudest
+    one in the word.  The engine renders the frames it is given and stops, so
+    the ramp needs somewhere to decay into as well.
+    """
+
+    WORDS = ['a', 'ka', 'o-ha-yo-u', 'ko-N-ni-chi-wa', 'sa-ku-ra']
+
+    def frames(self, spec):
+        return S.build(spec.split('-'))[0]
+
+    def test_the_last_frames_are_silent(self):
+        for spec in self.WORDS:
+            fr = self.frames(spec)
+            for f in fr[-S.FINAL_PAD:]:
+                self.assertEqual(max(f[0], f[1], f[2]), 0, spec)
+
+    def test_the_decay_is_a_slope_and_not_a_gate(self):
+        """Tracks are about a decibel a unit, so the step IS the slope in dB.
+
+        Scaling them to zero over three frames was -20 dB a frame, four times
+        Spanish's, and the ear called it a cut even though it reached silence
+        exactly.  What this holds is the slope, not the endpoint.
+        """
+        for spec in self.WORDS:
+            fr = self.frames(spec)
+            ramp = [f[0] for f in
+                    fr[-(S.FINAL_PAD + S.FINAL_FADE):-S.FINAL_PAD]]
+            # A short final vowel can occupy fewer than FINAL_FADE frames;
+            # the window then starts in the preceding unvoiced release.
+            # Exclude only leading zeros, retaining any gap inside the vowel.
+            while ramp and ramp[0] == 0:
+                ramp.pop(0)
+            self.assertGreaterEqual(len(ramp), 3, spec)
+            self.assertEqual(ramp, sorted(ramp, reverse=True), spec)
+            steps = [a - b for a, b in zip(ramp, ramp[1:])]
+            for st in steps:
+                self.assertLessEqual(st, S.FINAL_FADE_STEP + 1, spec)
+            # and it actually falls: a flat tail would pass the test above
+            self.assertGreater(ramp[0] - ramp[-1], S.FINAL_FADE_STEP, spec)
+
+    def test_padding_is_not_charged_to_any_mora(self):
+        # the ends are mora boundaries; the tail belongs to none of them
+        for spec in self.WORDS:
+            fr, ends, _q = S.build(spec.split('-'))
+            self.assertLessEqual(int(round(ends[-1] * 100)), len(fr) - S.FINAL_PAD,
+                                 spec)
+
+    def test_a_short_utterance_is_still_padded(self):
+        fr = self.frames('a')
+        self.assertGreater(len(fr), S.FINAL_PAD)
+        self.assertEqual(max(fr[-1][0], fr[-1][1], fr[-1][2]), 0)
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

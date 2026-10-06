@@ -80,7 +80,7 @@ These are a different kind of thing from the vowels above, and the difference
 matters.  The five vowel targets are *measured*, from a published corpus of
 Japanese.  The consonant postures here are **authored from phonetic principle**
 -- nasal murmur at a low first formant, a velar locus before a back vowel, a
-labiovelar glide, a palatoalveolar noise spectrum -- and nothing in jp_res/
+labiovelar glide, a palatoalveolar noise spectrum -- and nothing in lang/jpn/research/
 supports them.  They are a plausible first guess, not data.
 
 What the word is built from, and what came back out of the audio:
@@ -798,7 +798,7 @@ Vowel length: the target, and the duration
   63-length-before-after.wav  four of them, each twice: before, then corrected
   64-long-vowels.wav          baa, bii, buu, bee, boo
 
-Two papers and a released dataset, in jp_res/acoustics/vowels/.
+Two papers and a released dataset, in lang/jpn/research/acoustics/vowels/.
 
 **The first thing they do is confirm the vowel table.** Yazawa & Kondo (2019)
 released the measurements behind their ICPhS paper: 16 speakers, 8 of each sex,
@@ -2106,7 +2106,7 @@ a long vowel as simply twice a short one.  Ours have no vowel-dependent
 duration at all: 68-73 ms short and 127-133 long, nearly flat, in close to the
 opposite order from theirs.  One timing model with per-vowel targets would
 answer both the 15% and the ordering, where LONG_FRAMES += 3 answers neither.
-See jp_res/open_questions.md 1.1 and 1.3.
+See lang/jpn/research/open_questions.md 1.1 and 1.3.
 
 Three things stay separate, and a regression on the ratio alone would collapse
 them into one:
@@ -2315,7 +2315,7 @@ separate:
 
 The remaining uniform few percent is a RATE question, which is the one knob in
 the middle layer this synthesiser still does not have -- see
-jp_res/open_questions.md.
+lang/jpn/research/open_questions.md.
 
 
 Word-final /N/, which was not a nasal at all
@@ -2437,7 +2437,7 @@ brings /s/, /t/, [C] and /ch/ within a decibel but leaves /ts/ at +6.8, which
 says the problem is the posture rather than the gain.  The real fix is a
 rate-aware SIB_POST -- F3/F4 scaled to the band rather than pinned at 4080 --
 and that is a deliberate change, not an end-of-session one.  Recorded in
-jp_res/open_questions.md.
+lang/jpn/research/open_questions.md.
 
 TWO MEASUREMENT TRAPS, both hit on the way here and both worth remembering.  A
 frame is 160 samples at 16 kHz and 110 at 11025, so slicing by a hardcoded 160
@@ -2930,3 +2930,106 @@ Heard and judged accurate on 2026-10-05.
 build/Japanese_test/make_geminate_fric.py renders スラッシュ, 雑誌, 一緒, 真っ直ぐ,
 あっさり and 決して old-then-new, with 学校 and 切手 as controls that must not
 change and are sample-identical.
+
+
+2026-10-05: two things the Japanese path never did that the engine does
+-------------------------------------------------------------------------
+Both reported by ear, both Japanese only, and both the same shape: something
+the English and Spanish paths get from the engine, which this path goes around.
+
+THE ENGINE'S INLINE ESCAPES WERE BEING SPOKEN.  tvtts_pitch_sequence and its
+four siblings write ESC '[' digits letter -- 'p' pitch, 'r' rate, 'i' an index
+mark, 's' a break, 'N'/'F' punctuation.  feed.c and input.c eat them for
+English and lang/spa/engine/escape.c for Spanish.  lang/jpn/port had not one
+0x1b in it, so they reached ja_to_morae, which drops the ESC and the '[' as
+characters it cannot place and reads the rest as text.  NVDA announces a
+capital as ESC[50p then the letter, and it came out as
+
+    go ju : | pi : | e i          "fifty P A"
+
+with no pitch change at all.  strip_escapes in tvtts_ja.c now consumes all
+five before anything else looks at the bytes -- before could_be_romaji, which
+would otherwise weigh them as text -- and applies pitch and rate to THAT
+UTTERANCE ONLY.  Per-utterance is not a shortcut: the driver holds trailing
+escapes back and drops them, so the closing PitchCommand that would put the
+pitch back never arrives, and a change that persisted would never be undone.
+The other three are consumed and dropped, which is right for 'N' and 'F' here
+and the lesser wrong for 's' and 'i' -- a break has no mora to be, and an
+index mark needs an event this path does not emit at all.  Both were being
+SPOKEN before, so neither is worse off.
+
+AND AN UTTERANCE ENDED WHEREVER THE WAVEFORM WAS.  A word ending in a vowel
+cut off with a click, worst on the single letters and cursor announcements a
+screen reader says constantly.  Measured through the DLL, the last sample
+against the loudest in the word:
+
+    おはよう  4248 of 10496   40%        hello (en)   0 of 11072   0%
+    こんにちは 1752 of  9496   18%        hola  (es)   0 of 12952   0%
+    か        936 of  5576   17%        です          32 of 6792   0.5%
+
+です is clean because it ends in frication; English and Spanish are clean
+because their frames decay. These stopped dead.
+
+The Python prototype never showed it, because jp_speak.render fades the last
+320 samples before writing a WAV -- a property of its WAV writer, not of the
+frames, so the C streaming the frames straight through en_speak_frames never
+had it.
+
+Ramping the amplitude down changed NOTHING measurable, which was the useful
+surprise: the engine renders the frames it is given and stops, so the filter
+is still ringing when the samples run out. Silent frames give it somewhere to
+decay into. Over eight words, last sample as a share of the loudest:
+
+    ramp only, no padding      1.2% .. 58.5%
+    padding only, 5 frames     0.7% ..  3.4%
+    both                       0.00% everywhere
+
+so both are needed and together they reach silence exactly.
+
+AND REACHING SILENCE WAS NOT THE SAME AS ARRIVING THERE NATURALLY.  The ear
+still called it a cut, and said Spanish -- which is close to Japanese
+phonetically -- does not do it.  Measured as an amplitude envelope in 10 ms
+cells, decibels below the word's loudest cell:
+
+    es hola        -7  -11  -20  -29  -30  -30  -29  -inf
+    en hello      -10  -11  -18  -19  -28  -29  -30  -30  -inf
+    ja, first try  -7  -20  -28  -43  -inf
+
+Spanish falls about 5 dB a cell and then sits near -30 for several cells before
+silence.  The first version scaled the amplitude tracks MULTIPLICATIVELY to
+zero over three frames, and those tracks are about a decibel a unit, so that is
+-20 dB per frame: four times Spanish's slope.  That is the gate the ear heard,
+and it was audible even though the last sample measured exactly zero.
+
+The ramp now SUBTRACTS a fixed number of track units per frame, which is a
+linear decibel slope, over six frames, and stops around -30 rather than at
+silence; the padding rings out from there:
+
+    ja ohayou      -6  -12  -17  -22  -24  -29  -39  -inf
+    ja a          -10  -15  -19  -22  -25  -36  -inf
+
+It is capped at half the utterance so a one-mora word still has a word in it.
+
+Both were heard and confirmed on 2026-10-05: the capitals first, then the
+decay, which took two passes -- the first reached silence exactly and was
+still heard as a cut, which is what sent the envelope above to be measured
+against Spanish rather than just the last sample.
+
+WHAT IS STILL KNOWN-MISSING on this path, none of it heard as a fault yet but
+all of it real: an index mark (ESC[<n>i) is consumed and dropped because this
+path emits no mark events at all, so a caller tracking progress through an
+utterance gets nothing; a break (ESC[<n>s) is dropped because a span of
+milliseconds has no mora to be; a pitch or rate escape applies to the whole
+utterance rather than from where it stands, which is exact for a capital
+announced on its own and approximate inside a sentence; and English and
+Spanish carry about 500 ms of trailing silence where this now carries 120. It goes in the FRAME BUILDER,
+not the speak path, so the two ports stay identical at the frame level -- which
+is what the oracle checks -- and so the API test comparing Japanese PCM against
+the same frames through the English path keeps comparing like with like. The
+padding is all zeros; holding the last posture measures identically, because
+the engine reads no formant from a frame with no amplitude in it.
+
+Every word measured now ends at exactly 0. The oracle was regenerated and the
+C matches it at both word widths. Four cases in japanese_diagnostic_test.py
+hold the tail and two in japanese_api_test.py hold the escape, including that
+an inline pitch does not stick to the synthesiser.

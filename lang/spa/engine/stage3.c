@@ -6,7 +6,7 @@
  * becomes a set of formant targets moving over time.
  *
  * Stage3_Build is the driver: one call per phoneme, and every correction
- * pass in es/adjust.c, es/phone.c and es/stage3seg.c hangs off it.
+ * pass in lang/spa/engine/adjust.c, lang/spa/engine/phone.c and lang/spa/engine/stage3seg.c hangs off it.
  *
  * Stage3_Insert puts a pause into the stream: two silence nodes, the first
  * carrying the length and the second a fixed tail, with stress bits set so
@@ -163,7 +163,7 @@ extern const uint8_t g_10058618[0x200];
 /* @0x1004c7c0 */
 extern const int32_t g_1004c7c0[10];
 
-/*: the two ways this file indexes the flag table; see es/adjust.c for what
+/*: the two ways this file indexes the flag table; see lang/spa/engine/adjust.c for what
  * the four blocks are. */
 static int32_t cls0(uint8_t v)
 {
@@ -184,7 +184,7 @@ static int32_t cls180(uint8_t v)
  * One phoneme's worth of stage 3.
  *
  * Stage3_Run walks the node list and calls this once per phoneme; every
- * other function in es/adjust.c, es/phone.c and es/stage3seg.c is called
+ * other function in lang/spa/engine/adjust.c, lang/spa/engine/phone.c and lang/spa/engine/stage3seg.c is called
  * from here.  The shape is a fixed sequence of correction passes, each
  * gated on the class flags of one of stage 3's three nodes, then the host's
  * voice and volume, then all 22 tracks emitted into their buffers.

@@ -12,7 +12,7 @@ Fujisaki, SSW2 1994, p.168).  So
     Ga(t) = min[ 1 - (1 + b*t) * exp(-b*t), theta ]   t >= 0, else 0
 
 a and b are the natural angular frequencies of the two mechanisms.  They are not
-in the papers in jp_res/ -- they are referenced to Fujisaki & Hirose, JASJ(E)
+in the papers in lang/jpn/research/ -- they are referenced to Fujisaki & Hirose, JASJ(E)
 5(4) 233-242 (1984), which we do not have.  Published values across studies run
 a = 1.7-3.0 /s and b = 20-25 /s with theta = 0.9.
 

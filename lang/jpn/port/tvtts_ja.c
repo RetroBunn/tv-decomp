@@ -140,7 +140,7 @@ struct ja_synth {
      * and nothing else.  It has to be separate: the phoneme trace is got by
      * synthesising and discarding the audio, so asking `en` would advance the
      * synthesiser mid-utterance -- and phoneme mode is known to colour the
-     * next utterance (jp_res/open_questions.md).  Created on the first Latin
+     * next utterance (lang/jpn/research/open_questions.md).  Created on the first Latin
      * word that needs it, so an utterance of pure Japanese never makes one.
      */
     void    *en_ask;
@@ -439,6 +439,98 @@ static uint32_t next_cp(const unsigned char *p, size_t len, size_t *i)
 }
 
 /*
+ * THE ENGINE'S INLINE ESCAPES, which this path has to consume itself.
+ *
+ * tvtts_pitch_sequence and its four siblings write ESC '[' digits letter:
+ * 'p' pitch (the value is 2n), 'r' rate in words per minute, 'i' an index
+ * mark, 's' a break in milliseconds, 'N'/'F' punctuation on and off.  The
+ * English engine eats them in feed.c and input.c and Spanish in its own
+ * escape.c.  Nothing here did, so they reached ja_to_morae, which drops the
+ * ESC and the '[' as characters it cannot place and reads the rest as text:
+ * NVDA announcing a capital sends ESC[50p then `A`, and it came out as
+ * "fifty P A" with no pitch change at all.
+ *
+ * Pitch and rate are applied to THIS UTTERANCE ONLY and the synthesiser's own
+ * settings are left alone.  That matters because of how the caller uses them:
+ * NVDA closes a capital with a second PitchCommand to put the pitch back, and
+ * the driver holds trailing escapes back and drops them, having nothing left
+ * to apply to.  A change that persisted would therefore never be undone and
+ * every word after the first capital would stay raised.
+ *
+ * The other three are consumed and dropped rather than honoured.  Dropping is
+ * already right for 'N' and 'F' -- this path turns punctuation into pauses
+ * rather than naming it -- and for 's' and 'i' it is the lesser of two
+ * wrongs: a break of n milliseconds has no mora to be, and an index mark
+ * needs an event this path does not emit at all.  Neither is made worse by
+ * being silent, and both were being SPOKEN.
+ *
+ * A pitch or rate escape anywhere in the text applies to all of it, which is
+ * not what the English engine does -- there it applies from where it stands.
+ * A capital is its own utterance, so the case that was reported is exact; a
+ * capital mid-sentence raises the sentence.  Honouring it properly means
+ * splitting the utterance at the escape, which is a larger change than this.
+ */
+struct ja_esc {
+    int pitch;                  /* <0: none seen */
+    int wpm;
+};
+
+static void esc_init(struct ja_esc *e)
+{
+    e->pitch = -1;
+    e->wpm = -1;
+}
+
+static size_t strip_escapes(const char *text, size_t len, char *out,
+                            struct ja_esc *e)
+{
+    size_t i = 0, n = 0;
+
+    while (i < len) {
+        size_t j, start = i;
+        unsigned long v;
+        int any;
+
+        if ((unsigned char)text[i] != 0x1b || i + 1 >= len ||
+            text[i + 1] != '[') {
+            out[n++] = text[i++];
+            continue;
+        }
+        j = i + 2;
+        v = 0;
+        any = 0;
+        while (j < len && text[j] >= '0' && text[j] <= '9') {
+            if (v < 1000000ul)
+                v = v * 10ul + (unsigned long)(text[j] - '0');
+            any = 1;
+            j++;
+        }
+        if (j >= len || !any) {
+            /* not a complete escape: leave it alone rather than eat the rest */
+            out[n++] = text[i++];
+            continue;
+        }
+        switch (text[j]) {
+        case 'p':
+            e->pitch = (int)(v * 2ul);          /* the command carries n, not 2n */
+            break;
+        case 'r':
+            e->wpm = (int)v;
+            break;
+        case 'i': case 's': case 'N': case 'F':
+            break;                              /* consumed, see above */
+        default:
+            /* not one of ours: pass it through untouched */
+            out[n++] = text[i++];
+            continue;
+        }
+        i = j + 1;
+        (void)start;
+    }
+    return n;
+}
+
+/*
  * Rewrite the punctuation and say whether the text asks a question.  Returns
  * the new length; the result needs at most 2 bytes per input character, which
  * is why the buffer is sized at twice the input.
@@ -555,9 +647,47 @@ static int could_be_romaji(const char *t, uint32_t len)
 
 /* ---- speaking ----------------------------------------------------------- */
 
+/*
+ * The escapes come off here, before anything else looks at the bytes --
+ * could_be_romaji would otherwise weigh them as text, and the mora parser
+ * would read them as text.  Doing it in a wrapper keeps the buffer's lifetime
+ * to one place: the body below has twenty-odd early returns and none of them
+ * can leak it.
+ */
+static int speak_stripped(void *vs, const void *text, uint32_t len,
+                          tvtts_callback cb, void *user,
+                          const struct ja_esc *esc_in);
+
 int ja_speak_bytes(void *vs, const void *text, uint32_t len,
                    tvtts_callback cb, void *user)
 {
+    struct ja_esc esc;
+    char *stripped;
+    int rc;
+
+    if (vs == NULL || (text == NULL && len != 0))
+        return -1;
+    if (len == 0)
+        return 0;
+    esc_init(&esc);
+    stripped = (char *)malloc(len);
+    if (stripped == NULL)
+        return -1;
+    len = (uint32_t)strip_escapes((const char *)text, len, stripped, &esc);
+    if (len == 0) {             /* escapes and nothing else: nothing to say */
+        free(stripped);
+        return 0;
+    }
+    rc = speak_stripped(vs, stripped, len, cb, user, &esc);
+    free(stripped);
+    return rc;
+}
+
+static int speak_stripped(void *vs, const void *text, uint32_t len,
+                          tvtts_callback cb, void *user,
+                          const struct ja_esc *esc_in)
+{
+    const struct ja_esc esc = *esc_in;
     struct ja_synth *s = (struct ja_synth *)vs;
     ja_mora *morae = NULL;
     char *buf = NULL;
@@ -566,6 +696,7 @@ int ja_speak_bytes(void *vs, const void *text, uint32_t len,
     ja_opts o;
     ja_utt u;
     int n_morae = 0, question = 0, atten, i, rc, analysed = 0, romaji = 0;
+    int eff_pitch, eff_wpm;
     size_t blen;
 
     if (s == NULL || (text == NULL && len != 0))
@@ -600,7 +731,7 @@ int ja_speak_bytes(void *vs, const void *text, uint32_t len,
      * What is MISSING is between 1 and 3: a reading for a word-like string
      * nothing knows, so `computer` is spelled out where it should be
      * コンピューター.  That is grapheme-to-phoneme conversion; see
-     * jp_res/open_questions.md section 4.3 for what it would take.
+     * lang/jpn/research/open_questions.md section 4.3 for what it would take.
      */
     d = dict_get();
     if (g_romaji && could_be_romaji((const char *)text, len)) {
@@ -714,8 +845,17 @@ int ja_speak_bytes(void *vs, const void *text, uint32_t len,
     ja_opts_default(&o);
     o.sr = (int)s->rate_hz;
     o.engine_voice = g_voices[s->voice].engine;
-    o.rate_scale = (double)JA_WPM_REF / (double)s->wpm;
-    o.fb = JA_FB_REF * s->pitch / (double)JA_PITCH_REF;
+    /* An inline escape overrides for this utterance only; see strip_escapes. */
+    eff_pitch = esc.pitch >= 0 ? esc.pitch : s->pitch;
+    eff_wpm = esc.wpm >= 0 ? esc.wpm : s->wpm;
+    if (eff_pitch < TVTTS_PITCH_MIN)
+        eff_pitch = TVTTS_PITCH_MIN;
+    else if (eff_pitch > TVTTS_PITCH_MAX)
+        eff_pitch = TVTTS_PITCH_MAX;
+    if (eff_wpm < TVTTS_RATE_MIN)
+        eff_wpm = TVTTS_RATE_MIN;
+    o.rate_scale = (double)JA_WPM_REF / (double)eff_wpm;
+    o.fb = JA_FB_REF * eff_pitch / (double)JA_PITCH_REF;
     o.question = question;
     o.accent = 0;
     /*

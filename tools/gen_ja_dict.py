@@ -8,7 +8,7 @@ text connection matrix, and the Japanese front end has to look words up while
 speaking.  This turns both into one little-endian file with the strings pooled,
 the part-of-speech tuples interned, and the entries sorted so a surface form is
 found by binary search.  The Python reference in build/Japanese_test/jp_dict.py
-and the C in ja_port/ja_dict.c both read THIS file, which is the point: if they
+and the C in lang/jpn/port/ja_dict.c both read THIS file, which is the point: if they
 read different data, a disagreement between them would mean nothing.
 
 WHAT IT IS FOR.  Accurate pronunciation.  Every field carried here is one the

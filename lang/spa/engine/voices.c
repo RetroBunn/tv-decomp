@@ -13,7 +13,7 @@
  * corpus byte-identical.
  *
  * The row the adjustment table is read with is track 21's high nibble, and
- * es/stage3.c ORs `st->voice << 4` into it, so the nibble *is* the voice index.
+ * lang/spa/engine/stage3.c ORs `st->voice << 4` into it, so the nibble *is* the voice index.
  * Four bits of it: a language cannot have more than sixteen voices, and the
  * stock ten leave room for six.
  */

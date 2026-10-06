@@ -658,7 +658,8 @@ def build(morae, emph=(), devoiced_in=None, question=False):
         # redistribution at the end of this function spends the difference.
         mora_start = len(out)
         spans.append({'start': mora_start, 'steady': None, 'len': 0,
-                      'head': 0, 'nominal': 0})
+                      'head': 0, 'nominal': 0, 'adjustable': False,
+                      'budget_break': mo in ('|', '||')})
         sp_rec = spans[-1]
         if mo == ' ':
             # An accent phrase boundary is a PITCH event, not a silence: the
@@ -1177,6 +1178,7 @@ def build(morae, emph=(), devoiced_in=None, question=False):
         # fact, and an expensive consonant is still paid for by the word's
         # vowels -- it is just no longer the same number for every vowel.
         sp_rec.update(steady=steady_at, len=max(nv, 1),
+                      adjustable=True, steady_frame=list(out[steady_at]),
                       want=want, ntr=ntr,
                       requested_ms=(V_DUR.get(v, (0, 0))[0] if v else 0.0),
                       nominal=MORA_FRAMES + vowel_frames(v) - V_DEFAULT,
@@ -1212,54 +1214,120 @@ def build(morae, emph=(), devoiced_in=None, question=False):
     # tail, and the taper drops the amplitude below any gate.
     global LAST_SPANS
     LAST_SPANS = spans
+    _final_tail(out)
     return out, ends, q_ends
 
 
 LAST_SPANS = []
 
 
+#: Frames of amplitude ramp at the very end of an utterance.  The engine's own
+#: output ends at zero -- English and Spanish both measure 0 for the last
+#: sample -- because their frames decay; these stopped dead, so the last sample
+#: sat wherever the waveform was, up to 40% of the loudest one in the word, and
+#: the step to silence was heard as a click.  Three frames is 30 ms, which is
+#: the 320-sample fade jp_speak.render has always applied to its WAVs.
+FINAL_FADE = 6
+#: Decibels of fall per frame.  Tracks 0, 1 and 2 are about a decibel a unit,
+#: so this is subtracted from them: a linear decibel slope, where scaling them
+#: towards zero instead gives -20 dB a frame and is heard as a gate.  Spanish
+#: falls about 5 dB a cell, which is what this matches.
+FINAL_FADE_STEP = 5
+#: Below this an utterance is too short to give six frames away to a ramp.
+FINAL_FADE_MIN = 6
+#: And silent frames after it, because the ramp alone changed nothing: the
+#: engine renders the frames it is given and stops, so the filter is still
+#: ringing when the samples run out.  Five frames is where the last sample
+#: reaches exactly zero for every word measured; with the ramp but no padding
+#: it sat at up to 58% of the loudest sample in the word, and that step is the
+#: click.  It is 50 ms of silence the listener never waits for -- it is the
+#: tail of audio already playing, not latency before the next utterance.
+FINAL_PAD = 6
+
+
+def _final_tail(out):
+    """Ramp the amplitude down, then let the filter ring out into silence.
+
+    Tracks 0, 1 and 2 are voicing, frication and aspiration -- the same three
+    the volume attenuation works on, because they are the three that carry
+    level.  The ramp is linear in track units, which are about a decibel each,
+    so it is heard as a decay rather than a cut.  The padding is all zeros;
+    holding the last posture instead measures identically, because the engine
+    reads no formant from a frame with no amplitude in it.
+    """
+    n = len(out)
+    if not n:
+        return
+    if FINAL_FADE and n >= FINAL_FADE_MIN:
+        # At most half the utterance, so a one-mora word still has a word in
+        # it; the ramp is a tail, not the whole thing.
+        k = min(FINAL_FADE, max(1, n // 2))
+        for i in range(k):
+            fr = out[n - k + i]
+            sub = FINAL_FADE_STEP * (i + 1)
+            for t in (0, 1, 2):
+                fr[t] = max(0, fr[t] - sub)
+    ntrack = len(out[-1])
+    for _ in range(FINAL_PAD):
+        out.append([0] * ntrack)
+
+
 def _compensate(out, spans, q_rel):
     """Homma 1981: temporal compensation works within a WORD, not a mora.
 
-    Each mora is worth a nominal number of frames; a consonant that needs more
-    than its share is paid for by the vowels of the whole word rather than by
-    letting the word grow.  Her evidence is /papa/ at 260 ms against /gaga/ at
-    267 -- the first syllable differs by 37 ms, the words by 7.
+    Homma reports /papa/ at 260 ms against /gaga/ at 267, despite a 37-ms
+    difference in their first syllables. This motivates sharing a nominal
+    budget across morae, but does not establish exact isochrony.
+    Redistribution here remains a modelling approximation.
 
-    Only plain steady vowel is spent.  Not the geminate closure, which is the
-    length cue itself; not a pause; and not the head of a glottalised vowel,
-    whose first frames carry the creak dip.
+    The frontend supplies accent phrases, not lexical-word boundaries. Keep
+    redistribution within each continuous stretch between explicit pauses;
+    a later phrase must not change an earlier phrase's segment allocations.
+
+    Only unchanged steady vowel is adjustable. Offglides and tapers have
+    already been written into its tail. Protect those frames, glottal heads,
+    and the explicit long-vowel increment, just as we protect geminate closure.
+    A budget that cannot fit these cues is allowed to overrun.
     """
-    target = sum(s['nominal'] for s in spans)
-    delta = target - len(out)
-    adj = [s for s in spans if s['steady'] is not None]
-    if NO_COMPENSATE or not adj or delta == 0:
+    if NO_COMPENSATE:
         q = [(spans[i]['start'] + r) / 100.0 for i, r in q_rel]
         return out, _ends(spans, out), q
 
-    def room(s):
-        return (s['len'] - s['head'] - MIN_VOWEL if delta < 0
-                else s['len'] - s['head'])
-    cap = [max(0, room(s)) for s in adj]
-    tot = sum(cap)
-    give = [0] * len(adj)
-    if tot > 0:
-        want = delta
-        for i, c in enumerate(cap):
-            g = int(round(want * (c / float(tot))))
-            if delta < 0:
-                g = max(g, -c)
-            give[i] = g
-        # rounding leftovers onto whichever run has the most room
-        err = delta - sum(give)
-        if err:
-            j = max(range(len(adj)), key=lambda k: cap[k])
-            if delta < 0:
-                give[j] = max(give[j] + err, -cap[j])
-            else:
-                give[j] += err
-    for s, g in zip(adj, give):
-        s['give'] = g
+    first = 0
+    for last in range(len(spans) + 1):
+        if last < len(spans) and not spans[last]['budget_break']:
+            continue
+        group = spans[first:last]
+        if group:
+            end = spans[last]['start'] if last < len(spans) else len(out)
+            delta = sum(s['nominal'] for s in group) - (end - group[0]['start'])
+            adj = [s for s in group if s['adjustable']]
+            cap = []
+            for s in adj:
+                at = s['steady'] + s['head']
+                stable = 0
+                for f in out[at:s['steady'] + s['len']]:
+                    if f != s['steady_frame']:
+                        break
+                    stable += 1
+                cap.append(max(0, stable - (MIN_VOWEL if delta < 0 else 0)))
+            tot = sum(cap)
+            if tot and delta:
+                want = max(delta, -tot)
+                give = [int(round(want * (c / float(tot)))) for c in cap]
+                err = want - sum(give)
+                # Preserve the exact feasible budget despite frame rounding.
+                while err:
+                    eligible = [i for i, c in enumerate(cap) if c and
+                                (give[i] > (-c if want < 0 else 0) if err < 0 else
+                                 give[i] < 0 if want < 0 else True)]
+                    j = max(eligible, key=lambda i: cap[i])
+                    step = 1 if err > 0 else -1
+                    give[j] += step
+                    err -= step
+                for s, g in zip(adj, give):
+                    s['give'] = g
+        first = last + 1
 
     new, ends, pos = [], [], {}
     for idx, s in enumerate(spans):

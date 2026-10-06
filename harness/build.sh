@@ -98,19 +98,20 @@ link "$CHECK/tvh_hook.exe" @"$HOOK/defsyms.txt" "$HOOK/tvh_hook.o" "$HOOK/hooks.
 echo "built $CHECK/tvh_hook.exe"
 
 # --- Spanish hook build -------------------------------------------------------
-# The same trick against CGRM_ES.DLL: every function written in es/ is patched
+# The same trick against CGRM_ES.DLL: every function written in
+# lang/spa/engine/ is patched
 # over the original and the audio has to come out identical.  Spanish is a
 # separate decompilation with its own struct layout, so it gets its own struct
 # header, its own hook map and its own executable; nothing is shared with src/
 # but tv_common.h.  Skipped when there is no Spanish C yet.
-if [ -n "$(find es -name '*.c' 2>/dev/null)" ]; then
+if [ -n "$(find lang/spa/engine -name '*.c' 2>/dev/null)" ]; then
   HOOKES=$OBJ/hook_es
   mkdir -p "$HOOKES/obj"
-  python tools/gen_struct.py es/engine.fields "$GEN/es_engine_struct.h"
+  python tools/gen_struct.py lang/spa/engine/engine.fields "$GEN/es_engine_struct.h"
   ES_OBJS=""
-  for src in $(find es -name '*.c' | sort); do
-    obj="$HOOKES/obj/$(echo "$src" | sed 's|^es/||; s|/|_|g; s|\.c$|.o|')"
-    gcc $CFLAGS -DTV_HOOK_BUILD -Ies -Isrc -I"$GEN" -c "$src" -o "$obj"
+  for src in $(find lang/spa/engine -name '*.c' | sort); do
+    obj="$HOOKES/obj/$(echo "$src" | sed 's|^lang/spa/engine/||; s|/|_|g; s|\.c$|.o|')"
+    gcc $CFLAGS -DTV_HOOK_BUILD -Ilang/spa/engine -Isrc -I"$GEN" -c "$src" -o "$obj"
     ES_OBJS="$ES_OBJS $obj"
   done
   # OpenTV's third sample rate is one set of tables for every engine, and the
@@ -118,10 +119,10 @@ if [ -n "$(find es -name '*.c' 2>/dev/null)" ]; then
   # this is the one it needs.
   gcc $CFLAGS -Isrc -I"$GEN" -c src/syn_hifi.c -o "$HOOKES/obj/syn_hifi.o"
   ES_OBJS="$ES_OBJS $HOOKES/obj/syn_hifi.o"
-  python tools/gen_hookmap.py es "$HOOKES/hooks_gen.c" "$HOOKES/defsyms.txt" $ES_OBJS
+  python tools/gen_hookmap.py lang/spa/engine "$HOOKES/hooks_gen.c" "$HOOKES/defsyms.txt" $ES_OBJS
   gcc $CFLAGS -c "$HOOKES/hooks_gen.c" -o "$HOOKES/hooks_gen.o"
   gcc $CFLAGS -DTV_WITH_HOOKS -c harness/tvh.c -o "$HOOKES/tvh_hook.o"
-  gcc $CFLAGS -DTV_HOOK_BUILD -Ies -Isrc -I"$GEN" -c harness/unit_es.c -o "$HOOKES/unit_es.o"
+  gcc $CFLAGS -DTV_HOOK_BUILD -Ilang/spa/engine -Isrc -I"$GEN" -c harness/unit_es.c -o "$HOOKES/unit_es.o"
   link "$CHECK/tvh_hook_es.exe" @"$HOOKES/defsyms.txt" "$HOOKES/tvh_hook.o" \
     "$HOOK/hooks.o" "$HOOKES/unit_es.o" "$HOOKES/hooks_gen.o" $ES_OBJS
   echo "built $CHECK/tvh_hook_es.exe"
@@ -150,7 +151,7 @@ gcc $CFLAGS -c "$GEN/tvdata.s" -o "$PORT/obj/tvdata.o"
 PORT_OBJS="$PORT_OBJS $PORT/obj/tvdata.o"
 
 # --- Japanese, in the same library -------------------------------------------
-# Not an engine and not a decompilation: ja_port builds the 22-track parameter
+# Not an engine and not a decompilation: lang/jpn/port builds the 22-track
 # frames the 1997 synthesiser already reads and hands them to en_speak_frames,
 # so it carries no data of its own, needs no gen_rename.py prefixing, and
 # nothing under src/ changes for it.  It is compiled after gen_data.py has run
@@ -170,9 +171,9 @@ PORT_OBJS="$PORT_OBJS $PORT/obj/tvdata.o"
 #
 JA_CF32="$CFLAGS -msse2 -mfpmath=sse"
 JA_OBJS=""
-for src in $(find ja_port -name '*.c' | sort); do
+for src in $(find lang/jpn/port -name '*.c' | sort); do
   obj="$PORT/obj/$(echo "$src" | sed 's|/|_|g; s|\.c$|.o|')"
-  gcc $JA_CF32 -Isrc -Iinclude -Ija_port -I"$GEN" -c "$src" -o "$obj"
+  gcc $JA_CF32 -Isrc -Iinclude -Ilang/jpn/port -I"$GEN" -c "$src" -o "$obj"
   JA_OBJS="$JA_OBJS $obj"
 done
 PORT_OBJS="$PORT_OBJS $JA_OBJS"
@@ -180,8 +181,8 @@ PORT_OBJS="$PORT_OBJS $JA_OBJS"
 # The oracle test at 32 bits as well as at 64, because the question it answers
 # here is whether the two word widths agree.  Freestanding against msvcrt, like
 # everything else in the -m32 build.
-gcc $JA_CF32 -Ija_port -c tests/ja_check.c -o "$PORT/obj/ja_check.o"
-# Everything under ja_port EXCEPT tvtts_ja.c, which is the vtable and wants
+gcc $JA_CF32 -Ilang/jpn/port -c tests/ja_check.c -o "$PORT/obj/ja_check.o"
+# Everything under lang/jpn/port EXCEPT tvtts_ja.c, which is the vtable and wants
 # the library.  So the test binary is the front end alone -- no engine, no
 # data -- and it builds and runs with nothing installed.
 JA_CHECK_OBJS=$(echo "$JA_OBJS" | tr ' ' '\n' | grep -v 'tvtts_ja\.o$' | tr '\n' ' ')
@@ -198,18 +199,18 @@ echo "built $CHECK/ja_check32.exe"
 # the annotations, and its data is laid out under the same prefix.  src/port/api.c
 # is the only file that knows there is more than one engine.
 ES_DATA=${TV_DLL_ES:-${TV_DATA_ES:-data/es/engine.tvdata}}
-if [ -n "$(find es -name '*.c' 2>/dev/null)" ] && [ -f "$ES_DATA" ]; then
+if [ -n "$(find lang/spa/engine -name '*.c' 2>/dev/null)" ] && [ -f "$ES_DATA" ]; then
   ESPORT=$OBJ/esport
   mkdir -p "$ESPORT/obj"
-  python tools/gen_rename.py es,es_port es_ "$GEN/es_rename.h"
+  python tools/gen_rename.py lang/spa/engine,lang/spa/port es_ "$GEN/es_rename.h"
   ES_LIB_OBJS=""
-  for src in $(find es es_port -name '*.c' | sort); do
+  for src in $(find lang/spa/engine lang/spa/port -name '*.c' | sort); do
     obj="$ESPORT/obj/$(echo "$src" | sed 's|/|_|g; s|\.c$|.o|')"
-    gcc $CFLAGS -Ies -Isrc -Iinclude -I"$GEN" -include "$GEN/es_rename.h" \
+    gcc $CFLAGS -Ilang/spa/engine -Isrc -Iinclude -I"$GEN" -include "$GEN/es_rename.h" \
       -c "$src" -o "$obj"
     ES_LIB_OBJS="$ES_LIB_OBJS $obj"
   done
-  python tools/gen_data.py --prefix es_ "$ES_DATA" es,es_port \
+  python tools/gen_data.py --prefix es_ "$ES_DATA" lang/spa/engine,lang/spa/port \
     "$GEN/tvdata_es.s" $ES_LIB_OBJS
   gcc $CFLAGS -c "$GEN/tvdata_es.s" -o "$ESPORT/obj/tvdata_es.o"
   PORT_OBJS="$PORT_OBJS $ES_LIB_OBJS $ESPORT/obj/tvdata_es.o"
@@ -224,7 +225,7 @@ echo "built $CHECK/tv.exe"
 # --- library tests ------------------------------------------------------------
 # Everything but the CLI front end, plus the test program in its place.
 LIB_OBJS=$(echo "$PORT_OBJS" | tr ' ' '
-' | grep -v 'port_main\.o$' | tr '
+' | grep -v '/port_main\.o$' | tr '
 ' ' ')
 gcc $CFLAGS -Isrc -Iinclude -I"$GEN" -c tests/api_test.c -o "$PORT/obj/api_test.o"
 link "$CHECK/api_test.exe" "$PORT/obj/api_test.o" $LIB_OBJS
@@ -281,9 +282,9 @@ OBJ64="$OBJ64 $P64/obj/tvdata.o"
 
 # Japanese at 64 bits, on the same terms as above.
 JA64=""
-for src in $(find ja_port -name '*.c' | sort); do
+for src in $(find lang/jpn/port -name '*.c' | sort); do
   obj="$P64/obj/$(echo "$src" | sed 's|/|_|g; s|\.c$|.o|')"
-  gcc $CF64 -Ija_port -c "$src" -o "$obj"
+  gcc $CF64 -Ilang/jpn/port -c "$src" -o "$obj"
   JA64="$JA64 $obj"
 done
 OBJ64="$OBJ64 $JA64"
@@ -291,14 +292,14 @@ OBJ64="$OBJ64 $JA64"
 # Spanish, the same way as at 32 bits: every name of its own prefixed, and its
 # data laid out under the prefix.  A stored address is four bytes at either word
 # width -- that is what tv_ref is for -- so nothing about the data changes here.
-if [ -n "$(find es -name '*.c' 2>/dev/null)" ] && [ -f "$ES_DATA" ]; then
+if [ -n "$(find lang/spa/engine -name '*.c' 2>/dev/null)" ] && [ -f "$ES_DATA" ]; then
   ES64=""
-  for src in $(find es es_port -name '*.c' | sort); do
+  for src in $(find lang/spa/engine lang/spa/port -name '*.c' | sort); do
     obj="$P64/obj/$(echo "$src" | sed 's|/|_|g; s|\.c$|.o|')"
-    gcc $CF64 -Ies -include "$GEN/es_rename.h" -c "$src" -o "$obj"
+    gcc $CF64 -Ilang/spa/engine -include "$GEN/es_rename.h" -c "$src" -o "$obj"
     ES64="$ES64 $obj"
   done
-  python tools/gen_data.py --prefix es_ "$ES_DATA" es,es_port \
+  python tools/gen_data.py --prefix es_ "$ES_DATA" lang/spa/engine,lang/spa/port \
     "$GEN/tvdata64_es.s" $ES64
   gcc -m64 -c "$GEN/tvdata64_es.s" -o "$P64/obj/tvdata_es.o"
   OBJ64="$OBJ64 $ES64 $P64/obj/tvdata_es.o"
@@ -307,7 +308,7 @@ fi
 gcc -m64 -o "$CHECK/tv64.exe" $OBJ64
 echo "built $CHECK/tv64.exe"
 
-LIB64=$(echo "$OBJ64" | tr ' ' '\n' | grep -v 'port_main\.o$' | tr '\n' ' ')
+LIB64=$(echo "$OBJ64" | tr ' ' '\n' | grep -v '/port_main\.o$' | tr '\n' ' ')
 gcc $CF64 -c tests/api_test.c -o "$P64/obj/api_test.o"
 gcc -m64 -o "$CHECK/api_test64.exe" "$P64/obj/api_test.o" $LIB64
 echo "built $CHECK/api_test64.exe"
@@ -319,12 +320,17 @@ echo "built $CHECK/api_test64.exe"
 # This binary rebuilds them in C and requires every byte to match, and names
 # the word, the frame and the track when one does not.  It links the front end
 # alone -- no engine, no data -- so it builds and runs with nothing installed.
-gcc $CF64 -Ija_port -c tests/ja_check.c -o "$P64/obj/ja_check.o"
+gcc $CF64 -Ilang/jpn/port -c tests/ja_check.c -o "$P64/obj/ja_check.o"
 JA64_CHECK_OBJS=$(echo "$JA64" | tr ' ' '\n' | grep -v 'tvtts_ja\.o$' \
   | tr '\n' ' ')
 gcc -m64 -o "$CHECK/ja_check.exe" "$P64/obj/ja_check.o" \
   $JA64_CHECK_OBJS -lm
 echo "built $CHECK/ja_check.exe"
+
+# Timing tests inspect unpitched frames and mora boundaries at several rates.
+# Keep this test-only DLL separate from the installed synthesis API.
+gcc -m64 -shared -o "$CHECK/ja_timing.dll" $JA64_CHECK_OBJS -lm
+echo "built $CHECK/ja_timing.dll"
 
 # --- the filter-state diagnostic ---------------------------------------------
 # Built with TV_DIAG, which is the only thing that compiles the counters in, so
@@ -339,8 +345,12 @@ for src in src/engine/generate.c src/engine/frame.c tools/voicediag.c; do
   gcc $CF64 -DTV_DIAG -c "$src" -o "$obj"
   VD_OBJS="$VD_OBJS $obj"
 done
+# Anchored on the separator: objects are named by flattening the source path,
+# so lang/spa/engine/generate.c becomes lang_spa_engine_generate.o, which ends
+# in engine_generate.o.  An unanchored pattern drops the Spanish object too and
+# es_Synth_Generate goes undefined.
 VD_REST=$(echo "$LIB64" | tr ' ' '
-' |   grep -vE 'engine_generate\.o$|engine_frame\.o$' | tr '
+' |   grep -vE '/engine_generate\.o$|/engine_frame\.o$' | tr '
 ' ' ')
 gcc -m64 -o "$CHECK/voicediag.exe" $VD_OBJS $VD_REST
 echo "built $CHECK/voicediag.exe"

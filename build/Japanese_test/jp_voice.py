@@ -2,21 +2,32 @@
 """Japanese morae -> parameter frames for tvtts_speak_frames.
 
 Sourcing, which differs by segment and is marked on every entry below:
-  [M] measured -- Mokhtari & Tanaka 2000, the five vowels, F1-F4 and B1-B3
-  [T] measured -- Tanaka ICPhS 2023, F2 at release and centre of gravity, by
-      following vowel, for /k p s h/ and their palatalised forms
+  [M] measured -- Mokhtari & Tanaka 2000, long/doubled steady vowels,
+      F1-F4 and B1-B3; see tools/ja_formant_audit.py for the calculation
+  [T] source -- Tanaka ICPhS 2023, F2 and centre of gravity of release or
+      frication NOISE, not the voiced vowel onset; transition uses are proxies
   [L] from the general literature -- nasal murmur formants, stop VOT
   [E] estimated from place of articulation; no source found
 """
-V = {  # [M]
+V = {  # [M] steady reference, NOT measured short-vowel targets
  'a':(737,1225,2275,3304,170, 99,180), 'i':(298,2067,2951,3455, 61,108,126),
  'u':(356,1293,2224,3282, 52,111,106), 'e':(481,1873,2406,3381, 54, 88,222),
  'o':(456, 856,2343,3246, 57,101,107)}
-# /u/ fronts after alveolars and palatals: F2 1323 against 1081.  [M]
-U_FRONT, U_BACK = 1323, 1081
-_FRONTING = set(['s','sh','ts','z','j','y','ky','gy','ch','ny','ry'])
+# Context medians reconstructed from [M], Appendix A's /u/ words. The four
+# labial/velar words W0398/W0927/W0885/W1341 have onsets k/b/m/k and F2 median
+# 1086.7 Hz (100 frames); the other 18 have s/sh/ts/z/y/ky and median 1317.9 Hz
+# (450 frames). Both groups contain LONG/DOUBLED vowels. Other onsets in these
+# sets are phonetic extrapolations, not additional measured categories.
+# Unrepresented places and a bare vowel retain the pooled reference F2.
+U_FRONT, U_BACK = 1318, 1087
+_FRONTING = set(['s','sh','ts','z','j','y','ky','gy','ch','ny','ry',
+                 'py','by','my','hy'])
+_BACKING = set(['k','g','p','b','m','f','v'])
 
-LOCUS = {                                                        # F2 at release
+# Tanaka's F2 is measured in a window centred in the release/frication noise.
+# It supports place/palatalisation comparisons, but does not directly validate
+# a voiced transition endpoint. Rows derived from it remain model estimates.
+LOCUS = {                                                        # transition F2
  'k' : {'a':1530,'i':2280,'u':1500,'e':2150,'o':1350},           # [T]
  'ky': {'a':2200,'i':2280,'u':2300,'e':2280,'o':2220},           # [T]
  # Kochetov finds the velars differ only "slightly" -- closure width higher for
@@ -59,8 +70,8 @@ LOCUS = {                                                        # F2 at release
  # real and worth rendering, so it goes in SIB_POST, where noise postures live.
  'f' : {'a':921,'i':1224,'u':946,'e':1154,'o':788},              # via /p/
  # Alveolar stops, as ATTAINED values rather than the virtual locus.
- # Tanaka's figures for /k/ and /p/ are F2 measured *at release*, so they are
- # values the formants actually reach; 1800 for /t/ was locus theory's target,
+ # Tanaka's figures for /k/ and /p/ describe release noise, used here as
+ # approximate endpoints; 1800 for /t/ was locus theory's virtual target,
  # which the formants only travel partway toward.  Mixing the two made the /a/
  # off-glide move 575 Hz where Yanagisawa & Arai's XKL stimulus -- which gave a
  # strong perceptual effect -- moves it 150, from 1250 to 1400.  Anchored on
@@ -762,45 +773,35 @@ def noise_post(c, v):
         return (q[0], f2, t[2], q[3], q[4], q[5], q[6])   # ceiling for band 6
     return (q[0], f2, q[2], q[3], q[4], q[5], q[6])
 
-# Hirata & Tsukada (2003), "The Effects of Speaking Rates and Vowel Length on
-# Formant Movements in Japanese": "the long vowels occupied a more peripheral
-# portion of the F1-F2 vowel space than the short vowels did.  This supports a
-# suggestion that long vowels resist coarticulation to a greater extent than
-# short vowels do."  A short vowel undershoots its target; a long one has the
-# time to reach it.  This code used ONE target for both, so /o/ and /o:/ were
-# the same vowel held for different lengths.
+# Hirata & Tsukada (2003) motivate a spectral short/long distinction. The
+# amounts below reproduce Yazawa & Kondo (2019), dataset v3: male midpoint
+# means, BOTH positions, all five contexts, long minus short, rounded in Hz.
+# These are population averages; /u/'s near-zero pooled F2 difference does not
+# establish that its articulation cannot move (the contexts differ markedly).
 #
-# Their study is two speakers and they call it tentative, so it is checked
-# against Yazawa & Kondo's (2019) released dataset -- 16 speakers, 3,200 tokens,
-# five vowels long and short -- where it holds for four vowels of five:
-#
-#   a  F1 687 -> 744, lower in the mouth      i  F2 2154 -> 2293, fronter
-#   e  F2 1947 -> 2043, fronter               o  F2  949 ->  813, backer
-#   u  F2 1435 -> 1442, which is no move at all
-#
-# /u/ not moving is itself right: Japanese /u/ is compressed and central and has
-# nowhere peripheral to go.
-#
-# The two corpora disagree on ABSOLUTE values -- Yazawa's F2 runs 58 to 142 Hz
-# above Mokhtari's, which is what two corpora normally do -- so the absolute
-# numbers are not swapped in.  A WITHIN-corpus difference does transfer, so it
-# is Yazawa's long-minus-short delta that is applied to Mokhtari's targets, and
-# Mokhtari's values are kept as the short vowel.
+# Mokhtari & Tanaka selected 89 long and 21 doubled vowels, with no short
+# vowels in the final set (section 2). V therefore anchors the LONG target.
+# Previously it was mislabelled short and the delta was added on top, pushing
+# long vowels beyond an already sustained-vowel reference. Instead, estimate
+# the short target by subtracting the delta. Transferring an additive contrast
+# across corpora remains an explicit synthesis approximation, not a measured
+# set of short targets for Mokhtari's speakers. F4/bandwidths have no matched
+# short/long data and remain at the reference values.
 LONG_DELTA = {                  # [H] + [Y]:  F1, F2, F3
  'a': (57, -46,  56), 'i': (5, 139, 145), 'u': (4,  7, -35),
  'e': (17,  95,  72), 'o': (-7, -136, 84),
 }
 
 def vowel(v, ctx='', long=False):
-    """The vowel posture, with /u/ fronted after an alveolar or palatal, and
-    pushed to the periphery when the vowel is long."""
+    """Long vowels use the steady reference; short vowels subtract the delta."""
     sp = V[v]
     if v == 'u':
-        f2 = U_FRONT if ctx in _FRONTING else U_BACK
+        f2 = (U_FRONT if ctx in _FRONTING else
+              U_BACK if ctx in _BACKING else sp[1])
         sp = (sp[0], f2, sp[2], sp[3], sp[4], sp[5], sp[6])
-    if long and v in LONG_DELTA:
+    if not long and v in LONG_DELTA:
         d = LONG_DELTA[v]
-        sp = (sp[0] + d[0], sp[1] + d[1], sp[2] + d[2], sp[3],
+        sp = (sp[0] - d[0], sp[1] - d[1], sp[2] - d[2], sp[3],
               sp[4], sp[5], sp[6])
     return sp
 

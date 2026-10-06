@@ -87,8 +87,8 @@ dkms.conf
 # in the code and in build/Japanese_test/README.txt, the PDFs stay out.
 # open_questions.md is ours and is the point of keeping the folder, so it is
 # the one thing in here that is tracked.
-/jp_res/*
-!/jp_res/open_questions.md
+/lang/jpn/research/*
+!/lang/jpn/research/open_questions.md
 /work/
 # ...but the Japanese synthesis is SOURCE, not a build product.  It only sits
 # under build/ because that is where it was started; it is original work of

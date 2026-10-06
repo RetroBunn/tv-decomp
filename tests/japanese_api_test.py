@@ -25,7 +25,7 @@ class Event(C.Structure):
 Callback = C.CFUNCTYPE(C.c_int, C.POINTER(Event), C.c_void_p)
 # Japanese name -> stock engine voice and measured trims (11 kHz, 16 kHz).
 # name: (engine voice, source trim at 11025, at 16000).  A copy of the table in
-# ja_port/tvtts_ja.c, deliberately: what this checks is that the Japanese path
+# lang/jpn/port/tvtts_ja.c, deliberately: what this checks is that the Japanese path
 # differs from the explicit frame path by exactly the documented trim and by
 # nothing else.
 #
@@ -442,6 +442,56 @@ class JapaneseVoiceTests(unittest.TestCase):
                     self.d.tvtts_destroy(ja)
         finally:
             self.d.tvtts_set_extensions(old_ext)
+
+    def test_an_inline_escape_is_consumed_and_applied(self):
+        """NVDA announces a capital as ESC[<n>p then the letter.
+
+        Nothing on this path consumed the engine's escapes, so the mora parser
+        dropped the ESC and the '[' as characters it could not place and read
+        what was left: ESC[50pA came out as "fifty P A".  The pitch is applied
+        to this utterance only -- the driver drops the closing PitchCommand,
+        having nothing left to apply it to, so a change that persisted would
+        never be undone.
+        """
+        buf = C.create_string_buffer(32)
+        n = self.d.tvtts_pitch_sequence(buf, 32, 300)
+        self.assertGreater(n, 0)
+        seq = buf.raw[:n]
+        self.d.tvtts_get_pitch.argtypes = [C.c_void_p]
+        for sr in (11025,):
+            ja = self.d.tvtts_create_lang(sr, b'ja')
+            self.assertTrue(ja)
+            try:
+                self.d.tvtts_set_voice(ja, self.voices['Taro'])
+                before = self.d.tvtts_get_pitch(ja)
+                plain = self.collect(self.d.tvtts_speak_bytes, ja,
+                                     'あ'.encode(), len('あ'.encode()))
+                raised = self.collect(self.d.tvtts_speak_bytes, ja,
+                                      seq + 'あ'.encode(),
+                                      len(seq + 'あ'.encode()))
+                # consumed: the escape adds no speech of its own
+                self.assertEqual(len(raised), len(plain))
+                # applied: a different pitch is a different waveform
+                self.assertNotEqual(raised, plain)
+                # and it did not stick to the synthesiser
+                self.assertEqual(self.d.tvtts_get_pitch(ja), before)
+            finally:
+                self.d.tvtts_destroy(ja)
+
+    def test_an_utterance_ends_on_silence(self):
+        """A word ending in a vowel used to stop mid-cycle and click."""
+        import struct
+        for word in ('あ', 'おはよう', 'こんにちは', 'さくら'):
+            ja = self.d.tvtts_create_lang(11025, b'ja')
+            self.assertTrue(ja)
+            try:
+                self.d.tvtts_set_voice(ja, self.voices['Taro'])
+                b = word.encode()
+                pcm = self.collect(self.d.tvtts_speak_bytes, ja, b, len(b))
+            finally:
+                self.d.tvtts_destroy(ja)
+            x = struct.unpack('<%dh' % (len(pcm) // 2), pcm)
+            self.assertEqual(x[-1], 0, word)
 
 
 if __name__ == '__main__':

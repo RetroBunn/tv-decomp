@@ -56,7 +56,7 @@ apart — is `Synth_ResetTracks`.
 
 ## The object
 
-`es/engine.fields` holds what is established, in the format
+`lang/spa/engine/engine.fields` holds what is established, in the format
 `tools/gen_struct.py` already reads, so it generates a header the same way
 the English one does.
 
@@ -395,17 +395,17 @@ which a control run on the English engine confirmed before it could be
 mistaken for a bad field mapping.
 ## Where the Spanish work lives
 
-Under `es/`, deliberately **not** under `src/`.  `tools/gen_hookmap.py` and
+Under `lang/spa/engine/`, deliberately **not** under `src/`.  `tools/gen_hookmap.py` and
 `tools/gen_data.py` walk a directory recursively, so a Spanish file carrying
 `@0x...` annotations inside `src/` would have its addresses bound into the
 English build -- and the two engines use overlapping address ranges, so that
 would not even fail loudly.  `gen_hookmap.py` already takes the directory as
-an argument, so pointing it at `es/` was all that was needed.
+an argument, so pointing it at `lang/spa/engine/` was all that was needed.
 
-`es/engine.fields` feeds `tools/gen_struct.py` exactly as the English one
+`lang/spa/engine/engine.fields` feeds `tools/gen_struct.py` exactly as the English one
 does, producing `build/obj/gen/es_engine_struct.h` with a layout assertion per
 field.  Two types it refers to, `TextIn` and `SapiCentral`, are forward
-declared in `es/es_engine.h` and not laid out yet; declaring them keeps the
+declared in `lang/spa/engine/es_engine.h` and not laid out yet; declaring them keeps the
 fields that hold them, and every offset after them, honest.
 
 `data/es/` is empty on purpose.  `tools/extract_data.py` decides what to
@@ -416,9 +416,9 @@ are not yet enough Spanish ones to drive it.
 
 `harness/build.sh` now produces `build/check/tvh_hook_es.exe`: the same
 trick the English decompilation is built on, aimed at `CGRM_ES.DLL`.  Every
-function written in `es/` is patched over the original with a five-byte
+function written in `lang/spa/engine/` is patched over the original with a five-byte
 jump, the engine runs, and the audio has to come out identical.  It is
-skipped when `es/` has no C in it, so the build works either way.
+skipped when `lang/spa/engine/` has no C in it, so the build works either way.
 
 The first eight are the character rings -- `Engine_InFree`, `InGet`,
 `InUnget`, `InPut`, `InPutEnd`, `MidFree`, `MidGet`, `MidPut` -- chosen
@@ -778,7 +778,7 @@ Reading the allocator corrected the layout.  `Engine_ResetNodes` writes
 `node(0x90c)->next` as the first pool node and `node(0x8f0)->prev` as the
 last, so 0x90c heads the free list and 0x8f0 ends it -- and
 `Engine_NodeAlloc` taking its node from `[0x8ec]->next` agrees.  The
-`free_head` and `free_tail` in `es/engine.fields` were the wrong way round,
+`free_head` and `free_tail` in `lang/spa/engine/engine.fields` were the wrong way round,
 written from the order the pointers are assigned rather than from what they
 point at.  The four names now match English's, which has the same tail
 pointer, head pointer, tail node, head node in the same order.
@@ -1220,7 +1220,7 @@ boundaries; this computes the decibels in x87 and truncates --
 
 which is `log10(vol * (1/65535)) * -10.0`, truncated toward zero, then capped
 at 15.  That is the same step function `src/engine/volume.c` tabulated for
-English, reached a different way, so `es/params.c` reuses those boundaries
+English, reached a different way, so `lang/spa/engine/params.c` reuses those boundaries
 rather than recomputing them.
 
 Reusing them needed proof rather than an argument, because the two engines
@@ -1236,7 +1236,7 @@ a few minutes, so it is not in `all`.
 ## The reset chain, and the field English has that this engine does not
 
 `Engine_Reset` calls eleven functions and `Engine_Init` calls the same set.
-Seven were unwritten; all seven are now in `es/reset.c`, which finishes the
+Seven were unwritten; all seven are now in `lang/spa/engine/reset.c`, which finishes the
 chain -- `Engine_Reset` and `Engine_Init` are complete subtrees.
 
 They are almost all stores, which makes them cheap to read and cheap to test:
@@ -1244,7 +1244,7 @@ poison both objects with 0x5a, run one on each, compare whole.  That catches
 more than it looks like.  A field written that should not be shows up as a
 difference; a field the original writes that we miss shows up as our poison
 against its value.  A reset names fields by writing them, so the comparison
-is a direct check on that part of `es/engine.fields`.
+is a direct check on that part of `lang/spa/engine/engine.fields`.
 
 `Output_Reset` earned its keep.  It writes exactly the fields the English
 `Output_Reset` writes, in the same order, each at +0x19e4: the same two it
@@ -1967,7 +1967,7 @@ reads
 recovered from `lea eax, [ebx + eax*4]` chains five instructions long.  The
 same listing shows six serial biquads and five parallel sections in the same
 order, and the `>> 0xe` of the aspiration tap.  None of that was used to
-write `es/generate.c`, which was finished first; it is recorded because it
+write `lang/spa/engine/generate.c`, which was finished first; it is recorded because it
 independently confirms that reading and because it made the rows above
 cheaper to take on, and every one of them is now decompiled.
 
@@ -2062,7 +2062,7 @@ buffer one byte *past* the last character it wrote, so for a token of five
 characters or more the sixth byte it copies into `ti_74` is whatever its stack
 held; nothing ever reads `ti_74[5]`, because the comparison against it only
 reaches index 4 and the index the trailing character uses is the token's length,
-which that case does not take.  `es/textin.c` clears the buffer, writes zero
+which that case does not take.  `lang/spa/engine/textin.c` clears the buffer, writes zero
 there, and the unit comparison leaves that byte out and says why.  And opening a
 quotation steps three tokens back through `t->prev->bits` with nothing checking
 for the end of the list: what keeps it standing is that mode 4 text ends every
@@ -2128,7 +2128,7 @@ by the syllable count and then by two dozen tests on what the words either side
 of it start with, each a percentage between 79 and 180 -- and then throws the
 result away: the duration a vowel ends up with is one of a dozen small
 constants chosen on the phoneme, the stress and what two nodes ahead look like.
-A consonant keeps its scaled value.  `es/stage2.c` writes the whole vowel chain
+A consonant keeps its scaled value.  `lang/spa/engine/stage2.c` writes the whole vowel chain
 out anyway, because the unit suite requires the two builds to agree, not
 because it makes sense.
 
@@ -2179,7 +2179,7 @@ cases, and 249 of 433 when three of them are deliberately broken.  Mode 4's
 handlers are reached through `-U mode4`, which already existed for the
 announcements.
 
-**Stored pointers.**  Sixty-six declarations in `es/` were raw
+**Stored pointers.**  Sixty-six declarations in `lang/spa/engine/` were raw
 `const uint8_t *const`, which is right for a 32-bit hook build and wrong for
 anything else: NVDA is a 64-bit process, and a stored address in the engine's
 data is four bytes whatever a pointer is on the host.  They are `tv_ref` now --
@@ -2203,7 +2203,7 @@ words-per-minute sit at 0x1004c828, 0x1004c850 and 0x1004c878, ten int32 each;
 nine share a default of 150 wpm and Rogelio speaks at 120.
 
 Two defects turned up on the way, both of the same kind -- one address with two C
-names.  `FoldAccent` and `Accent_Split` were both 0x10014db0, so `es/escape.c`
+names.  `FoldAccent` and `Accent_Split` were both 0x10014db0, so `lang/spa/engine/escape.c`
 had been calling the DLL's copy of it rather than the decompiled one; unified on
 `Accent_Split`, and the corpus still passes, which says the two agree there too.
 `g_char_flags` was the earlier one, above.
@@ -2260,7 +2260,7 @@ neither annotates.
 **What the standalone build needed that the hook build did not.**  Four things,
 each of which the hook build had been quietly getting from the DLL:
 
-  - The eleven C runtime entries, in `es_port/msvcrt_es.c`.  Most are the
+  - The eleven C runtime entries, in `lang/spa/port/msvcrt_es.c`.  Most are the
     standard functions under another name; `atol` and the character classes read
     the "C" locale table the original CRT built into its own data, which is at a
     different address in each DLL, so each language brings its own.
@@ -2531,7 +2531,7 @@ The 1997 engine gained voices past the ten in its DLL -- see
 Frank's numbers come from.  This engine now has the same, and `Francisco` is the
 first: **Frank's definition, speaking Spanish.**
 
-The mechanism is mirrored rather than shared.  `es/voices.c` is a copy of
+The mechanism is mirrored rather than shared.  `lang/spa/engine/voices.c` is a copy of
 `src/engine/voices.c`'s shape, not a second caller of it, because the two
 generations keep their per-voice data in differently named tables -- the 1995
 engine's are `g_1004c7e8`, `g_1004c7f8`, `g_1004c808`, `g_1004c818`,
@@ -2540,7 +2540,7 @@ read sites across `control.c`, `phone.c`, `prosody.c` and `stage3.c` now go
 through an accessor; below `ES_STOCK_VOICES` each one is exactly the subscript it
 replaced, which is why the 205-input corpus is byte-identical.
 
-Four bits of track 21 carry the voice here too -- `es/stage3.c:327` ORs
+Four bits of track 21 carry the voice here too -- `lang/spa/engine/stage3.c:327` ORs
 `st->voice << 4` into it -- so this engine is also capped at sixteen, and the
 stock ten leave room for six.
 
@@ -2552,7 +2552,7 @@ What carried over without a change, and what had to be built:
 | adjustment row | -9% on F1-F4 and B1-B3 | the same |
 | `F0Def` | 72 | 72 |
 | Creakiness | jitter 0, shimmer 0 | the same |
-| Breathiness | `aspir` 76 | the same, floored in `es/prosody.c` |
+| Breathiness | `aspir` 76 | the same, floored in `lang/spa/engine/prosody.c` |
 | `IntonLevel` | 70 | 70, applied in `es_contour_scale` |
 | `gain` | 100 | 100 |
 
@@ -2561,7 +2561,7 @@ engine, and each is inert for a stock voice, so none of them costs the corpus
 anything:
 
 - **`aspir`** is a floor under the aspiration level, after `par[2] += adj[12]`
-  in `es/prosody.c`.  A stock voice's is 0 and the line does nothing.
+  in `lang/spa/engine/prosody.c`.  A stock voice's is 0 and the line does nothing.
 - **`gain`** scales the source level at `es_v_gain(self->voice, g_par0_a[par[2]])`,
   and is a multiply by 100/100 for a stock voice.
 - **`IntonLevel`** multiplies into `es_contour_scale`, which already narrowed the

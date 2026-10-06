@@ -875,7 +875,7 @@ int32_t TV_STDCALL Rule_ClassifyNumber(Token *t)
 }
 
 /* The abbreviation records, 0x2c bytes ahead of the expansion text
- * es/tables.c searches: two int16 for the token's w08 and w0a, three dwords of
+ * lang/spa/engine/tables.c searches: two int16 for the token's w08 and w0a, three dwords of
  * flags to be or-ed into it, the record's own flag set at +0x14, and the
  * expansion at +0x2c. */
 /* @0x10062048 */

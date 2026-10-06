@@ -5,7 +5,7 @@ Run from the repository root:  python build/Japanese_test/make_prosody.py
 
 Until now everything this synthesiser could say was one accent phrase with one
 Fujisaki phrase command, so it could say words and not sentences.  Three things
-changed, each from a paper in jp_res/prosody:
+changed, each from a paper in lang/jpn/research/prosody:
 
   Kawai, Hirose & Fujisaki (1994)   the phrase symbols P1/P2/P3, the L1 = 5
                                     mora threshold, and P0 = -0.50, the

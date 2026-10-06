@@ -160,7 +160,7 @@ static int32_t es_contour_scale(int32_t v, int32_t pitch, int32_t voice)
 /* @0x10058618 */
 extern const uint8_t g_10058618[0x200];
 
-/*: the three ways this file indexes the flag table; see es/adjust.c. */
+/*: the three ways this file indexes the flag table; see lang/spa/engine/adjust.c. */
 static int32_t s2_cls0(uint8_t v)
 {
     return (int32_t)(int16_t)(int8_t)v;
@@ -1262,7 +1262,7 @@ extern const int32_t g_syl_pct[5];
 /* 0.8, the factor an e or an i before an N is multiplied by. */
 /* @0x10048a50 */
 extern const double g_dur_before_n;
-/* Ten times this is the phoneme's base length; the same table es/stage3seg.c
+/* Ten times this is the phoneme's base length; the same table lang/spa/engine/stage3seg.c
  * reads as a divisor. */
 /* @0x10057d50 */
 extern const tv_ref g_10057d50;

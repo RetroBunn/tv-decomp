@@ -8,8 +8,8 @@
  * two histories; what IS repeated is the marker, so it is visible at a glance
  * how much weight a row can carry:
  *
- *   [M]  Mokhtari & Tanaka 2000 -- the five vowels, F1-F4 and B1-B3
- *   [T]  Tanaka ICPhS 2023 -- F2 at release, by following vowel
+ *   [M]  Mokhtari & Tanaka 2000 -- long/doubled vowels, F1-F4 and B1-B3
+ *   [T]  Tanaka ICPhS 2023 -- F2 of release/frication noise; onset proxies
  *   [Y]  Yazawa & Kondo 2019 -- vowel duration, 16 speakers, released data
  *   [L]  the general literature
  *   [A]  Arai LabPhon 14 -- the flap
@@ -17,9 +17,8 @@
  *   [K]  Kochetov 2014 (EPG), Kariyasu 2003 (glides), Kitazawa (bursts)
  *   [E]  estimated from place of articulation; no source found
  *
- * tools/check_ja_tables.py dumps these back out and compares them against the
- * Python, value by value, so a transcription slip is caught here rather than
- * showing up 2,000 lines later as one odd frame in one word.
+ * tests/japanese_formant_test.py compares the vowel postures with the Python
+ * and checks the source-derived anchors separately from the frame oracle.
  */
 #include <math.h>
 #include <string.h>
@@ -28,7 +27,7 @@
 
 /* ---- vowels -------------------------------------------------------------- */
 
-/* [M] F1 F2 F3 F4 B1 B2 B3, in the order a i u e o. */
+/* [M] Steady long/doubled reference: F1 F2 F3 F4 B1 B2 B3; a i u e o. */
 const double ja_V[JA_NV][7] = {
     { 737, 1225, 2275, 3304, 170,  99, 180 },   /* a */
     { 298, 2067, 2951, 3455,  61, 108, 126 },   /* i */
@@ -37,25 +36,32 @@ const double ja_V[JA_NV][7] = {
     { 456,  856, 2343, 3246,  57, 101, 107 }    /* o */
 };
 
-/* /u/ fronts after an alveolar or a palatal: F2 1323 against 1081.  [M] */
-#define U_FRONT 1323
-#define U_BACK  1081
+/* [M] Appendix A context medians; unseen related onsets are extrapolations.
+ * No onset or an unrepresented place retains ja_V[U][1]. */
+#define U_FRONT 1318
+#define U_BACK  1087
 
 static const unsigned char fronting[JA_NC] = {
     0,
     0, 1, 0, 1,                 /* k ky g gy */
     0, 0,                       /* t d */
-    0, 0, 0, 0, 0,              /* p py b by v */
+    0, 1, 0, 1, 0,              /* p py b by v */
     1, 1, 1, 1, 1, 1,           /* s sh z j ch ts */
-    0, 0, 0,                    /* h hy f */
-    0, 1, 0, 0,                 /* n ny m my */
+    0, 1, 0,                    /* h hy f */
+    0, 1, 0, 1,                 /* n ny m my */
     0, 1,                       /* r ry */
     0, 1,                       /* w y */
     0, 0, 0, 0, 0
 };
 
-/* Hirata & Tsukada, checked against [Y]: a long vowel reaches a more
- * peripheral target than a short one.  F1, F2, F3 deltas. */
+static const unsigned char backing[JA_NC] = {
+    [JA_C_K] = 1, [JA_C_G] = 1, [JA_C_P] = 1, [JA_C_B] = 1,
+    [JA_C_M] = 1, [JA_C_F] = 1, [JA_C_V] = 1
+};
+
+/* [Y] Male means pooled over BOTH positions, long minus short (F1-F3).
+ * Subtract from [M]'s sustained reference for short vowels. Cross-corpus
+ * transfer is a modelling approximation, not measured short-vowel targets. */
 const double ja_LONG_DELTA[JA_NV][3] = {
     {  57,  -46,  56 },         /* a */
     {   5,  139, 145 },         /* i */
@@ -115,7 +121,7 @@ const short ja_LOCUS[JA_NC][JA_NV] = {
     { 1150, 1250, 1100, 1150, 1050 },   /* m   [L] */
     { 1400, 1450, 1400, 1400, 1350 },   /* my  [E] */
     { 1500, 1939, 1535, 1838, 1307 },   /* r   [A] set_flap('flap') */
-    { 1667, 2107, 1718, 2005, 1475 },   /* ry  [A] + [T] palatal anchor */
+    { 1667, 2107, 1716, 2005, 1475 },   /* ry  [A] + [T] palatal anchor */
     {  887, 1013,  887,  950,  887 },   /* w   [K] Kariyasu's F1/F2 ratio */
     { 2100, 2100, 2100, 2100, 2100 },   /* y   [E] palatal */
     { 1000, 1100, 1000, 1000,  950 },   /* N   [L] */
@@ -509,8 +515,7 @@ static int voiced_f2(int c, int v, double *out)
     return 0;
 }
 
-/* The vowel posture, with /u/ fronted after an alveolar or palatal and pushed
- * to the periphery when the vowel is long. */
+/* Long vowels retain the sustained reference, short vowels subtract delta. */
 int ja_vowel_post(int v, int ctx_c, int longv, ja_post out)
 {
     int k;
@@ -519,13 +524,14 @@ int ja_vowel_post(int v, int ctx_c, int longv, ja_post out)
         return 0;
     for (k = 0; k < 7; k++)
         out[k] = ja_V[v][k];
-    if (v == JA_V_U)
-        out[1] = (ctx_c > 0 && ctx_c < JA_NC && fronting[ctx_c])
-                 ? (double)U_FRONT : (double)U_BACK;
-    if (longv) {
-        out[0] += ja_LONG_DELTA[v][0];
-        out[1] += ja_LONG_DELTA[v][1];
-        out[2] += ja_LONG_DELTA[v][2];
+    if (v == JA_V_U && ctx_c > 0 && ctx_c < JA_NC) {
+        if (fronting[ctx_c]) out[1] = U_FRONT;
+        else if (backing[ctx_c]) out[1] = U_BACK;
+    }
+    if (!longv) {
+        out[0] -= ja_LONG_DELTA[v][0];
+        out[1] -= ja_LONG_DELTA[v][1];
+        out[2] -= ja_LONG_DELTA[v][2];
     }
     return 1;
 }

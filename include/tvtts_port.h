@@ -15,7 +15,7 @@
  * have nothing in common but their purpose; the language that made one is the
  * only thing that may look inside it.
  *
- * Adding a language is adding a file like es_port/tvtts_es.c, a row in
+ * Adding a language is adding a file like lang/spa/port/tvtts_es.c, a row in
  * api.c's table, and nothing else.
  */
 #ifndef TVTTS_PORT_H
@@ -127,7 +127,7 @@ int         en_speak_bytes(void *s, const void *text, uint32_t len,
 /*
  * English's frame entry point, which is the layer below stage 3: 22 parameter
  * tracks per 10 ms frame, straight into the synthesiser.  Japanese is built on
- * it -- see ja_port/tvtts_ja.c -- so it is declared here rather than locally.
+ * it -- see lang/jpn/port/tvtts_ja.c -- so it is declared here rather than locally.
  */
 /*
  * What the engine would SAY for this text, in its own one-character phoneme
@@ -146,7 +146,7 @@ int         en_text_to_phonemes(void *s, const char *text,
 int         en_speak_frames(void *s, const uint8_t *frames, uint32_t n_frames,
                             tvtts_callback cb, void *user);
 
-/* Spanish, es_port/tvtts_es.c. */
+/* Spanish, lang/spa/port/tvtts_es.c. */
 void       *es_create(uint32_t sample_rate);
 void        es_destroy(void *s);
 void        es_set_voice(void *s, int voice);
@@ -169,9 +169,9 @@ int         es_speak_bytes(void *s, const void *text, uint32_t len,
                            tvtts_callback cb, void *user);
 
 /*
- * Japanese, ja_port/tvtts_ja.c.  Not a decompilation and not an engine: the
+ * Japanese, lang/jpn/port/tvtts_ja.c.  Not a decompilation and not an engine: the
  * front end is built from the phonetics literature and it drives the 1997
- * synthesiser through en_speak_frames.  See ja_port/ja.h.
+ * synthesiser through en_speak_frames.  See lang/jpn/port/ja.h.
  */
 void       *ja_create(uint32_t sample_rate);
 void        ja_destroy(void *s);

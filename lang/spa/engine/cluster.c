@@ -7,7 +7,7 @@
  * `ctl`'s value, the one after is the value of the node following `scan`.
  * `g_100613c0` maps the twenty-three consonant letters -- B C D F G K L M N
  * P R S T X Y b d g n r y ~ and space -- to 0..22 and everything else to
- * -1, which is the same twenty-three the `a + b * 23` grid in es/bittab.c
+ * -1, which is the same twenty-three the `a + b * 23` grid in lang/spa/engine/bittab.c
  * is indexed by.  So `BitTable_Rank` of the pair is this record's place in
  * the packed array, and there is one array per vowel.
  *

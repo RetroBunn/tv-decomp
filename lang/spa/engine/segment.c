@@ -3,7 +3,7 @@
  * with its contour and its partner.
  *
  * This is the top of the subtree.  It finds the record for the consonant
- * pair the way es/cluster.c does -- same twenty-three consonants, same
+ * pair the way lang/spa/engine/cluster.c does -- same twenty-three consonants, same
  * `a + b * 23` grid, same `N` before `C` becomes `n` and `Z` becomes `S` --
  * and then unpacks that record and hands the pieces to Track_Contour,
  * Track_Set and Ramp_Fill.
@@ -151,7 +151,7 @@ uint8_t TV_THISCALL Segment_Apply(Engine *self, int32_t vowel)
         self->seg_len -= self->trans_len;
     dur = self->seg_len - 1;
 
-    /* the same substitutions es/cluster.c makes, plus 'r' before 'R' */
+    /* the same substitutions lang/spa/engine/cluster.c makes, plus 'r' before 'R' */
     if (c_scan == 'r' && c_next == 'R')
         c_scan = 'R';
     if (c_scan == 'N' && c_next == 'C')

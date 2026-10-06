@@ -49,7 +49,7 @@ So they are extracted rather than copied out.  Re-running this is how the
 result is checked, and a version bump upstream shows up here as a diff.
 
 BOTH front ends read this.  build/Japanese_test/*.py imports it directly and
-tools/gen_ja_ojt.py turns it into ja_port/ja_ojt.c, so the C and the Python
+tools/gen_ja_ojt.py turns it into lang/jpn/port/ja_ojt.c, so the C and the Python
 cannot be reading different tables -- and there is no longer a Japanese string
 literal typed by hand in either of the five rule stages.
 

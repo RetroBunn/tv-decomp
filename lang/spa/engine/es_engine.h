@@ -5,7 +5,7 @@
  * November 1995 engines and the October 1997 English engine are different
  * builds with different structure layouts, so nothing here may be assumed
  * from src/ without checking it against CGRM_ES.DLL.  docs/SPANISH.md says
- * how each fact was established and es/engine.fields carries the layout.
+ * how each fact was established and lang/spa/engine/engine.fields carries the layout.
  *
  * Address annotations (/ * @0x1000e5a0 * /) name the function's address in
  * CGRM_ES.DLL, which is what tools/gen_hookmap.py binds for the hook build.
@@ -19,11 +19,11 @@
  * on the host, so every table of them is a table of tv_ref.  See src/tv_ref.h. */
 #include "tv_ref.h"
 
-#include "es_engine_struct.h" /* generated from es/engine.fields */
+#include "es_engine_struct.h" /* generated from lang/spa/engine/engine.fields */
 
 /* OpenTV: on, the pitch ceiling is the English engine's 0x1f4 rather than this
  * engine's 0x32..0xc8, which two of the ten voices sit above.  Set from
- * TVTTS_EXT_PITCH; see es/stage2.c. */
+ * TVTTS_EXT_PITCH; see lang/spa/engine/stage2.c. */
 extern int tv_es_ext_pitch;
 extern int tv_es_ext_contour;
 extern int tv_es_ext_floor;
@@ -320,7 +320,7 @@ uint8_t TV_THISCALL Stage1_Lexicon(Engine *self);
 /* One phoneme of stage 1: the Spanish spelling rules, one arm each. */
 /* @0x1000fca0 */
 uint8_t TV_THISCALL Stage1_Phoneme(Engine *self);
-/* Looks ahead for the end of the word and puts a '&' at it; see es/stage1.c
+/* Looks ahead for the end of the word and puts a '&' at it; see lang/spa/engine/stage1.c
  * for what the four results mean. */
 /* @0x10010480 */
 int32_t TV_THISCALL Stage1_WordMark(Engine *self);
@@ -619,7 +619,7 @@ Node *TV_THISCALL Stage3_Pause(Engine *self);
 /* A sparse-record index over a bitmap: BitTable_Rank gives the packed
  * position of the record at (a, b) in table `kind`, or -1 when there is
  * none, and BitTable_Count gives the set bits in the first `nbytes` of a
- * row -- which callers use as the count of records.  See es/bittab.c on
+ * row -- which callers use as the count of records.  See lang/spa/engine/bittab.c on
  * what the arguments are not yet known to mean. */
 /* @0x100122f0 */
 int32_t TV_STDCALL BitTable_Count(int32_t kind, int32_t nbytes);
@@ -677,7 +677,7 @@ void TV_THISCALL Track_Emit(Engine *self, int32_t track);
  * 11 that emits each and then restores its parameters. */
 /* @0x10015720 */
 void TV_THISCALL Stage3_Segment(Engine *self);
-/* Three more of sub_1001b880's correction passes; see es/adjust.c on why
+/* Three more of sub_1001b880's correction passes; see lang/spa/engine/adjust.c on why
  * the grouping is the original's rather than a derived one. */
 /* @0x10014f20 */
 void TV_THISCALL Track_AdjustWeights(Engine *self);
@@ -758,13 +758,13 @@ void TV_THISCALL Stage3_StopClosure(Engine *self);
  * find a definition of, so a call to one of those lands in the original inside
  * the loaded DLL, and that is what made it possible to decompile one function
  * at a time rather than a whole subsystem at once.  Three such declarations are
- * left in the tree, in es/textin.c: the mode 4 header handlers, which nothing
+ * left in the tree, in lang/spa/engine/textin.c: the mode 4 header handlers, which nothing
  * can reach yet. */
 
 
 /*
  * OpenTV: voices of our own, past the ten the DLL carries.  The mechanism is
- * the English engine's mirrored for this one; see es/voices.c.
+ * the English engine's mirrored for this one; see lang/spa/engine/voices.c.
  */
 #define ES_STOCK_VOICES 10
 #define ES_V_INHERIT    (-0x7fffffff)

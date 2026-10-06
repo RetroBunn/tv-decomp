@@ -47,7 +47,7 @@ extern const int32_t g_voice_speed[10];
 /* @0x100497cc */
 extern const char g_voice_names[];
 
-/* The DLL's ten, plus any of OpenTV's own; see es/voices.c. */
+/* The DLL's ten, plus any of OpenTV's own; see lang/spa/engine/voices.c. */
 #define TV_VOICES (ES_STOCK_VOICES + (int)es_extra_voice_count)
 
 struct es_synth {

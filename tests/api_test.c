@@ -726,7 +726,7 @@ static void test_custom_voices(void)
 /*
  * Francisco: the same mechanism on the 1995 Spanish engine.
  *
- * es/voices.c mirrors src/engine/voices.c rather than sharing it, because the
+ * lang/spa/engine/voices.c mirrors src/engine/voices.c rather than sharing it,
  * two generations keep their per-voice data in differently named tables, so
  * each of the three things that can quietly fail -- the voice being named, the
  * tract reaching the synthesiser, IntonLevel reaching the contour -- is worth

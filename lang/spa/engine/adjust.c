@@ -10,7 +10,7 @@
  *
  * The three phonemes.  `cur`, `ctl` and `scan` are stage 3's three node
  * pointers; which of them holds a vowel and which a consonant is not fixed
- * here the way it is in es/cluster.c -- `ctl`'s value is tested against
+ * here the way it is in lang/spa/engine/cluster.c -- `ctl`'s value is tested against
  * consonants in one place and against 'O' and 'A' in another -- so they are
  * named after the pointers rather than after phoneme roles.
  *

@@ -25,7 +25,7 @@ too: a track unit is not a decibel, and the tracks saturate.
 
 WHAT THE NUMBER MEANS, PRECISELY.  It speaks through tvtts_speak_bytes on the
 Japanese language, so the library's OWN per-voice trim -- the table in
-ja_port/tvtts_ja.c -- is already applied, and what is reported is the
+lang/jpn/port/tvtts_ja.c -- is already applied, and what is reported is the
 attenuation needed ON TOP OF IT.  So a row of zeros is the answer "the shipped
 table is still enough", which is the question worth asking after anything
 changes the Japanese levels; it is not a re-derivation of the table from
@@ -209,7 +209,7 @@ def main(argv=None):
               % (name, k, hi, clip, step, first[0], first[1]))
         rows.append((name, k))
     print()
-    print('as a table for ja_port/tvtts_ja.c, in voice order:')
+    print('as a table for lang/jpn/port/tvtts_ja.c, in voice order:')
     print('    ' + ', '.join('%d' % (k if k is not None else -1)
                              for _, k in rows))
     return 0

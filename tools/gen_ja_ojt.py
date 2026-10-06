@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Turn the extracted Open JTalk tables into C.
 
-    python tools/gen_ja_ojt.py     # -> ja_port/ja_ojt.c and ja_port/ja_ojt.h
+    python tools/gen_ja_ojt.py     # -> lang/jpn/port/ja_ojt.c and lang/jpn/port/ja_ojt.h
 
 `tools/gen_ja_rules.py` extracts the tables out of Open JTalk's headers into
 `build/Japanese_test/ojt_tables.py`, which the Python front end reads.  This
@@ -22,8 +22,8 @@ import argparse, io, os, sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 PY = os.path.join(ROOT, 'build', 'Japanese_test')
-OUT_C = os.path.join(ROOT, 'ja_port', 'ja_ojt.c')
-OUT_H = os.path.join(ROOT, 'ja_port', 'ja_ojt.h')
+OUT_C = os.path.join(ROOT, 'lang/jpn/port', 'ja_ojt.c')
+OUT_H = os.path.join(ROOT, 'lang/jpn/port', 'ja_ojt.h')
 
 
 def clit(s):

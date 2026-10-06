@@ -706,7 +706,7 @@ over unchanged -- the same adjustment row, the same `F0Def` of 72, the same
 `aspir`, `gain` and `IntonLevel` -- because the two generations take the same
 fifteen-wide row and the same pitch units.
 
-The mechanism is mirrored, not shared: `es/voices.c` beside this file, because
+The mechanism is mirrored, not shared: `lang/spa/engine/voices.c` beside this file, because
 the 1995 engine keeps its per-voice data in differently named tables.
 [SPANISH.md](SPANISH.md#a-voice-of-its-own-francisco) has what differed and where
 each of the three added fields had to be put.
@@ -806,8 +806,8 @@ The three differing rows differ in exactly one of their fifteen columns each:
 | 8, Wanda / Josefa | `p2+` | 15 | 21 | 6 more on track 2, to the same `0x6b` clamp |
 | 9, Julia / Isabel | `F3%` | 21 | 17 | Isabel's third formant scales 4 points less |
 
-Track 2 is the aspiration amplitude -- `es/prosody.c` turns it into
-`filt_coef[16]` through `g_par0_a`, and `es/generate.c` mixes it in as
+Track 2 is the aspiration amplitude -- `lang/spa/engine/prosody.c` turns it into
+`filt_coef[16]` through `g_par0_a`, and `lang/spa/engine/generate.c` mixes it in as
 `((noise * coef[16]) >> 15) + t` -- so of the three, the audible one is that
 Josefa is breathier than Wanda.  All thirteen tables after the adjustment block
 are byte-identical.
@@ -889,7 +889,7 @@ slot 5, as expected by SAPI. This replaces the temporary reduced roster;
 saved Japanese voice selections based on its numeric indices may need to
 be selected again.
 
-`ja_port/ja_voice.c` calibrates aspiration and parallel noise for Tsuyoshi,
+`lang/jpn/port/ja_voice.c` calibrates aspiration and parallel noise for Tsuyoshi,
 Kenta, Hanako and Keiko against Peter's Japanese sources at the same sample
 rate. It retains each stock voice's formant and voicing parameters. Run
 `python tools/ja_kenta_calibrate.py --voice N` to reproduce the isolated-source
