@@ -188,9 +188,26 @@ static const WCHAR *voice_age(int voice)
 static const WCHAR *voice_langid(int voice)
 {
     const char *lang = tvtts_voice_language(voice);
-    if (lang && lang[0] == 'e' && lang[1] == 's')
-        return L"40a";
-    return L"409";
+
+    /*
+     * Every language the library carries needs a row here.  Falling through
+     * to American English is not a safe default: it registered all ten
+     * Japanese voices as en-US, so a client asking for Japanese could not
+     * find them and one asking for English was offered ten voices that do not
+     * speak it.  A language added to the library without a row is a bug, so
+     * this says so rather than guessing -- 0 is LANG_NEUTRAL, which no client
+     * matches by language, and a voice that cannot be found is easier to
+     * notice than one that answers to the wrong language.
+     */
+    if (lang == NULL)
+        return L"409";
+    if (lang[0] == 'e' && lang[1] == 'n')
+        return L"409";                  /* en-US */
+    if (lang[0] == 'e' && lang[1] == 's')
+        return L"40a";                  /* es-ES */
+    if (lang[0] == 'j' && lang[1] == 'a')
+        return L"411";                  /* ja-JP */
+    return L"0";
 }
 
 /* ---- parameter mapping ---------------------------------------------------- */
@@ -883,6 +900,40 @@ static void token_key(WCHAR *key, int cap, int voice)
     wide_cat(key, cap, voice_langid(voice));
 }
 
+#ifndef GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT
+#define GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT 0x00000002
+#endif
+#ifndef GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS
+#define GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS       0x00000004
+#endif
+
+/*
+ * This module, however the DLL was entered.
+ *
+ * g_instance is set by the DllMain below, and the 32-BIT BUILD NEVER RUNS IT:
+ * it links harness/rt/dllmain.c for its entry point, which exists only to
+ * succeed and never calls DllMain, so g_instance stays NULL there.
+ * GetModuleFileNameW(NULL, ...) then answers with the EXE that called
+ * DllRegisterServer -- regsvr32 in a real install -- and InprocServer32 ends
+ * up naming a file with no DllGetClassObject in it.  Registration reports
+ * success, every voice appears in the list, and not one of them can be
+ * created: SAPI says "This voice cannot be played."  Only the 32-bit server
+ * was affected, which is the half that screen readers use.
+ *
+ * Asking which module contains this function needs no entry point at all, so
+ * it cannot drift apart from however the DLL happens to be linked.
+ */
+static HMODULE self_module(void)
+{
+    HMODULE h = NULL;
+
+    if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS
+                           | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                           (LPCSTR)(const void *)&self_module, &h) && h)
+        return h;
+    return g_instance;          /* 64-bit, where DllMain does run */
+}
+
 static HRESULT register_class(void)
 {
     WCHAR clsid[64], key[192], path[MAX_PATH];
@@ -890,7 +941,7 @@ static HRESULT register_class(void)
 
     if (!StringFromGUID2(&CLSID_OpenTVEngine, clsid, 64))
         return SELFREG_E_CLASS;
-    if (!GetModuleFileNameW(g_instance, path, MAX_PATH))
+    if (!GetModuleFileNameW(self_module(), path, MAX_PATH))
         return SELFREG_E_CLASS;
 
     reg_prefix(key, 192);

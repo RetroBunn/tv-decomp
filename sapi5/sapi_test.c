@@ -268,6 +268,56 @@ static int reg_is(const WCHAR *subkey, const WCHAR *value, const WCHAR *want)
     return got && wcscmp(got, want) == 0;
 }
 
+/*
+ * The first voice registered under this LCID, or -1.  Resolving a voice this
+ * way rather than by number is the point: it ties the registered language to
+ * the voice behind it, so one registered under the wrong LCID fails the test
+ * instead of quietly passing on another voice's audio.
+ */
+static int voice_for_lcid(const WCHAR *lcid)
+{
+    WCHAR path[512], sub[256], rel[512];
+    HKEY k;
+    DWORD i, n;
+    int found = -1;
+
+    path[0] = 0;
+    wcsncat(path, TEST_ROOT, 500);
+    wcsncat(path, TOKENS, 500);
+    if (RegOpenKeyExW(HKEY_CURRENT_USER, path, 0, KEY_READ, &k)
+        != ERROR_SUCCESS)
+        return -1;
+    for (i = 0; found < 0; i++) {
+        const WCHAR *got;
+
+        n = 256;
+        if (RegEnumKeyExW(k, i, sub, &n, NULL, NULL, NULL, NULL)
+            != ERROR_SUCCESS)
+            break;
+        rel[0] = 0;
+        wcsncat(rel, TOKENS, 500);
+        wcsncat(rel, sub, 500);
+        wcsncat(rel, L"\\Attributes", 500);
+        got = reg_str(rel, L"Language");
+        if (!got || wcscmp(got, lcid) != 0)
+            continue;
+        rel[0] = 0;
+        wcsncat(rel, TOKENS, 500);
+        wcsncat(rel, sub, 500);
+        got = reg_str(rel, L"OpenTVVoice");
+        if (got) {
+            int v = 0;
+            const WCHAR *q = got;
+
+            while (*q >= L'0' && *q <= L'9')
+                v = v * 10 + (int)(*q++ - L'0');
+            found = v;
+        }
+    }
+    RegCloseKey(k);
+    return found;
+}
+
 /* ---- the test ------------------------------------------------------------- */
 
 typedef HRESULT (__stdcall *GetClassObjectFn)(REFCLSID, REFIID, void **);
@@ -445,27 +495,6 @@ int main(int argc, char **argv)
     ok(can_unload() == S_OK, "after the last release it can unload again");
     ok(token.refs == 1, "the engine let go of the token");
 
-    /* --- a second voice, in the other language --- */
-    {
-        FakeToken spanish;
-        memset(&spanish, 0, sizeof spanish);
-        spanish.iface.lpVtbl = &g_token_vtbl;
-        spanish.refs = 1;
-        spanish.voice = 10;             /* Pedro, if Spanish is built in */
-
-        engine = make_engine(dgco, &spanish);
-        if (engine) {
-            site_init(&site);
-            frag_init(&f[0], L"Hola, buenos dias.", SPVA_Speak);
-            hr = engine->lpVtbl->Speak(engine, 0, &SPDFID_WaveFormatEx, NULL,
-                                       &f[0], &site.iface);
-            ok(SUCCEEDED(hr) && site.bytes > 4000,
-               "voice 10 speaks Spanish through the same server");
-            engine->lpVtbl->Release(engine);
-        } else {
-            printf("voice 10 is not in this build; skipping the Spanish case\n");
-        }
-    }
 
     /* --- a token that is not ours --- */
     {
@@ -538,6 +567,33 @@ int main(int argc, char **argv)
             wcsncat(path, L"\\InprocServer32", 200);
             ok(reg_is(path, L"ThreadingModel", L"Both"),
                "  and its server is threading model Both");
+            {
+                /*
+                 * The default value is the server's own path: the file
+                 * CoCreateInstance loads.  Nothing looked at it before, and
+                 * it is the one thing registration can get wrong that still
+                 * leaves every voice listed -- a DLL that does not know its
+                 * own module handle writes the path of whatever EXE called
+                 * DllRegisterServer, so the voices appear and none can be
+                 * created.  That is what "This voice cannot be played" is.
+                 */
+                const WCHAR *srv = reg_str(path, NULL);
+                const WCHAR *end = srv;
+                int isdll = 0;
+
+                if (srv) {
+                    while (*end)
+                        end++;
+                    if (end - srv > 4) {
+                        const WCHAR *ext = end - 4;
+                        isdll = ext[0] == L'.'
+                            && (ext[1] == L'd' || ext[1] == L'D')
+                            && (ext[2] == L'l' || ext[2] == L'L')
+                            && (ext[3] == L'l' || ext[3] == L'L');
+                    }
+                }
+                ok(isdll, "  and its server is a DLL, not the caller's EXE");
+            }
         }
         ok(reg_is(TOKENS L"OpenTV Peter 409\\Attributes", L"Name",
                   L"OpenTV Peter (American English)"),
@@ -560,6 +616,67 @@ int main(int argc, char **argv)
         ok(reg_is(TOKENS L"OpenTV Josefa 40a\\Attributes", L"Language",
                   L"40a"),
            "  and Castilian Spanish is 40a");
+
+        /*
+         * EVERY OTHER LANGUAGE, resolved from what registration just wrote.
+         *
+         * This case used to say `spanish.voice = 10`, commented "Pedro, if
+         * Spanish is built in", and sat outside this block.  English has
+         * ELEVEN voices now -- Frank was added -- so 10 is Frank and Spanish
+         * starts at 11:
+         * it had been exercising an English voice, and passed anyway, because
+         * the only thing asserted was that some audio came out, which an
+         * English voice saying "Hola, buenos dias" does perfectly well.  So
+         * the Spanish path through this server was never covered, the
+         * Japanese one never existed, and Japanese was registered as en-US
+         * besides.
+         */
+        {
+            /* Fixed strings rather than formatted ones: the 32-bit build
+             * links a cut-down runtime with no __ms_vsnprintf behind
+             * snprintf, which is the same reason tests/ja_check.c writes its
+             * own put_int. */
+            static const struct {
+                const WCHAR *lcid;
+                const WCHAR *text;
+                const char  *found;
+                const char  *spoke;
+            } langs[] = {
+                { L"40a", L"Hola, buenos dias.",
+                  "Castilian Spanish is registered under its own LCID",
+                  "  and the voice behind that token speaks" },
+                { L"411", L"\x3053\x3093\x306b\x3061\x306f",
+                  "Japanese is registered under its own LCID",
+                  "  and the voice behind that token speaks" },
+            };
+            size_t li;
+
+            for (li = 0; li < sizeof langs / sizeof *langs; li++) {
+                int voice = voice_for_lcid(langs[li].lcid);
+                ISpTTSEngine *eng2;
+                FakeToken tok;
+
+                ok(voice >= 0, langs[li].found);
+                if (voice < 0)
+                    continue;
+
+                memset(&tok, 0, sizeof tok);
+                tok.iface.lpVtbl = &g_token_vtbl;
+                tok.refs = 1;
+                tok.voice = voice;
+                eng2 = make_engine(dgco, &tok);
+                if (!eng2) {
+                    ok(0, langs[li].spoke);
+                    continue;
+                }
+                site_init(&site);
+                frag_init(&f[0], langs[li].text, SPVA_Speak);
+                hr = eng2->lpVtbl->Speak(eng2, 0, &SPDFID_WaveFormatEx, NULL,
+                                         &f[0], &site.iface);
+                ok(SUCCEEDED(hr) && site.bytes > 4000, langs[li].spoke);
+                eng2->lpVtbl->Release(eng2);
+            }
+        }
 
         ok(SUCCEEDED(unreg()), "DllUnregisterServer succeeds");
         ok(reg_str(TOKENS L"OpenTV Peter 409", NULL) == NULL,

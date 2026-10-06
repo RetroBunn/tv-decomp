@@ -3,6 +3,7 @@ EXPORTS
 RegCloseKey@4
 RegCreateKeyExW@36
 RegDeleteTreeW@8
+RegEnumKeyExW@32
 RegOpenKeyExW@20
 RegQueryValueExW@24
 RegSetValueExW@24
