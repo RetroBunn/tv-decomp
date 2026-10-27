@@ -185,28 +185,52 @@ static const WCHAR *voice_age(int voice)
  * stores it.  The codes are the ones each original DLL states in its own
  * version resource -- see tvtts_language_name.
  */
+static int code_is(const char *a, const char *b)
+{
+    while (*a != '\0' && *a == *b) {
+        a++;
+        b++;
+    }
+    return *a == '\0' && *b == '\0';
+}
+
+/*
+ * The LCID each language registers under.
+ *
+ * MATCHED WHOLE, not by prefix.  The first version of this compared two
+ * characters and fell through to American English for anything else, which
+ * registered all ten Japanese voices as en-US: a client asking for Japanese
+ * could not find them, and one asking for English was offered ten voices that
+ * do not speak it.  A prefix test has exactly that trap waiting for British
+ * English, whose code begins "en" and which would be swallowed by the American
+ * row and registered as 409.
+ *
+ * So an unknown language answers 0, LANG_NEUTRAL.  No client matches that by
+ * language and the SAPI test fails on it, which is the point: a language added
+ * to the library without a row here should be noticed, not quietly handed
+ * somebody else's identity.  If British ends up with a code other than the one
+ * below, this table is the single place to change, and the failure until then
+ * is loud.
+ */
 static const WCHAR *voice_langid(int voice)
 {
+    static const struct {
+        const char  *code;
+        const WCHAR *lcid;
+    } map[] = {
+        { "en",    L"409" },            /* en-US */
+        { "es",    L"40a" },            /* es-ES */
+        { "ja",    L"411" },            /* ja-JP */
+        { "en-GB", L"809" },            /* British English; 0x809 is its LCID */
+    };
     const char *lang = tvtts_voice_language(voice);
+    size_t i;
 
-    /*
-     * Every language the library carries needs a row here.  Falling through
-     * to American English is not a safe default: it registered all ten
-     * Japanese voices as en-US, so a client asking for Japanese could not
-     * find them and one asking for English was offered ten voices that do not
-     * speak it.  A language added to the library without a row is a bug, so
-     * this says so rather than guessing -- 0 is LANG_NEUTRAL, which no client
-     * matches by language, and a voice that cannot be found is easier to
-     * notice than one that answers to the wrong language.
-     */
     if (lang == NULL)
         return L"409";
-    if (lang[0] == 'e' && lang[1] == 'n')
-        return L"409";                  /* en-US */
-    if (lang[0] == 'e' && lang[1] == 's')
-        return L"40a";                  /* es-ES */
-    if (lang[0] == 'j' && lang[1] == 'a')
-        return L"411";                  /* ja-JP */
+    for (i = 0; i < sizeof map / sizeof *map; i++)
+        if (code_is(lang, map[i].code))
+            return map[i].lcid;
     return L"0";
 }
 

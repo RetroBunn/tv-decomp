@@ -111,6 +111,499 @@ uint8_t TV_THISCALL Stage1_Run(Engine *self)
     return Engine_StageEnd(self);
 }
 
+/*
+ * OpenTV: swap the phonemes General British spells differently in this word.
+ *
+ * Most of a British accent is where the formants are aimed, which
+ * src/engine/gb.c does far below here.  This is the rest of it: the words
+ * where the two accents pick a DIFFERENT vowel, not a different quality for
+ * the same one.  *bath* is /a/ in America and /A:/ in Britain, and by the
+ * time the formants are set the engine has long since committed to /a/.
+ *
+ * Called with the word still in hand and its phonemes settled, and it edits
+ * only the few nodes named -- so the word class, the stress marks and every
+ * context-sensitive allophone stage 1 just worked out all survive.  A no-op
+ * for every word not in the table, and for all of them when GB is off.
+ */
+/*
+ * Diagnostic: dump what stage 1 hands Stage1_GbSwap, for every word.
+ *
+ * The patterns in gb_lexicon.h have to be written against THIS, and it is not
+ * what tvtts_text_to_phonemes prints -- stress has not been assigned, stop
+ * releases have not been added, and /st/ is still spelt with a plain T, so
+ * *student* is STbt... here and SDb1t... there.  Generating the patterns from
+ * the printed string instead put the yod substitution on the wrong /t/.
+ *
+ * Off unless a caller sets it, and nothing in the shipped library does; it is
+ * for tools/gb_spans.c, which tools/gen_gb_lexicon.py reads.
+ */
+int tv_gb_span_trace;
+
+static void TV_THISCALL Stage1_GbSpan(Engine *self, const char *word)
+{
+    extern int printf(const char *, ...);
+    Node *n = self->s1_next_start;
+    int32_t guard = 0;
+
+    printf("%s	", word);
+    for (;;) {
+        if (n == NULL || ++guard > 200)
+            break;
+        if (n->value >= 0x20 && n->value < 0x7f)
+            printf("%c", n->value);
+        if (n == self->s1_next_end)
+            break;
+        n = Engine_StageNext(self, n);
+    }
+    printf("\n");
+
+    /*
+     * Level 2 asks what each node IS, not just what it prints as.  The /r/
+     * rules have to walk a span and tell a phoneme from one of the markers
+     * stage 1 threads through it, and the attribute bank is the engine's own
+     * answer rather than a guess from the printed characters.
+     */
+    if (tv_gb_span_trace < 2)
+        return;
+    n = self->s1_next_start;
+    for (guard = 0; n != NULL && guard < 200; guard++) {
+        printf("  %c  type %d  lo %02x  hi %02x%s\n",
+               (n->value >= 0x20 && n->value < 0x7f) ? n->value : '?',
+               (int)NODE_TYPE(n), phone_attr_lo(n->value),
+               phone_attr_hi(n->value),
+               !(phone_attr_lo(n->value) & 0x80) ? "  marker"
+               : (phone_attr_lo(n->value) & 1) ? "  vowel" : "  consonant");
+        if (n == self->s1_next_end)
+            break;
+        n = Engine_StageNext(self, n);
+    }
+}
+
+static void TV_THISCALL Stage1_GbSwap(Engine *self, const char *word)
+{
+    enum { MAX = 80 };
+    Node *span[MAX];
+    const TvGbSub *sub = tv_gb_sub(word);
+    Node *n;
+    int32_t count = 0, at, i, nf, nt, keep, head, tail;
+
+    if (sub == NULL)
+        return;
+
+    /* The word's phonemes, as Stage1_Emit will walk them. */
+    n = self->s1_next_start;
+    for (;;) {
+        if (n == NULL || count >= MAX)
+            return;
+        span[count++] = n;
+        if (n == self->s1_next_end)
+            break;
+        n = Engine_StageNext(self, n);
+    }
+
+    for (nf = 0; sub->from[nf] != '\0'; nf++)
+        ;
+    for (nt = 0; sub->to[nt] != '\0'; nt++)
+        ;
+
+    /* The run of nodes spelling `from`.  The generator checked, against this
+     * same engine, that it occurs exactly once in every word in the table. */
+    for (at = 0; at + nf <= count; at++) {
+        for (i = 0; i < nf; i++)
+            if (span[at + i]->value != (uint8_t)sub->from[i])
+                break;
+        if (i == nf)
+            break;
+    }
+    if (at + nf > count)
+        return;
+
+    /*
+     * The pattern carries context -- /tj/ is written Tb so the vowel after it
+     * can tell *student*'s two /t/s apart -- but only the part that actually
+     * differs may be touched.  Trimming the shared head and tail here leaves
+     * the vowel node alone, which matters: overwriting it loses the stress
+     * the engine has not assigned yet.
+     */
+    for (head = 0; head < nf && head < nt &&
+                   sub->from[head] == sub->to[head]; head++)
+        ;
+    for (tail = 0; tail < nf - head && tail < nt - head &&
+                   sub->from[nf - 1 - tail] == sub->to[nt - 1 - tail]; tail++)
+        ;
+    at += head;
+    nf -= head + tail;
+    nt -= head + tail;
+
+    keep = (nf < nt) ? nf : nt;
+    for (i = 0; i < keep; i++)
+        span[at + i]->value = (uint8_t)sub->to[head + i];
+
+    /* /tj/ -> /tS/ needs a node more than it replaces, and the yod the
+     * American engine keeps in *exhume* needs one fewer.  Each insert goes
+     * after the one before it, so a run of them stays in order; NodeAlloc
+     * carries the stage window along if the span ended there. */
+    n = (keep > 0) ? span[at + keep - 1] : NULL;
+    for (i = keep; i < nt; i++) {
+        if (n == NULL)
+            return;             /* an insert with nothing to anchor it */
+        n = Engine_NodeAlloc(self, n, 1, 3, (uint8_t)sub->to[head + i]);
+    }
+    for (i = keep; i < nf; i++) {
+        if (span[at + i] == self->s1_next_end) {
+            if (at + i == 0)
+                return;         /* nothing left to end the span on */
+            self->s1_next_end = span[at + i - 1];
+        }
+        Engine_NodeFree(self, span[at + i], 1);
+    }
+}
+
+/*
+ * OpenTV: hand a promoted CLOTH word its stress mark back.
+ *
+ * The word-class marker is the span's own first node -- measured with
+ * `gb_spans.exe -v`, which shows *off* arriving as `%wF` with the `%` at
+ * type 3, lo 0x08 -- so this is a one-node rewrite and nothing downstream
+ * needs to know.  Why only this word, and why the class rather than the
+ * mark, is in g_gb_mark in gb.c.
+ */
+static void TV_THISCALL Stage1_GbMark(Engine *self, const char *word)
+{
+    Node *n;
+    int32_t guard = 0;
+
+    if (!tv_gb_mark(word))
+        return;
+    for (n = self->s1_next_start; n != NULL && ++guard < 200; ) {
+        if (n->value == '%') {
+            n->value = '&';
+            return;
+        }
+        if (n == self->s1_next_end)
+            return;
+        n = Engine_StageNext(self, n);
+    }
+}
+
+/*
+ * A real phoneme rather than one of the markers stage 1 threads through a
+ * span, and among those a vowel.
+ *
+ * Measured with `gb_spans.exe -v`, not inferred from the printed characters:
+ * the word-class '&' and '%' and the syllable '[' carry lo 0x08 and no 0x80,
+ * every phoneme carries 0x80, and among those the vowels are exactly the
+ * ones with bit 0 -- which is the same bit Stage1_Emit tests to decide
+ * whether a stress digit has anything to attach to.  (Note that lo 0x80
+ * alone is NOT the vowel bit: 'R', 'T' and 'F' all have it.)
+ */
+static int gb_phone(uint8_t v)
+{
+    return (phone_attr_lo(v) & 0x80) != 0;
+}
+
+static int gb_vowel(uint8_t v)
+{
+    return (phone_attr_lo(v) & 0x81) == 0x81;
+}
+
+/* The next and previous phoneme within [start, end], markers skipped. */
+static Node *TV_THISCALL gb_next_phone(Engine *self, Node *n, Node *end)
+{
+    int32_t guard = 0;
+
+    while (n != end && ++guard < 200) {
+        n = Engine_StageNext(self, n);
+        if (n == NULL)
+            return NULL;
+        if (gb_phone(n->value))
+            return n;
+    }
+    return NULL;
+}
+
+static Node *TV_THISCALL gb_prev_phone(Engine *self, Node *n, Node *start)
+{
+    int32_t guard = 0;
+
+    while (n != start && ++guard < 200) {
+        n = Engine_StagePrev(self, n);
+        if (n == NULL)
+            return NULL;
+        if (gb_phone(n->value))
+            return n;
+    }
+    return NULL;
+}
+
+/* The last phoneme of a span, which may be the span's own end node. */
+static Node *TV_THISCALL gb_span_last(Engine *self, Node *start, Node *end)
+{
+    if (end == NULL)
+        return NULL;
+    if (gb_phone(end->value))
+        return end;
+    return gb_prev_phone(self, end, start);
+}
+
+/*
+ * OpenTV: give a word that could take an /r/ link one to keep.
+ *
+ * Non-rhoticity itself is NOT here, and that was the finding that shrank
+ * this whole job.  The American engine already folds a post-vocalic /r/ into
+ * the vowel in front of it and drops the consonant -- src/engine/vowel.c --
+ * so a finished American string has no post-vocalic `R` in it at all:
+ * *card* is `Kr1Dp`, *bird* `B31Dp`, *four* `Fg1`.  And the vowel it folds
+ * to is exactly the one General British uses for that lexical set, so those
+ * words need nothing from us.  What GB does differently is decline the
+ * deletion when a vowel follows, which vowel.c's gb_keep_r does.
+ *
+ * That leaves only the words where American has no `R` to decline deleting:
+ * the ones it spells with the r-coloured vowel from the start -- *far* `Fr`,
+ * *wear* `Wk`, *answer* `aNS3`, *near* `N4` -- and the ones ending in schwa,
+ * which is §12.4.7's case (c), *vanilla essence*, the one intrusive /r/ the
+ * book groups with the links rather than with the ones speakers avoid.  They
+ * get an `R` here as a candidate, which vowel.c then takes straight back out
+ * again unless the next word begins with a vowel.
+ *
+ * Taking it out HERE, at the boundary, was the first attempt and it was
+ * wrong in a way worth recording: it ran before vowel.c's fold, so the vowel
+ * never got corrected and *bar closed* came out with LOT for START and *fur
+ * coat* with STRUT for NURSE.  The engine's own pass already deletes a
+ * non-prevocalic /r/, and does it in the right order; all GB has to do is
+ * decline the deletion when a vowel follows, so the boundary pass was
+ * deleted and nothing replaced it.
+ *
+ * It runs BEFORE the lexicon swap, and that ordering is load-bearing.  The
+ * swap gives *spa* GB's /A:/ -- `SPo` becomes `SPr` -- which would then look
+ * exactly like the historical /r/ of *far*, and *spa is* would acquire an
+ * intrusive /r/ that §12.4.7's case (d) says to avoid.  Deciding here, while
+ * the vowel still records whether American ever had an /r/ there, keeps the
+ * two apart with no spelling lookup and no list of exceptions.  A rhotic
+ * accent is itself the record of which /r/s are historical.
+ */
+/*
+ * OpenTV: the taps the dictionary spells out.
+ *
+ * Suppressing the tap RULE in src/engine/vowel.c covers most of the language
+ * -- *better* *city* *pretty* *writer* *ladder* all stop being tapped, and
+ * *writer* stops being a homophone of *rider*, *latter* of *ladder* -- but a
+ * few entries arrive from the dictionary already tapped, before any rule has
+ * run: *water* `Wwt3R`, *little* `Litl`, *metal* `Metl`, *subtle* `Svtl`,
+ * *leader* `LEt3R`.  Those are the five in fifty tap-prone words run through
+ * build/check/gb_spans.exe, and two of them are common enough to matter on
+ * their own.
+ *
+ * A tap is a single phoneme and the dictionary does not record which stop it
+ * came from -- four of those five are /t/ and *leader* is /d/ -- so the
+ * spelling decides, being the only evidence in hand at this point.  A word
+ * with a <t> and no <d> gets [t], one with a <d> and no <t> gets [d], and a
+ * word with both is left alone rather than guessed at: it keeps the American
+ * tap, which is wrong but not inventively wrong.
+ */
+static void TV_THISCALL Stage1_GbDeflap(Engine *self, const char *word)
+{
+    const char *p;
+    Node *n;
+    int32_t guard = 0;
+    int has_t = 0, has_d = 0;
+    uint8_t to;
+
+    for (p = word; *p != '\0'; p++) {
+        if (*p == 'T' || *p == 't')
+            has_t = 1;
+        else if (*p == 'D' || *p == 'd')
+            has_d = 1;
+    }
+    if (has_t == has_d)
+        return;                         /* both, or neither: no evidence */
+    to = (uint8_t)(has_t ? 'T' : 'D');
+
+    n = self->s1_next_start;
+    while (n != NULL && ++guard < 200) {
+        if (n->value == 't')
+            n->value = to;
+        if (n == self->s1_next_end)
+            break;
+        n = Engine_StageNext(self, n);
+    }
+}
+
+/*
+ * OpenTV: Mary, marry and merry, which General American merges and GB does
+ * not (§7.12.1 says so; §8.9.4 and §8.9.5 give the three vowels).
+ *
+ * The engine merges them hard.  `Stage1_Vowel` folds `a`, `e` and `A` in
+ * front of an `R` into `k`, which is SQUARE, so *Mary* *marry* *merry*
+ * *very* *carry* *parent* *parish* *baron* *carol* *berry* *cherry*
+ * *terrible* all come out /E:/.  GB wants three different vowels there, and
+ * two thirds of that list is wrong -- *very* most of all, which is far too
+ * common a word to leave as /vE:rI/.
+ *
+ * The spelling is where the distinction survives, and §8.9.4 says every
+ * /E:/ word has an <r> in it.  Measured over eighteen words: a DOUBLED <rr>
+ * always goes with a short vowel, <arr> with /a/ and <err> with /e/, while a
+ * single <r> keeps /E:/.  *starry* is safe because the engine spells it with
+ * START (`SDrRE`) and never reaches this rule at all.
+ *
+ * Stopping the fold is the awkward part, because it runs a pass later and
+ * cannot see spelling.  It tests the IMMEDIATELY next node for `R`, while
+ * every other rule around it asks for the next phoneme, so a syllable
+ * marker between the two hides the `R` from this one rule and from nothing
+ * else.  That is also where the syllable boundary actually falls in
+ * /'me.ri/, so it is not only a convenience.
+ */
+/*
+ * The <a> that is really /Q/.
+ *
+ * §8.9.8's spellings table lists *quarrel* among the /Q/ words, and its note
+ * explains the <a> spelling as the rounding of Middle English [a] after /w/.
+ * So *quarrel* is /'kwQr@l/, not the TRAP the doubled <rr> rule would give
+ * it.  `r` points at the <r>, so the <a> is the letter before it.
+ */
+static int gb_rounded_a(const char *word, const char *r)
+{
+    const char *a = r - 1;
+
+    if (a <= word)
+        return 0;
+    if (a[-1] == 'W')
+        return 1;                       /* warrant, warren */
+    return (a - 1 > word) && a[-1] == 'U' && a[-2] == 'Q';   /* quarrel */
+}
+
+/*
+ * Is this the vowel the engine put in front of the /r/?
+ *
+ * The common set is what it uses before an /r/ generally: SQUARE and the
+ * plain front vowels for the *merry* words, START, NORTH, THOUGHT and GOAT
+ * for the *orange* ones.  NURSE and NEAR are admitted only when /I/ is
+ * wanted, which is the <irr> set.  Admitting them generally would be wrong:
+ * *worry* is NURSE too, and <orr> after /w/ is STRUT rather than the LOT
+ * the spelling rule would otherwise hand it.
+ *
+ * That set needs KIT and FLEECE in it as well, for two different reasons
+ * found by measuring the spans rather than the finished strings.  *squirrel*
+ * is `SKWiR@L` and already has KIT: it needs no new vowel, only the marker,
+ * because it is the FOLD that turns `i` before an /r/ into NURSE.  And
+ * *irritate* is `ER|TiT`, opening on FLEECE -- leaving that out of the set
+ * did not make the rule do nothing, it made it walk past the first vowel
+ * and rewrite a later one, so *irritate* came back as /'IrIteIt/ with the
+ * wrong syllable changed.
+ */
+static int gb_rr_vowel(uint8_t v, uint8_t want)
+{
+    if (v == 'e' || v == 'a' || v == 'k' || v == 'A' || v == 'r' ||
+        v == 'w' || v == 'g' || v == 'O')
+        return 1;
+    /* ...and STRUT, which is what the dictionary hands *stirrup* (`STvR@P`).
+     * Safe only because the gate is the <irr> spelling: STRUT is also what
+     * *hurry* and *curry* properly have, and those are <urr>. */
+    return (want == 'i' || want == 'v') &&
+           (v == '3' || v == '4' || v == 'i' || v == 'E' || v == 'v');
+}
+
+static void TV_THISCALL Stage1_GbRr(Engine *self, const char *word)
+{
+    const char *p;
+    Node *n, *cur, *nx, *nv;
+    int32_t guard = 0;
+    /*
+     * The list goes FIRST, being the explicit exception: *worry* has a
+     * doubled <rr> like *sorry*, so letting the spelling rule run before it
+     * handed *worry* LOT and never consulted the list at all.
+     */
+    uint8_t want = (uint8_t)tv_gb_short_r(word);
+
+    for (p = word; want == 0 && p[0] != '\0' && p[1] != '\0'; p++) {
+        if (p[0] != 'R' || p[1] != 'R' || p == word)
+            continue;
+        if (p[-1] == 'A')
+            want = gb_rounded_a(word, p) ? 'o' : 'a';
+        else if (p[-1] == 'E')
+            want = 'e';                 /* merry, berry, ferry, terror */
+        else if (p[-1] == 'O')
+            want = 'o';                 /* sorry, borrow, horrid, porridge */
+        else if (p[-1] == 'I')
+            want = 'i';                 /* squirrel, stirrup, mirror */
+        break;
+    }
+    if (want == 0)
+        return;
+
+    n = self->s1_next_start;
+    while (n != NULL && ++guard < 200) {
+        cur = n;
+        n = (n == self->s1_next_end) ? NULL : Engine_StageNext(self, n);
+        if (!gb_rr_vowel(cur->value, want))
+            continue;
+        nx = (cur == self->s1_next_end) ? NULL : Engine_StageNext(self, cur);
+        cur->value = want;
+
+        /*
+         * The /r/ has to survive, and whether there is an `R` node to keep
+         * depends on which vowel the engine chose.  *merry* is `MeRE` and
+         * has one; *berry* is `BkE` and does not, the r-coloured `k` being
+         * the /r/ all by itself -- so replacing it with DRESS would leave
+         * /'beI/ unless one is put in.  Either way a syllable marker goes
+         * between the vowel and the /r/, which is what keeps the fold off.
+         */
+        if (nx != NULL && nx->value == 'R') {
+            Engine_NodeAlloc(self, cur, 1, 3, '[');
+            return;
+        }
+        nv = gb_next_phone(self, cur, self->s1_next_end);
+        if (nv == NULL || !gb_vowel(nv->value))
+            return;                     /* no vowel after it: no /r/ wanted */
+        if (nx != NULL && nx->value == '[')
+            cur = nx;                   /* a marker is already there */
+        else
+            cur = Engine_NodeAlloc(self, cur, 1, 3, '[');
+        Engine_NodeAlloc(self, cur, 1, 3, 'R');
+        return;
+    }
+}
+
+static void TV_THISCALL Stage1_GbRhotic(Engine *self)
+{
+    Node *n, *cur, *nx, *last, *r;
+    int32_t guard = 0;
+
+    /*
+     * Inside the word first, and this one is a repair rather than a feature.
+     * An r-coloured vowel standing directly in front of another vowel is
+     * carrying a /r/ that GB must still pronounce -- *orange* is `r|NJz` and
+     * *forest* `Fg[|ST`, with no `R` node anywhere -- so making the vowel
+     * plain dropped the /r/ altogether and left *orange* as /A:IndZ/.  The
+     * engine's own rule puts one back before `E O @` (*sorry*, *borrow*,
+     * *moral*) but not before `|`, which is where these fall.
+     *
+     * This is §12.4.7's case (a), the one the book calls obligatory, so it
+     * is not a choice.  Only the r-coloured vowels qualify: schwa is left to
+     * the word boundary below, because its /r/ is the intrusive one and
+     * intruding in the middle of a word is case (e), which the same section
+     * says is stigmatised.
+     */
+    n = self->s1_next_start;
+    while (n != NULL && ++guard < 200) {
+        cur = n;
+        n = (n == self->s1_next_end) ? NULL : Engine_StageNext(self, n);
+        if (!gb_phone(cur->value) || !tv_gb_r_colored(cur->value))
+            continue;
+        nx = gb_next_phone(self, cur, self->s1_next_end);
+        if (nx == NULL || !gb_vowel(nx->value) || nx->value == 'R')
+            continue;
+        Engine_NodeAlloc(self, cur, 1, 3, 'R');
+    }
+
+    last = gb_span_last(self, self->s1_next_start, self->s1_next_end);
+    if (last == NULL || last->value == 'R' || !tv_gb_r_link(last->value))
+        return;
+    r = Engine_NodeAlloc(self, last, 1, 3, 'R');
+    if (last == self->s1_next_end)
+        self->s1_next_end = r;
+}
+
 /* Gather the run of nodes starting at the read cursor into the "next" span.
  * For a word (type 2) this also collects its letters into a '#'-framed buffer
  * and looks it up in the lexicon; for phonemes (type 3) it just extends the
@@ -258,6 +751,32 @@ uint8_t TV_THISCALL Stage1_Gather(Engine *self)
 
     if (!Stage1_Lookup(self) || self->s1_1c29 != 0)
         Stage1_Rules(self);
+    /*
+     * OpenTV: General British, for the words where the two accents choose a
+     * different vowel rather than a different quality for the same one --
+     * bath, duty, dog.  Here, with the word still in hand and its phonemes
+     * now settled, so the swap keeps the word class, the stress and every
+     * context-sensitive allophone stage 1 just worked out.  Doing it as a
+     * lexicon entry instead replaced the whole word and lost all three.
+     */
+    if ((tv_gb_get() || tv_gb_span_trace) && i < 0x62) {
+        buf[i] = '\0';                  /* was the closing '#' */
+        /* Non-rhoticity first, while the vowels are still American and so
+         * still say where a historical /r/ was; the swap below would hide
+         * that for *spa*.  The trace prints what the swap will see, so it
+         * runs between them. */
+        Stage1_GbRr(self, buf + 1);
+        Stage1_GbRhotic(self);
+        Stage1_GbDeflap(self, buf + 1);
+        if (tv_gb_span_trace)
+            Stage1_GbSpan(self, buf + 1);
+        if (tv_gb_get()) {
+            Stage1_GbSwap(self, buf + 1);
+            /* After the swap, because it repairs what the swap costs. */
+            Stage1_GbMark(self, buf + 1);
+        }
+        buf[i] = '#';
+    }
     self->s1_next_start->b15 = self->s1_1c2c;
     Stage1_Emit(self);
     return 1;

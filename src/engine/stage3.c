@@ -971,8 +971,33 @@ void TV_THISCALL Stage3_Phone(Engine *self)
             Sapi_PhoneNotify(self, (int32_t)c);
     }
 
+    /*
+     * General British, if that is what is being spoken: move this phoneme's
+     * formants from where American puts them to where Cruttenden measures
+     * them.
+     *
+     * In the TRACKS, after every path has written them, and not in the
+     * targets above.  Shifting the targets was tried first and does almost
+     * nothing: for *nurse* it moved six frames of the approach and left all
+     * nineteen frames of the vowel body exactly as they were, because an
+     * r-coloured vowel's body comes from the glide tables and goes straight
+     * into the track buffer without passing through s3_param at all.
+     *
+     * A no-op for every consonant, and for everything when GB is off.
+     */
     for (i = 0; i < 22; i++)
         Stage3_Write(self, i);
+
+    if (tv_gb_get()) {
+        int32_t gcls = (int32_t)(int8_t)
+            TV_REF(uint8_t, g_phone_class)[px3(st->ctl->value)];
+
+        /* This phoneme owns the frames from the write cursor for its own
+         * length; Stage3_Emit moves the cursor past them afterwards. */
+        tv_gb_track_shift(self->trk_buf[9], self->trk_buf[10],
+                          self->trk_buf[11], self->trk_wr[9],
+                          self->trk_wr[9] + self->s3_param[9].len, gcls);
+    }
 }
 
 /* The rules, reached through the classes of the phoneme being written and

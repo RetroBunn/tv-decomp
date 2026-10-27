@@ -89,6 +89,16 @@ dkms.conf
 # the one thing in here that is tracked.
 /lang/jpn/research/*
 !/lang/jpn/research/open_questions.md
+
+# The same for British English, written before the first source arrives rather
+# than after: Gimson's Pronunciation of English is a copyrighted book, and a
+# book is a worse thing to publish by accident than a paper.  Our own notes in
+# here are tracked; nothing else is.
+/lang/eng/research/*
+!/lang/eng/research/open_questions.md
+!/lang/eng/research/sources.md
+!/lang/eng/research/gimson8.md
+!/lang/eng/research/gb_vowels.md
 /work/
 # ...but the Japanese synthesis is SOURCE, not a build product.  It only sits
 # under build/ because that is where it was started; it is original work of

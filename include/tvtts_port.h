@@ -124,6 +124,35 @@ int         en_voice_pitch(int voice);
 int         en_speak_bytes(void *s, const void *text, uint32_t len,
                            tvtts_callback cb, void *user);
 
+/* Whether stage 3 is aiming at GB vowel targets (src/engine/gb.c). */
+void        tv_gb_set(int on);
+int         tv_gb_get(void);
+
+/*
+ * General British: the same engine with stage 3's vowel targets re-aimed.
+ * lang/eng/port/tvtts_engb.c, and src/engine/gb.c for the targets themselves.
+ */
+void       *engb_create(uint32_t sample_rate);
+void        engb_destroy(void *s);
+void        engb_set_voice(void *s, int voice);
+void        engb_set_rate(void *s, int wpm);
+void        engb_set_pitch(void *s, int pitch);
+void        engb_set_volume(void *s, uint32_t volume);
+int         engb_get_voice(const void *s);
+int         engb_get_rate(const void *s);
+int         engb_get_pitch(const void *s);
+uint32_t    engb_get_rate_hz(const void *s);
+int         engb_set_rate_hz(void *s, uint32_t hz);
+void        engb_set_compat(void *s, int preformat, int textin, int terminators);
+void        engb_set_textin_mode(void *s, int mode);
+void        engb_set_extensions(uint32_t mask);
+int         engb_voice_count(void);
+const char *engb_voice_name(int voice);
+int         engb_voice_rate(int voice);
+int         engb_voice_pitch(int voice);
+int         engb_speak_bytes(void *s, const void *text, uint32_t len,
+                             tvtts_callback cb, void *user);
+
 /*
  * English's frame entry point, which is the layer below stage 3: 22 parameter
  * tracks per 10 ms frame, straight into the synthesiser.  Japanese is built on

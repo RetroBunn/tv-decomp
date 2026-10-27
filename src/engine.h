@@ -722,6 +722,48 @@ int32_t tv_v_inton(int32_t voice);
 int32_t tv_v_aspir(int32_t voice);
 int32_t tv_v_amp(int32_t voice, int32_t v);
 
+/*
+ * General British (src/engine/gb.c).  Stage 3 applies the shift once per
+ * phoneme, after its rules have run and before the targets reach the tracks.
+ * A no-op for consonants, and for everything when GB is off, so the corpus is
+ * unaffected.  tv_gb_set is called by the language layer.
+ */
+void tv_gb_set(int on);
+int tv_gb_get(void);
+void tv_gb_track_shift(uint8_t *f1, uint8_t *f2, uint8_t *f3,
+                       int32_t from, int32_t to, int cls);
+/* A phoneme run General British spells differently; src/engine/gb.c. */
+typedef struct {
+    const char *from;
+    const char *to;
+} TvGbSub;
+const TvGbSub *tv_gb_sub(const char *word);
+
+/* Diagnostic hook: called once per General British vowel with the frames it
+ * wrote and the symbol it was.  NULL in the shipped library and never
+ * called; tools/gb_formants.c sets it so a dump can be read by vowel. */
+extern void (*tv_gb_frame_trace)(int32_t from, int32_t to, char sym);
+
+/*
+ * Non-rhoticity and the /r/ links (Cruttenden §12.4.7), which are one rule:
+ * /r/ survives only before a vowel.  The engine's own pass in vowel.c
+ * already folds a post-vocalic /r/ into the vowel and drops it, landing on
+ * the vowel GB wants, so all GB adds is declining that deletion before a
+ * vowel.  tv_gb_r_colored says whether American put a historical /r/ on this
+ * vowel, and tv_gb_r_link adds schwa to that set for the one intrusive case
+ * the book reports as normal.
+ */
+int tv_gb_r_colored(uint8_t v);
+int tv_gb_r_link(uint8_t v);
+
+/* The vowel a word with a single <r> takes against the doubled-<rr> rule
+ * stage 1 otherwise uses, or 0 if it is not one of them; src/engine/gb.c. */
+char tv_gb_short_r(const char *word);
+
+/* Is this a CLOTH word whose word class GB promotes, so the shorter vowel
+ * does not cost it its stress mark?  See g_gb_mark in gb.c. */
+int tv_gb_mark(const char *word);
+
 #define TV_RATE_ROWS     26          /* rows the original table has */
 #define TV_RATE_ROW_MAX  44          /* (400 - 46) >> 3 */
 

@@ -85,13 +85,13 @@ done
 HOOK_OBJS=""
 for src in $(find src -name '*.c' -not -path 'src/port/*' | sort); do
   obj="$HOOK/obj/$(echo "$src" | sed 's|^src/||; s|/|_|g; s|\.c$|.o|')"
-  gcc $CFLAGS -DTV_HOOK_BUILD -Isrc -I"$GEN" -c "$src" -o "$obj"
+  gcc $CFLAGS -DTV_HOOK_BUILD -Isrc -Ilang/eng/data -I"$GEN" -c "$src" -o "$obj"
   HOOK_OBJS="$HOOK_OBJS $obj"
 done
 python tools/gen_hookmap.py src "$HOOK/hooks_gen.c" "$HOOK/defsyms.txt" $HOOK_OBJS
 gcc $CFLAGS -c "$HOOK/hooks_gen.c" -o "$HOOK/hooks_gen.o"
 gcc $CFLAGS -c harness/hooks.c -o "$HOOK/hooks.o"
-gcc $CFLAGS -DTV_HOOK_BUILD -Isrc -I"$GEN" -c harness/unit.c -o "$HOOK/unit.o"
+gcc $CFLAGS -DTV_HOOK_BUILD -Isrc -Ilang/eng/data -I"$GEN" -c harness/unit.c -o "$HOOK/unit.o"
 gcc $CFLAGS -DTV_WITH_HOOKS -c harness/tvh.c -o "$HOOK/tvh_hook.o"
 link "$CHECK/tvh_hook.exe" @"$HOOK/defsyms.txt" "$HOOK/tvh_hook.o" "$HOOK/hooks.o" \
   "$HOOK/unit.o" "$HOOK/hooks_gen.o" $HOOK_OBJS
@@ -143,7 +143,7 @@ mkdir -p "$PORT/obj"
 PORT_OBJS=""
 for src in $(find src -name '*.c' | sort); do
   obj="$PORT/obj/$(echo "$src" | sed 's|^src/||; s|/|_|g; s|\.c$|.o|')"
-  gcc $CFLAGS -Isrc -Iinclude -I"$GEN" -c "$src" -o "$obj"
+  gcc $CFLAGS -Isrc -Iinclude -Ilang/eng/data -I"$GEN" -c "$src" -o "$obj"
   PORT_OBJS="$PORT_OBJS $obj"
 done
 python tools/gen_data.py "$DATA" src "$GEN/tvdata.s" $PORT_OBJS
@@ -177,6 +177,17 @@ for src in $(find lang/jpn/port -name '*.c' | sort); do
   JA_OBJS="$JA_OBJS $obj"
 done
 PORT_OBJS="$PORT_OBJS $JA_OBJS"
+
+# British English: no front end of its own, just the American one with stage
+# 3's vowel targets re-aimed, so this is a handful of wrappers.
+GB_OBJS=""
+for src in $(find lang/eng/port -name '*.c' | sort); do
+  obj="$PORT/obj/$(echo "$src" | sed 's|/|_|g; s|\.c$|.o|')"
+  gcc $CFLAGS -Isrc -Iinclude -I"$GEN" -c "$src" -o "$obj"
+  GB_OBJS="$GB_OBJS $obj"
+done
+PORT_OBJS="$PORT_OBJS $GB_OBJS"
+
 
 # The oracle test at 32 bits as well as at 64, because the question it answers
 # here is whether the two word widths agree.  Freestanding against msvcrt, like
@@ -269,7 +280,7 @@ echo "built $CHECK/sapi_test32.exe"
 P64=$OBJ/port64
 mkdir -p "$P64/obj"
 CF64="-m64 -std=gnu11 -O2 -g -Wall -Wno-unused-function -fwrapv \
-  -fno-strict-aliasing -Isrc -Iinclude -I$GEN"
+  -fno-strict-aliasing -Isrc -Iinclude -Ilang/eng/data -I$GEN"
 OBJ64=""
 for src in $(find src -name '*.c' | sort); do
   obj="$P64/obj/$(echo "$src" | sed 's|^src/||; s|/|_|g; s|\.c$|.o|')"
@@ -288,6 +299,16 @@ for src in $(find lang/jpn/port -name '*.c' | sort); do
   JA64="$JA64 $obj"
 done
 OBJ64="$OBJ64 $JA64"
+
+# British English at 64 bits, on the same terms.
+GB64=""
+for src in $(find lang/eng/port -name '*.c' | sort); do
+  obj="$P64/obj/$(echo "$src" | sed 's|/|_|g; s|\.c$|.o|')"
+  gcc $CF64 -c "$src" -o "$obj"
+  GB64="$GB64 $obj"
+done
+OBJ64="$OBJ64 $GB64"
+
 
 # Spanish, the same way as at 32 bits: every name of its own prefixed, and its
 # data laid out under the prefix.  A stored address is four bytes at either word
@@ -312,6 +333,44 @@ LIB64=$(echo "$OBJ64" | tr ' ' '\n' | grep -v '/port_main\.o$' | tr '\n' ' ')
 gcc $CF64 -c tests/api_test.c -o "$P64/obj/api_test.o"
 gcc -m64 -o "$CHECK/api_test64.exe" "$P64/obj/api_test.o" $LIB64
 echo "built $CHECK/api_test64.exe"
+
+# British English: that the accent reaches the audio, and that American is
+# untouched by it.  Linked against the library rather than the DLL, so a
+# failure is in the engine and not in an export table.
+gcc $CF64 -c tests/gb_check.c -o "$P64/obj/gb_check.o"
+gcc -m64 -o "$CHECK/gb_check.exe" "$P64/obj/gb_check.o" $LIB64
+echo "built $CHECK/gb_check.exe"
+
+# ...and the oracle the British substitution patterns are generated against:
+# what stage 1 actually hands the swap, which is not what the phoneme printer
+# shows.  See tools/gb_spans.c.
+gcc $CF64 -c tools/gb_spans.c -o "$P64/obj/gb_spans.o"
+gcc -m64 -o "$CHECK/gb_spans.exe" "$P64/obj/gb_spans.o" $LIB64
+echo "built $CHECK/gb_spans.exe"
+
+# ...and the one that says whether the accent reached the audio at all.  It
+# wraps Synth_Frame, so it reports the exact formants the filter bank is
+# handed, after every rule and every table.  Shifting stage 3's targets looked
+# right and moved nothing; this is what showed it.
+GBF=$OBJ/gbformants
+mkdir -p "$GBF"
+GBF_REST=$(echo "$LIB64" | tr ' ' '
+' |   grep -vE '/gb_check\.o$|/gb_spans\.o$' | tr '
+' ' ')
+gcc $CF64 -c tools/gb_formants.c -o "$GBF/gb_formants.o"
+gcc -m64 -o "$CHECK/gb_formants.exe" "$GBF/gb_formants.o" $GBF_REST   -Wl,--wrap=Synth_Frame
+echo "built $CHECK/gb_formants.exe"
+
+# ...and the oracle for the /r/ rules, which are a question about the phoneme
+# string rather than the audio: the same phrase in both accents, side by side,
+# so a linking /r/ that fired (or did not) is visible.  See tools/gb_links.c.
+# Its object goes in its own directory so it never joins OBJ64 and so never
+# turns up as a second main() in another tool's link.
+GBL=$OBJ/gblinks
+mkdir -p "$GBL"
+gcc $CF64 -c tools/gb_links.c -o "$GBL/gb_links.o"
+gcc -m64 -o "$CHECK/gb_links.exe" "$GBL/gb_links.o" $GBF_REST
+echo "built $CHECK/gb_links.exe"
 
 # --- the Japanese front end, against its oracle ------------------------------
 # Japanese has no DLL to be byte-exact against, so what stands in for the

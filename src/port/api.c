@@ -66,10 +66,23 @@
       ja_voice_count, ja_voice_name, ja_voice_rate, ja_voice_pitch,           \
       ja_speak_bytes, ja_set_extensions, 1 }
 
+/*
+ * General British.  Not a front end of its own: the American one, with stage
+ * 3 aiming at Cruttenden's GB vowel targets instead of Centigram's American
+ * ones.  See lang/eng/port/tvtts_engb.c.
+ */
+#define ENGB_LANG                                                                 { "en-GB", "British English", engb_create, engb_destroy,                        engb_set_voice, engb_set_rate, engb_set_pitch, engb_set_volume,               engb_get_voice, engb_get_rate, engb_get_pitch,                                engb_get_rate_hz, engb_set_rate_hz, engb_set_compat,                          engb_set_textin_mode,                                                         engb_voice_count, engb_voice_name, engb_voice_rate, engb_voice_pitch,         engb_speak_bytes, engb_set_extensions, 0 }
+
 /* In voice order: English first, because it was first and because renumbering
  * anybody's saved voice would be unkind.  A new language goes on the END for
- * the same reason -- Japanese is voices 20..29. */
-static const tvtts_lang g_langs[] = { EN_LANG, ES_LANG, JA_LANG };
+ * the same reason.  Measured, because this numbering has caught us out before
+ * -- tvtts_set_voice(s, 0) on a British synth quietly hands back Peter and
+ * switches the language to suit -- and because the figures written here
+ * before were simply wrong: of 43 voices, en is 0..10 (Peter..Frank), es
+ * 11..21 (Pedro..Francisco), ja 22..31 (Taro..Keiko) and en-GB 32..42
+ * (Nigel..Bernard). */
+static const tvtts_lang g_langs[] = { EN_LANG, ES_LANG, JA_LANG,
+                                     ENGB_LANG };
 
 #define NLANGS ((int)(sizeof g_langs / sizeof g_langs[0]))
 
@@ -492,6 +505,28 @@ int TVTTS_CALL tvtts_speak_bytes(tvtts_synth *s, const void *text, uint32_t len,
  * lowercase half for the diphthongs that English has no use for -- so a Spanish
  * one would be a separate piece of work rather than a dispatch.
  */
+/*
+ * The phoneme, frame and singing entry points read this engine's own alphabet,
+ * so they belong to the two rows that ARE this engine: American English and
+ * General British.  Returns 0 for anything else, and otherwise says whether
+ * stage 3 should be aiming at GB vowels for the call -- which is the only
+ * difference between the two.
+ */
+static int en_row(const tvtts_synth *s, int *gb)
+{
+    if (s == NULL)
+        return 0;
+    if (s->lang == &g_langs[0]) {
+        *gb = 0;
+        return 1;
+    }
+    if (strcmp(s->lang->code, "en-GB") == 0) {
+        *gb = 1;
+        return 1;
+    }
+    return 0;
+}
+
 int en_speak_phonemes(void *vs, const char *phonemes, tvtts_callback cb,
                       void *user);
 int en_text_to_phonemes(void *vs, const char *text, char *buf, uint32_t cap);
@@ -499,9 +534,15 @@ int en_text_to_phonemes(void *vs, const char *text, char *buf, uint32_t cap);
 int TVTTS_CALL tvtts_speak_phonemes(tvtts_synth *s, const char *phonemes,
                                     tvtts_callback cb, void *user)
 {
-    if (s == NULL || s->lang != &g_langs[0])
+    int gb, was, rc;
+
+    if (!en_row(s, &gb))
         return -1;
-    return en_speak_phonemes(s->impl, phonemes, cb, user);
+    was = tv_gb_get();
+    tv_gb_set(gb);
+    rc = en_speak_phonemes(s->impl, phonemes, cb, user);
+    tv_gb_set(was);
+    return rc;
 }
 
 int en_speak_frames(void *vs, const uint8_t *frames, uint32_t n_frames,
@@ -511,9 +552,15 @@ int TVTTS_CALL tvtts_speak_frames(tvtts_synth *s, const uint8_t *frames,
                                   uint32_t n_frames,
                                   tvtts_callback cb, void *user)
 {
-    if (s == NULL || s->lang != &g_langs[0])
+    int gb, was, rc;
+
+    if (!en_row(s, &gb))
         return -1;
-    return en_speak_frames(s->impl, frames, n_frames, cb, user);
+    was = tv_gb_get();
+    tv_gb_set(gb);
+    rc = en_speak_frames(s->impl, frames, n_frames, cb, user);
+    tv_gb_set(was);
+    return rc;
 }
 
 /*
@@ -530,7 +577,9 @@ int TVTTS_CALL tvtts_sing(tvtts_synth *s, const char *score,
     char *buf;
     int n, rc;
 
-    if (s == NULL || score == NULL || s->lang != &g_langs[0])
+    int gb;
+
+    if (score == NULL || !en_row(s, &gb))
         return -1;
     n = tvtts_sing_compile(score, NULL, 0);
     if (n <= 0)
@@ -547,7 +596,17 @@ int TVTTS_CALL tvtts_sing(tvtts_synth *s, const char *score,
 int TVTTS_CALL tvtts_text_to_phonemes(tvtts_synth *s, const char *text,
                                       char *buf, uint32_t cap)
 {
-    if (s == NULL || s->lang != &g_langs[0])
+    int gb, was, rc;
+
+    if (!en_row(s, &gb))
         return -1;
-    return en_text_to_phonemes(s->impl, text, buf, cap);
+    /* The flag matters here as well as when speaking: most of GB is a shift
+     * applied below the phoneme string, but the words whose vowel CHOICE
+     * differs -- bath, duty, dog -- are a lexicon consulted during stage 1,
+     * so the analysis itself differs for those.  See src/engine/gb.c. */
+    was = tv_gb_get();
+    tv_gb_set(gb);
+    rc = en_text_to_phonemes(s->impl, text, buf, cap);
+    tv_gb_set(was);
+    return rc;
 }

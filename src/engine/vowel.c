@@ -16,6 +16,53 @@
 uint8_t Phone_Attr(int32_t idx);
 
 static uint8_t attr_lo(uint8_t c) { return Phone_Attr((int8_t)c); }
+
+/*
+ * OpenTV, General British: should this /r/ stay?
+ *
+ * The rule is one line -- /r/ survives only before a vowel -- and the pass
+ * below is where American's rhoticity is actually implemented.  It folds a
+ * post-vocalic /r/ into the vowel in front of it (`oR` becomes `r`, `vR`
+ * becomes `3`, `wR` becomes `g`) and then drops the consonant, so a finished
+ * American string has no post-vocalic `R` in it at all: *card* is `Kr1Dp`,
+ * *bird* `B31Dp`, *four* `Fg1`.
+ *
+ * That fold is right for General British too, and it was a surprise: the
+ * vowel it folds to is exactly the one GB uses for the same lexical set, so
+ * *card*, *bird*, *north* and *four* need no help from us.  What GB does
+ * differently is keep the consonant when a vowel follows -- *boring*,
+ * *very*, and across a word boundary *far off* and *vanilla essence*.  So
+ * this is the whole of linking and intrusive /r/: not an insertion rule, but
+ * a deletion declined.
+ *
+ * Markers are skipped, which is what makes the boundary case work: the next
+ * word's '&' or '%' sits between, and they are type-3 nodes like any
+ * phoneme, so Node_NextWord stops on them rather than stepping over.  A
+ * phoneme carries lo 0x80 and a vowel carries bit 0 as well -- measured with
+ * `gb_spans.exe -v`.  The walk is bounded because it is reading past the end
+ * of the span on purpose.
+ */
+static int gb_vowel_after(Node *n)
+{
+    Node *p;
+    int32_t guard = 0;
+
+    if (!tv_gb_get() || n == NULL)
+        return 0;
+    for (p = n->next; p != NULL && ++guard < 8; p = p->next) {
+        if (!(attr_lo(p->value) & 0x80))
+            continue;                   /* a marker: '[', '&', '%' */
+        return (attr_lo(p->value) & 1) != 0;
+    }
+    return 0;
+}
+
+static int gb_keep_r(Engine *self, Node *r)
+{
+    (void)self;
+    return r != NULL && r->value == 'R' && gb_vowel_after(r);
+}
+
 static uint8_t attr_hi(uint8_t c)
 {
     return Phone_Attr((int16_t)((int16_t)(int8_t)c | 0x80));
@@ -196,6 +243,19 @@ Node *TV_THISCALL Stage1_Vowel(Engine *self, Node *n)
             }
             if (ch_prev == 'b' && prv_saved->prev->value == 'L' &&
                 (Phone_Attr(ch_next | 0x100) & 2))
+                goto post;
+            /*
+             * OpenTV: General British keeps /l/ CLEAR before a vowel and
+             * darkens it only elsewhere; General American darkens it in all
+             * positions (§7.12.1, and §9.7.1 for the detail).  The engine
+             * mostly has the GB distribution already -- *lesson* is `Le1S@N`
+             * and *field* `FE1jDp` in both accents -- but this branch
+             * darkens an /l/ after a vowel whatever follows it, so *follow*
+             * came out `Fo1jO`, *colour* `Kv1j3` and *salad* `Sa1j@D` with a
+             * dark l standing in front of a vowel.  Leaving the node as `L`
+             * is the clear one.
+             */
+            if (gb_vowel_after(n))
                 goto post;
             n->value = 'j';
             goto post;
@@ -418,9 +478,15 @@ Node *TV_THISCALL Stage1_Vowel(Engine *self, Node *n)
                     n->value = 'q';
                     goto post;
                 }
-                n->value = 't';
-                n->b18 = c;
-                goto post;
+                /* General British does not tap a /d/ before a syllabic
+                 * nasal: *ridden* keeps its [d].  The glottal above stays,
+                 * because GB glottals there too and §7.10.3 lists losing
+                 * the syllabic consonant as a trend to leave alone. */
+                if (!tv_gb_get()) {
+                    n->value = 't';
+                    n->b18 = c;
+                    goto post;
+                }
             }
             if (c == 'T') {
                 int32_t glot = 0;
@@ -428,6 +494,27 @@ Node *TV_THISCALL Stage1_Vowel(Engine *self, Node *n)
                 if ((Phone_Attr(ch_next) & 8) &&
                     (Phone_Attr(ch_nextv) & 2) &&
                     !(Phone_Attr(ch_nextv) & 1) && ch_nextv != 'H')
+                    glot = 1;
+                /*
+                 * OpenTV: §7.10.2(5), among the changes the book calls well
+                 * established -- General British realises a /t/ before a
+                 * consonant as a glottal stop, *not very* being its example.
+                 *
+                 * This is the SAME rule with one condition dropped.  The
+                 * American one above wants the following phoneme to be a
+                 * sonorant (lo bit 1, which is set for the vowels and for
+                 * L R W N M), so *that man* is already `xaq&Ma1N` in both
+                 * accents while *not very* stayed `No1T`.  GB wants any
+                 * consonant, so only "is not a vowel" is asked.
+                 *
+                 * The /l/ the section warns is stigmatised is the syllabic
+                 * one of *little*, which is word-internal and never reached
+                 * this rule: it is `Li1Tl` with a real [t] since the tap
+                 * work, so nothing here needs to exclude it.
+                 */
+                if (!glot && tv_gb_get() && (Phone_Attr(ch_next) & 8) &&
+                    (attr_lo((uint8_t)ch_nextv) & 0x81) == 0x80 &&
+                    ch_nextv != 'H')
                     glot = 1;
                 if (!glot && (ch_nextv == 'D' || ch_nextv == 'L'))
                     glot = 1;
@@ -445,7 +532,18 @@ Node *TV_THISCALL Stage1_Vowel(Engine *self, Node *n)
 
         if (rate > 6 && st->p_20 != 0) {
             d = (uint8_t)ch_nextv;
-            if ((Phone_Attr(ch_prev | 0x100) & 2) && prv_saved != NULL &&
+            /*
+             * OpenTV: the intervocalic tap, and the loudest American marker
+             * left in the British voice.  *water* was `Ww1t3`, *city*
+             * `Si1tE`, *little* `Li1tl` -- lowercase `t` is the tap -- in
+             * both accents, and General British has a real [t] in all of
+             * them.  So GB does not enter this rule at all and the node
+             * stays `T`, which lets it go on through the ordinary release
+             * rules rather than being sent to the shared clean-up as a tap
+             * that happens to look like a stop.
+             */
+            if (!tv_gb_get() &&
+                (Phone_Attr(ch_prev | 0x100) & 2) && prv_saved != NULL &&
                 prv_saved->prev != NULL && prv_saved->prev->value != 't' &&
                 ((attr_x(d) & 2) || d == 'l') &&
                 !(nxt_saved->flags & 0x20u) &&
@@ -476,6 +574,11 @@ Node *TV_THISCALL Stage1_Vowel(Engine *self, Node *n)
                                 goto keep_t;
                         }
                     }
+                    /* The tap across a word boundary -- *not a*, *get up*,
+                     * *what if*.  GB keeps the [t], and the engine already
+                     * has a path for keeping it. */
+                    if (tv_gb_get())
+                        goto keep_t;
                     n->value = 't';
 keep_t:
                     did_next = 1;
@@ -485,7 +588,9 @@ keep_t:
             }
         }
 
-        if (c == 'D' && !(v40 & 8) &&
+        /* ...and the /d/ half of it: American taps *ladder* into a homophone
+         * of *latter*, and General British keeps the two apart. */
+        if (!tv_gb_get() && c == 'D' && !(v40 & 8) &&
             (Phone_Attr(ch_prevv | 0x100) & 2) &&
             (Phone_Attr(ch_nextv | 0x100) & 2) &&
             !(nxt_saved->flags & 0x20u)) {
@@ -498,7 +603,9 @@ keep_t:
     }
 
 t_after_u:
-    if (c == 'T' && ch_next == 'u' && (ch_prev == '&' || ch_prev == '%') &&
+    /* ...and the tap in *to* after a vowel: *go to a*.  GB keeps the [t]. */
+    if (!tv_gb_get() &&
+        c == 'T' && ch_next == 'u' && (ch_prev == '&' || ch_prev == '%') &&
         self->s1_word_start->b15 == 0xa &&
         (Phone_Attr(ch_prevv | 0x100) & 2)) {
         int32_t ok = 0;
@@ -762,11 +869,20 @@ no_pause:
             n->value = '3';
         } else if (c == 'E') {
             n->value = '4';
-        } else if (c == 'I' && ch_next2 != '|' && ch_next2 != '@' &&
-                   ch_next2 != 'O' &&
+        } else if (!tv_gb_get() && c == 'I' && ch_next2 != '|' &&
+                   ch_next2 != '@' && ch_next2 != 'O' &&
                    !(ch_next2 == '[' &&
                      (nxt2->next->value == '|' || nxt2->next->value == '@' ||
                       nxt2->next->value == 'O'))) {
+            /*
+             * `5` is the engine's single phoneme for PRICE plus an /r/, and
+             * it is the one vowel General British has no target for: the 21
+             * rows gen_gb_vowels.py writes do not include it, so *fire* and
+             * *hire* kept their American quality while everything round them
+             * moved.  Skipping this leaves the /r/ to become `3` two
+             * branches down, giving `I3` -- PRICE and schwa, both of which
+             * ARE in the table, and which is what GB says anyway.
+             */
             n->value = '5';
         } else if (c == 'a' || c == 'e' || c == 'A') {
             n->value = 'k';
@@ -782,6 +898,15 @@ no_pause:
                     nxt2->value != '|') ||
                    c == 'f' || c == 'y') {
             nxt_saved->value = '3';
+            /*
+             * That `R` node has just become the schwa of /aIə/ or /aUə/, and
+             * for *tyre* `TIR` it was the only /r/ in the word -- so the link
+             * went with it and *tyre is* lost the /r/ that *fire engine* and
+             * *hour ago* keep, those being spelt with the schwa already.
+             * Put one back when a vowel follows.
+             */
+            if (gb_vowel_after(nxt_saved))
+                Engine_NodeAlloc(self, nxt_saved, 1, 3, 'R');
         }
 
         if (n->value != c) {
@@ -794,20 +919,22 @@ no_pause:
                 if (p->value == '[' && Phone_IsVowel(p->next->value))
                     kill = 1;
             }
-            if (kill)
+            if (kill && !gb_keep_r(self, nxt_saved))
                 ret = Engine_NodeFree(self, nxt_saved, 0);
         }
         d = nxt2->value;
         if (!(attr_x(d) & 2)) {
             if (d == '[' && (attr_x(nxt2->next->value) & 2))
                 goto post;
-            if (nxt_saved->value != '3')
+            if (nxt_saved->value != '3' && !gb_keep_r(self, nxt_saved))
                 ret = Engine_NodeFree(self, nxt_saved, 0);
         }
     }
 
 r_done:
-    if (n->value == '3' && n->prev->value == 'I' &&
+    /* ...and the other way into `5`: the dictionary already holds *fire* as
+     * `FI3`, and this merges the pair.  General British keeps them apart. */
+    if (!tv_gb_get() && n->value == '3' && n->prev->value == 'I' &&
         (n->prev->flags & 0x20u)) {
         d = n->next->value;
         if (d != '|' && d != '@' && d != 'O' &&
@@ -824,9 +951,10 @@ r_done:
     if ((c == '3' || c == '4' || c == '5' || c == 'k' || c == 'r' ||
          c == 'c' || c == 'g') && ch_next == 'R') {
         d = nxt2->value;
-        if (d == 'E' || d == 'A' || d == 'e' || d == 'a' || d == 'I' ||
-            d == 'i' || d == 'f' || d == 'v' || d == 'O' || d == 'y' ||
-            d == '@' || d == 'b' || d == '|')
+        if ((d == 'E' || d == 'A' || d == 'e' || d == 'a' || d == 'I' ||
+             d == 'i' || d == 'f' || d == 'v' || d == 'O' || d == 'y' ||
+             d == '@' || d == 'b' || d == '|') &&
+            !gb_keep_r(self, nxt_saved))
             ret = Engine_NodeFree(self, nxt_saved, 0);
     }
 
@@ -909,9 +1037,28 @@ post:
         ret = Engine_NodeAlloc(self, n, 0, 3, '@');
     }
 
-    if (n->value == 'l') {
+    /*
+     * A syllabic /l/ after one of these splits into a schwa and a dark l,
+     * and the block below it does the same into `|` and a dark l.
+     *
+     * General British does neither.  §7.10.3 lists schwa plus a non-syllabic
+     * consonant, where a syllabic one has been the norm, among the recent
+     * trends GB has NOT adopted, and names *garden, bitten, middle, bottle*
+     * -- so the syllabic consonant stays.  `T` alone was exempted first,
+     * because de-flapping had broken *little* into `LiT@j`; the rest
+     * followed, the book covering them in the same breath.
+     *
+     * EXCEPT after /r/, which was an over-reach and caught by ear: *barrel*
+     * became `Ba1Rl` and the /r/ vanished, having nothing but a syllabic
+     * dark l to lean on.  The engine was right and the book's examples are
+     * all after stops -- English keeps the schwa after /r/, so *barrel*,
+     * *quarrel*, *moral*, *coral* and *laurel* are /-@r@l/ and not /-rl/.
+     * That trigger stays live for GB.
+     */
+    if (n->value == 'l' && (!tv_gb_get() || n->prev->value == 'R')) {
         d = n->prev->value;
-        if (d == 'T' || d == 'F' || d == 'K' || d == 'R' || d == 'S' ||
+        if (d == 'T' ||
+            d == 'F' || d == 'K' || d == 'R' || d == 'S' ||
             d == 's' || d == 'X' ||
             (d == 'W' && n->prev->prev->value == 'K') ||
             (d == '[' && n->prev->prev->value == 'K')) {
@@ -921,7 +1068,7 @@ post:
         }
     }
 
-    if (n->value == 'l') {
+    if (n->value == 'l' && !tv_gb_get()) {
         d = n->prev->value;
         if (d == 'G' || (d == 'D' && n->prev->prev->value == 'N') ||
             d == 'P' || d == 'Z' || d == 'B') {
@@ -931,8 +1078,18 @@ post:
         }
     }
 
+    /*
+     * *bottle* is `BoT@L` in the dictionary and American makes it `Bo1tl`:
+     * the stop taps and the /l/ goes syllabic, losing the schwa.  The two
+     * are one rule here, keyed on the tap -- so suppressing the tap for
+     * General British also lost the syllabic /l/, and *bottle* came out
+     * `Bo1T@j`, a dark l after a schwa.  §7.10.3 lists exactly that as a
+     * recent trend GB has NOT adopted, so the syllabic consonant has to
+     * stay: a real [t] counts for this rule too.
+     */
     if (n->value == 'j' && n->prev->value == '@' &&
-        n->prev->prev->value == 't' &&
+        (n->prev->prev->value == 't' ||
+         (tv_gb_get() && n->prev->prev->value == 'T')) &&
         (ch_next == '.' || ch_next == '&' || ch_next == '%' ||
          ch_next == ' ' || ch_next == ',' || ch_next == '?')) {
         n->value = 'l';
